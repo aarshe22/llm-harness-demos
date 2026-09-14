@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "claude-sonnet-4-5",
+  "harness": "opencode",
+  "maxContextWindow": 200000,
+  "totalTokens": 128400,
+  "updated": "2026-09-14"
+}

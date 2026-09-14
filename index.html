@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Demo Gallery</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121924;
+    --panel-2: #0e1520;
+    --line: #223043;
+    --text: #e8eef6;
+    --muted: #8aa0b6;
+    --accent: #5cc8ff;
+    --accent-2: #7c7cff;
+    --shadow: 0 10px 30px rgba(0,0,0,.45);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(124,124,255,.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(92,200,255,.10), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  header {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: center; justify-content: space-between;
+    padding: 22px clamp(16px, 4vw, 40px);
+    backdrop-filter: blur(10px);
+    background: linear-gradient(180deg, rgba(11,15,20,.85), rgba(11,15,20,.35));
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .logo {
+    width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 6px 20px rgba(92,200,255,.35);
+    display: grid; place-items: center; font-size: 20px;
+  }
+  .brand h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .count {
+    font-variant-numeric: tabular-nums;
+    background: var(--panel); border: 1px solid var(--line);
+    color: var(--muted); padding: 4px 10px; border-radius: 999px; font-size: 12px;
+  }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; }
+  .search {
+    position: relative;
+  }
+  .search input {
+    width: min(320px, 60vw);
+    padding: 9px 12px 9px 34px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(92,200,255,.18); }
+  .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: .6; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 13px; border-radius: 10px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    font-size: 13px; transition: transform .1s, border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent); background: #16202e; }
+  .btn:active { transform: translateY(1px); }
+
+  main { padding: clamp(16px, 4vw, 40px); }
+
+  .grid {
+    display: grid;
+    gap: 22px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  }
+
+  .card {
+    display: flex; flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .card:hover { transform: translateY(-4px); border-color: #31465f; box-shadow: 0 16px 40px rgba(0,0,0,.55); }
+  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .thumb {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background:
+      repeating-linear-gradient(45deg, #0d141e 0 12px, #0b111a 12px 24px);
+    border-bottom: 1px solid var(--line);
+  }
+  .thumb .ph {
+    position: absolute; inset: 0;
+    display: grid; place-content: center; gap: 6px; justify-items: center;
+    text-align: center; color: var(--muted); padding: 12px;
+  }
+  .thumb .ph .emoji { font-size: 40px; filter: saturate(1.2); }
+  .thumb .ph .name { font-size: 13px; max-width: 90%; }
+  .spinner {
+    width: 22px; height: 22px; margin-top: 6px;
+    border: 2px solid rgba(255,255,255,.15);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(1turn); } }
+
+  .thumb iframe {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 800px;
+    border: 0;
+    transform-origin: 0 0;
+    pointer-events: none;   /* clicks pass through to the card link */
+    opacity: 0;
+    transition: opacity .4s ease;
+    background: #fff;
+  }
+  .thumb iframe.ready { opacity: 1; }
+  .thumb .badge {
+    position: absolute; right: 8px; top: 8px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; padding: 4px 8px; border-radius: 999px;
+    background: rgba(9,13,18,.72); color: #cfe6ff;
+    border: 1px solid rgba(92,200,255,.35);
+    backdrop-filter: blur(4px);
+    opacity: 0; transform: translateY(-4px);
+    transition: opacity .2s, transform .2s;
+    pointer-events: none;
+  }
+  .card:hover .thumb .badge { opacity: 1; transform: none; }
+
+  /* metadata strip pinned to the bottom of the thumbnail */
+  .thumb .strip {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; flex-wrap: wrap; gap: 2px 10px;
+    padding: 6px 9px;
+    font-size: 11px; line-height: 1.25;
+    color: #cfe0f0;
+    background: linear-gradient(0deg, rgba(6,10,15,.92), rgba(6,10,15,.55) 70%, transparent);
+    border-top: 1px solid rgba(255,255,255,.06);
+  }
+  .strip .kv { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+  .strip .k { color: #7f95ab; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .strip .v { color: #eaf2fb; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .strip .missing { color: #f0b45f; }
+  .strip .err { color: #ff8b8b; }
+
+  .meta { padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  .meta .info { min-width: 0; }
+  .meta .title {
+    font-weight: 600; font-size: 14.5px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta .sub {
+    color: var(--muted); font-size: 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta .open {
+    margin-left: auto; flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--accent); font-weight: 600;
+  }
+
+  .empty {
+    text-align: center; color: var(--muted); padding: 60px 20px;
+    border: 1px dashed var(--line); border-radius: var(--radius);
+  }
+  .empty code { color: var(--accent); background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
+  .hidden { display: none !important; }
+
+  footer {
+    padding: 24px clamp(16px, 4vw, 40px);
+    color: var(--muted); font-size: 12.5px;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">🖼</div>
+      <div>
+        <h1>Demo Gallery</h1>
+        <p>Auto-scanned from subfolders <span id="status"></span></p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="filter" type="search" placeholder="Filter demos…" autocomplete="off" />
+      </label>
+      <button class="btn" id="refresh" title="Rescan subfolders">↻ Rescan</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid" id="grid" aria-live="polite"></div>
+    <div class="empty hidden" id="empty">
+      <p>No demos found yet.</p>
+      <p>Drop a folder containing an <code>index.html</code> next to <code>server.js</code>, then hit <strong>Rescan</strong>.</p>
+    </div>
+  </main>
+
+  <footer>
+    <span>Thumbnails are live mini-renders of each demo (scaled 1280px frames).</span>
+    <span>Click a card to open in a new tab.</span>
+  </footer>
+
+<script>
+(() => {
+  const DESIGN_W = 1280;
+  const REFRESH_MS = 60000;   // soft re-check cadence while the tab is open
+  const CACHE_KEY = 'demo-gallery-cache-v1';
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  const statusEl = document.getElementById('status');
+  const filterEl = document.getElementById('filter');
+  const refreshBtn = document.getElementById('refresh');
+  const isFile = location.protocol === 'file:';
+
+  // folder -> { card, metaHash, entryHash, title, strip }
+  const state = new Map();
+
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      mountFrame(entry.target);
+      observer.unobserve(entry.target);
+    }
+  }, { rootMargin: '400px 0px' });
+
+  function fitScale(thumb) {
+    const frame = thumb.querySelector('iframe');
+    if (!frame) return;
+    frame.style.transform = `scale(${thumb.clientWidth / DESIGN_W})`;
+  }
+
+  function mountFrame(card) {
+    const thumb = card.querySelector('.thumb');
+    if (thumb.dataset.mounted) return;
+    thumb.dataset.mounted = '1';
+    const frame = document.createElement('iframe');
+    frame.setAttribute('loading', 'lazy');
+    frame.setAttribute('tabindex', '-1');
+    frame.setAttribute('scrolling', 'no');
+    frame.setAttribute('title', card.dataset.title || 'demo preview');
+    thumb.insertBefore(frame, thumb.querySelector('.strip'));
+
+    fitScale(thumb);
+    new ResizeObserver(() => fitScale(thumb)).observe(thumb);
+
+    frame.addEventListener('load', () => {
+      if (frame.src && frame.src !== location.href) frame.classList.add('ready');
+    });
+    // re-show a stale thumbnail when the pointer arrives
+    card.addEventListener('mouseenter', () => {
+      try { frame.contentWindow && frame.contentWindow.location.reload(); } catch (e) {}
+    });
+    frame.src = card.dataset.url;
+  }
+
+  const esc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function fmtTokens(n) {
+    if (n == null || Number.isNaN(n)) return '—';
+    if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function kv(k, v, missing) {
+    return '<span class="kv"><span class="k">' + esc(k) + '</span>' +
+      '<span class="v' + (missing ? ' missing' : '') + '">' + esc(v) + '</span></span>';
+  }
+
+  function stripContent(demo) {
+    if (demo.metaError) {
+      return kv('meta', 'invalid demo.json', true) +
+        ' <span class="err">' + esc(demo.metaError.slice(0, 60)) + '</span>';
+    }
+    const m = demo.meta;
+    if (!m) return '<span class="missing">no demo.json — add one (see AGENT.md)</span>';
+    return (
+      kv('model', m.modelName || '—', !m.modelName) +
+      kv('harness', m.harness || '—', !m.harness) +
+      kv('max ctx', fmtTokens(m.maxContextWindow), m.maxContextWindow == null) +
+      kv('tokens', fmtTokens(m.totalTokens), m.totalTokens == null)
+    );
+  }
+
+  function updateStrip(thumb, demo) {
+    const strip = thumb.querySelector('.strip');
+    if (strip) strip.innerHTML = stripContent(demo);
+  }
+
+  function buildCard(d) {
+    const a = document.createElement('a');
+    a.className = 'card';
+    a.href = d.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.dataset.url = d.url;
+    a.dataset.title = d.title;
+    a.dataset.hay = (d.title + ' ' + d.folder).toLowerCase();
+    a.innerHTML =
+      '<div class="thumb">' +
+        '<div class="ph"><div class="emoji">🧪</div><div class="name">' + esc(d.title) + '</div>' +
+        '<div class="spinner"></div></div>' +
+        '<span class="badge">▶ Open demo</span>' +
+        '<div class="strip"></div>' +
+      '</div>' +
+      '<div class="meta"><div class="info">' +
+        '<div class="title">' + esc(d.title) + '</div>' +
+        '<div class="sub">/' + esc(d.folder) + '</div></div>' +
+        '<span class="open">Launch →</span></div>';
+    updateStrip(a.querySelector('.thumb'), d);
+    return a;
+  }
+
+  // Diff against live DOM: keep unchanged cards (and their mounted iframes),
+  // remove gone demos, add new ones, update a strip only when metaHash moved.
+  function render(demos) {
+    const incoming = new Map(demos.map((d) => [d.folder, d]));
+
+    for (const [folder, rec] of state) {
+      if (!incoming.has(folder)) {
+        observer.unobserve(rec.card);
+        rec.card.remove();
+        state.delete(folder);
+      }
+    }
+
+    for (const d of demos) {
+      const rec = state.get(d.folder);
+      if (!rec) {
+        const card = buildCard(d);
+        grid.appendChild(card);
+        if (!isFile) observer.observe(card);
+        state.set(d.folder, { card, metaHash: d.metaHash, entryHash: d.entryHash, title: d.title });
+        continue;
+      }
+      // demo still present — patch only what actually changed
+      if (rec.metaHash !== d.metaHash) {
+        updateStrip(rec.card.querySelector('.thumb'), d);
+        rec.metaHash = d.metaHash;
+      }
+      if (rec.entryHash !== d.entryHash) {
+        const f = rec.card.querySelector('iframe');
+        if (f) { try { f.contentWindow && f.contentWindow.location.reload(); } catch (e) {} }
+        rec.entryHash = d.entryHash;
+      }
+      if (rec.title !== d.title) {
+        const t = rec.card.querySelector('.title');
+        if (t) t.textContent = d.title;
+        rec.card.dataset.title = d.title;
+        rec.card.dataset.hay = (d.title + ' ' + d.folder).toLowerCase();
+        rec.title = d.title;
+      }
+    }
+
+    empty.classList.toggle('hidden', grid.children.length > 0);
+    setStatus('· ' + demos.length + ' found');
+    applyFilter();
+  }
+
+  function writeCache(demos) {
+    try {
+      const slim = demos.map((d) => ({
+        folder: d.folder, title: d.title, url: d.url,
+        meta: d.meta && {
+          modelName: d.meta.modelName, harness: d.meta.harness,
+          maxContextWindow: d.meta.maxContextWindow, totalTokens: d.meta.totalTokens,
+          updated: d.meta.updated,
+        },
+        metaHash: d.metaHash, entryHash: d.entryHash, metaError: d.metaError,
+      }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), demos: slim }));
+    } catch (e) {}
+  }
+
+  function readCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CACHE_KEY));
+      return c && Array.isArray(c.demos) ? c.demos : null;
+    } catch { return null; }
+  }
+
+  function setStatus(t) { statusEl.textContent = t; }
+
+  async function load(opts = {}) {
+    if (isFile) {
+      empty.classList.remove('hidden');
+      empty.innerHTML =
+        '<p><strong>Directory auto-scan needs the local server.</strong></p>' +
+        '<p>Run <code>node server.js</code> then open <code>http://127.0.0.1:4173</code>.</p>';
+      setStatus('· server required');
+      return;
+    }
+    if (!opts.silent) setStatus('· scanning…');
+    try {
+      const res = await fetch('/api/demos', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const demos = await res.json();
+      render(demos);
+      writeCache(demos);
+    } catch (err) {
+      if (!grid.children.length) {
+        empty.classList.remove('hidden');
+        empty.innerHTML = '<p>Could not load demos: ' + esc(String(err && err.message || err)) + '</p>';
+      }
+      setStatus('· scan failed');
+    }
+  }
+
+  function applyFilter() {
+    const q = filterEl.value.trim().toLowerCase();
+    let visible = 0;
+    for (const card of grid.children) {
+      const match = !q || (card.dataset.hay || '').includes(q);
+      card.classList.toggle('hidden', !match);
+      if (match) visible++;
+    }
+    empty.classList.toggle('hidden', visible !== 0 || !grid.children.length);
+  }
+
+  // Paint the cached snapshot instantly so a reload doesn't flash an empty grid.
+  if (!isFile) {
+    const cached = readCache();
+    if (cached && cached.length) render(cached);
+  }
+  load();
+
+  // Auto re-check: verify demos still present + metadata changes, keep thumbnails.
+  let busy = false;
+  const soft = () => {
+    if (busy || isFile) return;
+    busy = true;
+    load({ silent: true }).finally(() => { busy = false; });
+  };
+  setInterval(soft, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) soft(); });
+  window.addEventListener('focus', soft);
+
+  let fTimer;
+  filterEl.addEventListener('input', () => { clearTimeout(fTimer); fTimer = setTimeout(applyFilter, 80); });
+  refreshBtn.addEventListener('click', () => {
+    refreshBtn.disabled = true;
+    load({ silent: true }).finally(() => {
+      setTimeout(() => { refreshBtn.disabled = false; }, 300);
+    });
+  });
+})();
+</script>
+</body>
+</html>
