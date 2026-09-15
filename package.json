@@ -1,0 +1,13 @@
+{
+  "name": "llm-harness-demos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auto-scanning gallery of self-contained HTML demos, each with a demo.json metadata strip.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

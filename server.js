@@ -11,6 +11,11 @@ const crypto = require('crypto');
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = process.env.HOST || '127.0.0.1';
+// Passenger (used by Plesk's Node.js support) sets env vars prefixed
+// PASSENGER_ / PX_ and provides the socket via a hook on net.Server.listen.
+const ON_PASSENGER = Object.keys(process.env).some(
+  (k) => k.startsWith('PASSENGER_') || k.startsWith('PX_')
+);
 
 // demo.json is the per-folder metadata file (see AGENT.md). First entry wins.
 const META_FILES = ['demo.json', 'DEMO.json', 'demo.meta.json', '.demo.json'];
@@ -204,6 +209,15 @@ const server = http.createServer(async (req, res) => {
     return send(res, 400, 'Bad Request');
   }
 
+  if (pathname === '/health' || pathname === '/healthz') {
+    return send(res, 200, JSON.stringify({
+      ok: true,
+      mode: ON_PASSENGER ? 'passenger' : 'direct',
+      root: ROOT,
+      node: process.version,
+    }), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  }
+
   if (pathname === '/api/demos') {
     try {
       const demos = scanDemos();
@@ -234,9 +248,36 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
-  const demos = scanDemos();
-  console.log(`\n  🖼  Demo gallery running at  http://${HOST}:${PORT}`);
-  console.log(`     Scanned ${demos.length} demo(s): ${demos.map((d) => d.folder).join(', ') || '(none yet)'}`);
-  console.log('     Add a folder with an index.html anywhere next to server.js and refresh.\n');
+function banner(addr) {
+  let count = 0, folders = '';
+  try {
+    const demos = scanDemos();
+    count = demos.length;
+    folders = demos.map((d) => d.folder).join(', ') || '(none yet)';
+  } catch (err) {
+    console.error('[demo-gallery] scan error:', err && err.message);
+  }
+  console.log(
+    `[demo-gallery] listening · mode=${ON_PASSENGER ? 'passenger' : 'direct'} · ` +
+    `addr=${JSON.stringify(addr)} · root=${ROOT} · ${count} demo(s): ${folders}`
+  );
+}
+
+server.on('clientError', (err, socket) => {
+  if (socket && !socket.destroyed) socket.destroy();
 });
+
+server.on('error', (err) => {
+  console.error('[demo-gallery] server error:', err && err.message);
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[demo-gallery] port ${PORT} busy; set PORT env to change it.`);
+  }
+});
+
+// Under Passenger (Plesk), the socket is provided by a hook on net.Server.listen —
+// calling listen() with no host/port lets Passenger wire it correctly.
+if (ON_PASSENGER) {
+  server.listen(() => banner(server.address()));
+} else {
+  server.listen(PORT, HOST, () => banner(server.address()));
+}

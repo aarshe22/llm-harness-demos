@@ -426,7 +426,11 @@
     } catch (err) {
       if (!grid.children.length) {
         empty.classList.remove('hidden');
-        empty.innerHTML = '<p>Could not load demos: ' + esc(String(err && err.message || err)) + '</p>';
+        empty.innerHTML =
+          '<p><strong>Auto-scan is not reachable</strong> (<code>/api/demos</code> → ' +
+          esc(String(err && err.message || err)) + ').</p>' +
+          '<p>This page needs the Node server. On Plesk, enable <strong>Node.js support</strong> ' +
+          'with startup file <code>server.js</code>, then check <a href="/health"><code>/health</code></a>.</p>';
       }
       setStatus('· scan failed');
     }
