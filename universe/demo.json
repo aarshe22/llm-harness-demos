@@ -1,5 +1,7 @@
 {
   "schema": 1,
-  "updated": "2026-09-16",
-  "notes": "TODO: fill modelName, harness, maxContextWindow, totalTokens (see AGENT.md)"
+  "modelName": "Qwen 3.8 Flash Next",
+  "harness": "opencode",
+  "maxContextWindow": 1000000,
+  "updated": "2026-09-16"
 }
