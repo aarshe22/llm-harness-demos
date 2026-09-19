@@ -1,4 +1,4 @@
-# Brickworld Builder
+# Maddox Blox
 
 Brick-toy inspired Three.js sandbox game. No build step: static files + one npm dep (`three`), served by any static server.
 
