@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Brickworld Builder</title>
+<link rel="stylesheet" href="src/styles.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./node_modules/three/build/three.module.js",
+    "three/addons/": "./node_modules/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="hud">
+  <div class="panel" id="panel-goal">
+    <div class="title">Brickworld Builder</div>
+    <div class="row"><span class="brick-dot"></span><b id="hud-count">0</b>&nbsp;bricks collected</div>
+    <div class="row" id="hud-need">Collect 30 more to fix the rainbow bridge</div>
+  </div>
+
+  <div id="hotbar"></div>
+
+  <div class="panel" id="panel-hint">
+    <div id="hint-desktop">WASD move · drag look · Space jump · 1-6 brick · click place · X remove</div>
+    <div id="hint-touch">drag right = look · WASD/touch pad = move · tap = place · tap brick = remove</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="intro" onclick="if(event.target===this)document.getElementById('btn-play').click()">
+  <div class="card">
+    <h1>Brickworld Builder</h1>
+    <p>A tiny brick-toy sandbox. Gather loose bricks, build whatever you like,
+       and repair the broken rainbow bridge.</p>
+    <ul>
+      <li><b>WASD / arrows</b> move · <b>Space</b> jump</li>
+      <li><b>Drag</b> to orbit the camera · <b>scroll / pinch</b> to zoom</li>
+      <li><b>Click / tap</b> to place a brick · <b>X</b> or remove-slot tap to break bricks</li>
+      <li><b>1-6</b> pick a brick type</li>
+    </ul>
+    <button id="btn-play">Start building</button>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

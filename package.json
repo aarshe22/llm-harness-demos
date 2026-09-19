@@ -1,0 +1,14 @@
+{
+  "name": "brickworld-builder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A brick-toy inspired Three.js sandbox building game.",
+  "scripts": {
+    "dev": "python3 -m http.server 8016 --bind 127.0.0.1",
+    "start": "python3 -m http.server 8016 --bind 127.0.0.1"
+  },
+  "dependencies": {
+    "three": "^0.186.0"
+  }
+}
