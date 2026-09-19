@@ -163,6 +163,37 @@ body.touch #joystick { display: block; }
 }
 body.touch #btn-jump { display: block; }
 
+#btn-enter {
+  position: absolute;
+  right: 24px; bottom: 196px;
+  min-width: 84px; height: 60px;
+  padding: 0 16px;
+  border-radius: 30px;
+  border: 3px solid rgba(255,255,255,.75);
+  background: rgba(67, 212, 108, .88);
+  font-size: 16px; font-weight: 800; color: #0c4a20;
+  display: block;
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+  letter-spacing: 0.5px;
+}
+#btn-enter.hidden { display: none; }
+#btn-enter.pulse { animation: enterpulse 1s ease-in-out infinite; }
+@keyframes enterpulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+body.touch #panel-goal { top: 10px; left: 10px; }
+
+@media (max-width: 520px) {
+  #panel-goal { min-width: 0; max-width: 62vw; padding: 8px 10px; }
+  #panel-goal .title { font-size: 14px; }
+  #panel-goal .row { font-size: 12px; }
+  #hotbar { gap: 5px; }
+  .slot { width: 38px; height: 38px; }
+  .slot .key { display: none; }
+}
+
 #intro {
   position: fixed; inset: 0;
   display: grid; place-items: center;

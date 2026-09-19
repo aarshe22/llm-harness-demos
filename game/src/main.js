@@ -1,11 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
+import { INTERIOR_DEF, buildInterior } from './interior.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
-const BR = new THREE.BoxGeometry(1, 1, 1);
-const CY = new THREE.CylinderGeometry(1, 1, 1, 12);
-const SP = new THREE.SphereGeometry(1, 16, 10);
-const CO = new THREE.ConeGeometry(1, 1, 5);
 
 const BRICKS = [
   { name: 'Brick', w: 1, h: 1, d: 1, color: 0xe8402a, studs: [[0, 0]] },
@@ -15,46 +13,14 @@ const BRICKS = [
   { name: 'Arch', w: 1, h: 2, d: 1, color: 0x9b5de5, studs: [[0, 0]], hollow: true },
   { name: 'Round', w: 1, h: 1, d: 1, color: 0xff8a3d, studs: [[0, 0]], round: true }
 ];
-const RAINBOW = [0xff4d6d, 0xff9f1c, 0xffd23f, 0x43d46c, 0x35a7ff, 0x9b5de5];
-const GOAL = 24;
 const HALF = 28;
 const RIVER = { x0: -7, x1: 7, z0: 9, z1: 19 };
 const WATER_TOP = 0.4;
 const BED_TOP = -2.2;
 
-function mkMat(color, extra) {
-  return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55, metalness: 0.02 }, extra));
-}
-function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 function hash(x, z) {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
   return s - Math.floor(s);
-}
-function part(geo, x, y, z) {
-  const m = new THREE.Mesh(geo, null);
-  m.position.set(x, y, z);
-  return m;
-}
-function addBox(g, w, h, d, x, y, z) {
-  const m = part(BR, x, y, z); m.scale.set(w, h, d); g.push(m); return m;
-}
-function addCyl(g, r, h, x, y, z, rz) {
-  const m = part(CY, x, y, z); m.scale.set(r, h, rz === undefined ? r : rz); g.push(m); return m;
-}
-function bake(m) {
-  m.updateMatrix();
-  const g = m.geometry.clone().applyMatrix4(m.matrix);
-  if (g.index) g.deleteAttribute('normal');
-  return g;
-}
-function merged(list, mat) {
-  if (!list.length) return new THREE.Mesh(new THREE.BufferGeometry(), mat);
-  const geo = mergeGeometries(list.map(bake), false);
-  geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
 }
 
 class World {
@@ -62,6 +28,9 @@ class World {
     this.scene = scene;
     this.solids = [];
     this.staticMeshes = [];
+    this.doorAnchors = [];
+    this.interior = null;
+    this.inHouse = false;
     this.brickMap = new Map();
     this.brickMeshes = [];
     this.placedCount = 0;
@@ -112,6 +81,19 @@ class World {
     this.buildVillage();
     for (let i = 0; i < 24; i++) this.buildTree();
     this.buildBridge();
+    this.interior = buildInterior(this.scene);
+    this.interiorSolids = this.interior.solids.map((box) => ({ box, brick: null }));
+    this.overSolids = this.solids;
+  }
+
+  enterHouse() {
+    this.solids = this.interiorSolids;
+    this.inHouse = true;
+  }
+
+  exitHouse() {
+    this.solids = this.overSolids;
+    this.inHouse = false;
   }
 
   inRiver(x, z) { return x > RIVER.x0 && x < RIVER.x1 && z > RIVER.z0 && z < RIVER.z1; }
@@ -349,6 +331,13 @@ class World {
       new THREE.Vector3(h.x - w / 2 - 0.1, 0, h.z - d / 2 - 0.1),
       new THREE.Vector3(h.x + w / 2 + 0.1, bh, h.z + d / 2 + 0.1)
     ), null, true);
+
+    // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along facing
+    const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, h.ry);
+    this.doorAnchors.push({
+      world: new THREE.Vector3(h.x + dir.x * 1.6, 0, h.z + dir.z * 1.6),
+      yaw: h.ry
+    });
   }
 
   buildBridge() {
@@ -757,6 +746,8 @@ class Game {
     this.jumpQueued = 0;
     this.rescueT = 0;
     this.ghost = this.makeGhost();
+    this.nearDoor = null;
+    this.world.interior.group.visible = false;
 
     this.bindDom();
     this.selectSlot(0);
@@ -916,6 +907,7 @@ class Game {
     const map = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' };
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') { e.preventDefault(); this.jumpQueued = 0.16; return; }
+      if (e.code === 'KeyE') { this.toggleDoor(); return; }
       if (map[e.code]) { this.keys.add(map[e.code]); e.preventDefault(); return; }
       if (e.code === 'KeyX') this.selectSlot(BRICKS.length);
       const n = parseInt(e.key, 10);
@@ -976,7 +968,10 @@ class Game {
     this.jumpBtn = document.createElement('button');
     this.jumpBtn.id = 'btn-jump';
     this.jumpBtn.textContent = 'JUMP';
-    hud.append(this.joy, this.jumpBtn);
+    this.enterBtn = document.createElement('button');
+    this.enterBtn.id = 'btn-enter';
+    this.enterBtn.textContent = 'ENTER';
+    hud.append(this.joy, this.jumpBtn, this.enterBtn);
     this.joyVec = { x: 0, y: 0 };
 
     const knob = this.joy.querySelector('.knob');
@@ -1011,10 +1006,12 @@ class Game {
     this.joy.addEventListener('touchcancel', joyUp);
     this.jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.jumpQueued = 0.16; }, { passive: false });
     this.jumpBtn.addEventListener('click', (e) => { e.preventDefault(); this.jumpQueued = 0.16; });
+    this.enterBtn.addEventListener('touchstart', (e) => { e.preventDefault(); this.toggleDoor(); }, { passive: false });
+    this.enterBtn.addEventListener('click', (e) => { e.preventDefault(); this.toggleDoor(); });
   }
 
   touchUi(e) {
-    for (const el of [this.joy, this.jumpBtn]) {
+    for (const el of [this.joy, this.jumpBtn, this.enterBtn]) {
       if (!el) continue;
       const r = el.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return true;
@@ -1043,6 +1040,7 @@ class Game {
   }
 
   rayTargets() {
+    if (this.world.inHouse) return [];
     return this.world.staticMeshes.concat(this.world.brickMeshes);
   }
 
@@ -1098,6 +1096,16 @@ class Game {
     if (!this.started) return;
     const ndc = this.ndc(e.clientX, e.clientY);
     this.pick.setFromCamera(ndc, this.camera);
+
+    if (this.world.inHouse) {
+      const hits = this.pick.intersectObjects([this.world.interior.screenMesh], false);
+      if (hits.length) {
+        this.world.interior.tv.nextChannel();
+        this.toast('BRICK TV — channel changed', 'good');
+        if (navigator.vibrate) navigator.vibrate(10);
+      }
+      return;
+    }
     const hits = this.pick.intersectObjects(this.rayTargets(), true);
 
     if (this.removeMode) {
@@ -1170,6 +1178,21 @@ class Game {
   }
 
   updateCamera(dt) {
+    if (this.world.inHouse) {
+      const o = this.orbit;
+      o.dist += (o.wantDist - o.dist) * Math.min(1, dt * 6);
+      const D = INTERIOR_DEF;
+      const p = this.player.pos;
+      const target = new THREE.Vector3(p.x, p.y + 1.4, p.z);
+      const dir = new THREE.Vector3(Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch), Math.cos(o.yaw) * Math.cos(o.pitch));
+      const want = target.clone().addScaledVector(dir, o.dist);
+      want.x = clamp(want.x, D.x0 + 0.4, D.x1 - 0.4);
+      want.z = clamp(want.z, D.z0 + 0.4, D.z1 + 1.4);
+      want.y = clamp(want.y, 0.7, D.h - 0.35);
+      this.camera.position.lerp(want, Math.min(1, dt * 9));
+      this.camera.lookAt(target);
+      return;
+    }
     const o = this.orbit;
     o.dist += (o.wantDist - o.dist) * Math.min(1, dt * 6);
     const p = this.player.pos;
@@ -1209,6 +1232,63 @@ class Game {
       }
     }
     this.ghost.visible = false;
+  }
+
+  updateDoorState() {
+    const p = this.player.pos;
+    const btn = this.enterBtn;
+    let action = null;
+    if (this.world.inHouse) {
+      const D = INTERIOR_DEF;
+      const near = Math.hypot(p.x - D.door.x, p.z - D.door.z) < 1.35;
+      action = near ? 'exit' : null;
+      btn.textContent = near ? 'EXIT' : 'EXIT 🔒';
+    } else {
+      let best = Infinity, hit = null;
+      for (const a of this.world.doorAnchors) {
+        const d = Math.hypot(p.x - a.world.x, p.z - a.world.z);
+        if (d < best) { best = d; hit = a; }
+      }
+      if (hit && best < 2.2) { action = 'enter'; this.nearDoor = hit; } else { action = null; this.nearDoor = null; }
+      btn.textContent = 'ENTER';
+    }
+    btn.classList.toggle('pulse', !!action);
+    btn.classList.toggle('hidden', !action);
+    this.doorAction = action;
+  }
+
+  toggleDoor() {
+    if (!this.started) return;
+    if (this.world.inHouse) {
+      const D = INTERIOR_DEF;
+      if (Math.hypot(this.player.pos.x - D.door.x, this.player.pos.z - D.door.z) >= 1.35) {
+        this.toast('Walk to the front door to leave', 'bad');
+        return;
+      }
+      const a = this.nearDoor;
+      this.world.exitHouse();
+      this.world.interior.group.visible = false;
+      this.scene.fog = new THREE.Fog(0xbfe4ff, 70, 170);
+      this.player.pos.set(a.world.x + Math.sin(a.yaw) * 1.0, 0.05, a.world.z + Math.cos(a.yaw) * 1.0);
+      this.player.vel.set(0, 0, 0);
+      this.orbit.wantDist = 11;
+      this.toast('Back outside', 'good');
+      return;
+    }
+    const a = this.nearDoor;
+    if (!a) { this.toast('Stand in front of a house door to enter', 'bad'); return; }
+    this.world.enterHouse();
+    const D = INTERIOR_DEF;
+    this.world.interior.group.visible = true;
+    this.scene.fog = null;
+    this.player.pos.set(D.spawn.x, D.spawn.y, D.spawn.z);
+    this.player.vel.set(0, 0, 0);
+    this.player.yaw = Math.PI;
+    this.orbit.yaw = 0;
+    this.orbit.pitch = 0.3;
+    this.orbit.wantDist = 6.5;
+    this.ghost.visible = false;
+    this.toast('Welcome inside! Tap the TV to change the channel. Green pad = exit.', 'good');
   }
 
   riverRescue(dt) {
@@ -1253,6 +1333,13 @@ class Game {
     const move = { x: fwd.x * -mz + right.x * mx, z: fwd.z * -mz + right.z * mx };
 
     this.player.update(dt, move, this.jumpQueued > 0);
+    this.updateDoorState();
+    if (this.world.inHouse) {
+      this.world.interior.tick(this.time, dt);
+      this.updateCamera(dt);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
     this.riverRescue(dt);
     this.collectCheck();
     this.updateGhost();
