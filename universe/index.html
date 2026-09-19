@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Voxel Cosmos — Hell · Earth · Heaven</title>
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <!-- ============ Top bar ============ -->
+  <header id="topbar">
+    <button id="btn-menu" class="icon-btn" title="Toggle side panel (P)" aria-label="Toggle panel">☰</button>
+    <div id="brand">
+      <span class="b-hell">HELL</span><span class="b-sep">·</span><span class="b-earth">EARTH</span><span class="b-sep">·</span><span class="b-heaven">HEAVEN</span>
+      <small>a voxel dante</small>
+    </div>
+    <div id="realm-pill" class="pill earth">EARTH</div>
+    <div class="spacer"></div>
+    <div id="fps" class="hud-chip hidden">60 FPS</div>
+    <button id="btn-help" class="icon-btn" title="Help (H)">?</button>
+    <button id="btn-about" class="icon-btn" title="About">i</button>
+    <button id="btn-fullscreen" class="icon-btn" title="Fullscreen (F)">⛶</button>
+  </header>
+
+  <!-- ============ Side panel ============ -->
+  <aside id="sidepanel">
+
+    <section class="panel-block">
+      <div class="realm-tabs">
+        <button data-realm="hell" class="realm-btn hell">🔥 Hell</button>
+        <button data-realm="earth" class="realm-btn earth active">🌍 Earth</button>
+        <button data-realm="heaven" class="realm-btn heaven">😇 Heaven</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Destinations</div>
+      <div id="poi-list"><!-- populated by ui.js --></div>
+      <div class="row">
+        <button id="btn-prev" class="ghost-btn" title="Previous destination ([)">◀ Prev</button>
+        <button id="btn-next" class="ghost-btn" title="Next destination (])">Next ▶</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Guided Tour</div>
+      <button id="btn-tour" class="big-btn tour">▶ Auto Tour</button>
+      <div id="tour-controls" class="row hidden">
+        <button id="btn-pause" class="ghost-btn">⏸ Pause</button>
+        <button id="btn-skip" class="ghost-btn">⏭ Skip</button>
+        <button id="btn-stop" class="ghost-btn danger">⏹ Stop</button>
+      </div>
+      <div id="tour-progress" class="progress hidden"><div id="tour-progress-fill"></div></div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Time of Day</div>
+      <div class="row time-row">
+        <button data-time="morning" class="time-btn">🌅 Morning</button>
+        <button data-time="noon" class="time-btn active">☀️ Noon</button>
+        <button data-time="dusk" class="time-btn">🌇 Dusk</button>
+        <button data-time="night" class="time-btn">🌙 Night</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Performance &amp; View</div>
+      <div class="row">
+        <button data-quality="low" class="q-btn">Low</button>
+        <button data-quality="medium" class="q-btn active">Medium</button>
+        <button data-quality="high" class="q-btn">High</button>
+      </div>
+      <div class="row toggles">
+        <button id="btn-labels" class="ghost-btn toggle active">🏷 Labels</button>
+        <button id="btn-motion" class="ghost-btn toggle">🐢 Reduced Motion</button>
+        <button id="btn-fps" class="ghost-btn toggle">📊 FPS</button>
+      </div>
+      <div class="row">
+        <button id="btn-reset" class="ghost-btn">🧭 Reset View</button>
+        <button id="btn-audio" class="ghost-btn toggle">🔊 Sound</button>
+        <button id="btn-mute" class="ghost-btn toggle">🔇 Mute</button>
+      </div>
+    </section>
+
+    <div class="panel-foot">1 / 2 / 3 realms · T Y U I time · [ ] destinations · Space pause tour</div>
+  </aside>
+
+  <!-- ============ Destination caption ============ -->
+  <div id="caption" class="hidden">
+    <div id="caption-title"></div>
+    <div id="caption-desc"></div>
+  </div>
+
+  <!-- ============ Transient message (greetings, roars) ============ -->
+  <div id="toast"></div>
+
+  <!-- ============ Mouse instructions ============ -->
+  <div id="instructions">
+    Drag to orbit · Right-drag or two fingers to pan · Scroll / pinch to zoom<br>
+    Press <b>H</b> for help · Pick a destination from the panel
+  </div>
+
+  <!-- ============ Help panel ============ -->
+  <div id="help-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><span>Controls &amp; Shortcuts</span><button class="modal-close" data-close="help-modal">✕</button></div>
+      <div class="modal-body">
+        <h4>Camera</h4>
+        <ul>
+          <li><b>Left-drag</b> — orbit · <b>Right-drag</b> — pan · <b>Scroll / pinch</b> — zoom</li>
+          <li><b>Touch</b> — one finger orbit, two fingers pan / pinch-zoom</li>
+          <li><b>Reset View</b> returns to the current destination</li>
+        </ul>
+        <h4>Keyboard</h4>
+        <ul>
+          <li><b>1 / 2 / 3</b> — jump to Hell / Earth / Heaven overview</li>
+          <li><b>[ / ]</b> — previous / next destination</li>
+          <li><b>G</b> — start/stop auto tour · <b>Space</b> — pause/resume tour · <b>N</b> — skip stop</li>
+          <li><b>T / Y / U / I</b> — Morning / Noon / Dusk / Night</li>
+          <li><b>L</b> labels · <b>R</b> reduced motion · <b>F</b> fullscreen · <b>M</b> mute · <b>P</b> panel · <b>H</b> help</li>
+        </ul>
+        <h4>Special</h4>
+        <ul>
+          <li>Selecting <b>Cerberus and the Gates of Hell</b> triggers the guardian's roar and the gate opens.</li>
+          <li>Selecting <b>Saint Peter and the Pearly Gates</b> earns his greeting and the gates swing wide.</li>
+          <li>Cerberus heads track your camera as you approach. Beware.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ About panel ============ -->
+  <div id="about-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><span>About this world</span><button class="modal-close" data-close="about-modal">✕</button></div>
+      <div class="modal-body">
+        <p><b>Voxel Cosmos</b> is a single continuous vertical universe — the nine circles of Dante's Inferno
+        beneath a living human world, and the Kingdom of Heaven above it — built entirely from procedural
+        voxel geometry with Three.js. No textures, no models, no network: every stone, soul, demon, animal,
+        vehicle, angel and flame is generated from a deterministic seed when the page loads.</p>
+        <p>Descend through the gates Cerberus guards, ride the tour past Charon's ferry and the burning city
+        of Dis, cross the Styx, meet the Dragon at the bottom of the pit — then climb the Stairway, where
+        Saint Peter keeps the Pearly Gates and harps echo between the cloud islands.</p>
+        <p class="dim">Audio is synthesised live with the Web Audio API; it stays off until you ask for it.
+        Tip: lower the quality preset on smaller machines.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Loading overlay ============ -->
+  <div id="loading">
+    <div id="loading-inner">
+      <div id="loading-title">VOXEL&nbsp;COSMOS</div>
+      <div id="loading-sub">Hell · Earth · Heaven</div>
+      <div id="loading-bar"><div id="loading-fill"></div></div>
+      <div id="loading-msg">Waking the sleeping geometry…</div>
+      <div id="loading-err" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Classic (non-module) Three.js build, bundled locally — works under file:// -->
+<script src="vendor/three.min.js"></script>
+
+<!-- Application: plain classic scripts, loaded in dependency order -->
+<script src="js/core.js"></script>
+<script src="js/shaders.js"></script>
+<script src="js/timeofday.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/builders.js"></script>
+<script src="js/merge.js"></script>
+<script src="js/actors.js"></script>
+<script src="js/hell.js"></script>
+<script src="js/earth.js"></script>
+<script src="js/stairway.js"></script>
+<script src="js/heaven.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/tour.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
