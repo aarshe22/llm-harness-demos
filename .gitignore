@@ -10,3 +10,11 @@ $RECYCLE.BIN/
 node_modules/
 npm-debug.log*
 yarn-error.log*
+
+# Passenger / runtime
+/tmp/
+*.bak-*
+
+# vendored three runtime for the game demo (served as-is, no install step)
+!game/node_modules/
+!game/node_modules/**

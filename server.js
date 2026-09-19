@@ -240,6 +240,12 @@ const server = http.createServer(async (req, res) => {
   fs.stat(abs, (err, stat) => {
     if (err) return send(res, 404, 'Not Found');
     if (stat.isDirectory()) {
+      // Canonicalize directories to a trailing slash so relative URLs
+      // (./src/main.js, ./node_modules/…) resolve against the folder.
+      if (!pathname.endsWith('/')) {
+        const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        return send(res, 301, '', { Location: encodeURI(pathname) + '/' + qs });
+      }
       const entry = findEntrySync(abs);
       if (!entry) return send(res, 404, 'Not Found');
       return serveFile(res, path.join(abs, entry));
