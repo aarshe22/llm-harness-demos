@@ -1,116 +1,60 @@
-# Voxel Universe: Hell, Earth, Heaven
+# Voxel Cosmos — Hell · Earth · Heaven
 
-An interactive Three.js voxel universe featuring three vertically connected realms: Hell, Earth, and Heaven.
+A self-contained, fully procedural Three.js voxel universe: Dante's nine circles of
+Hell, a living Earth, the Stairway to Heaven, and the Kingdom of Heaven — one
+continuous vertical world you can explore, navigate, and ride through on an
+automatic cinematic tour.
 
-## Features
+## Launch
 
-- **Three interconnected realms**: Hell (Dante's Inferno), Earth (detailed landscape), and Heaven (celestial kingdom)
-- **Procedural voxel generation**: All geometry generated procedurally without external assets
-- **Animated characters**: 
-  - Cerberus with three independently animated heads guarding the Gates of Hell
-  - Saint Peter at the Pearly Gates with animations
-  - Satan enthroned in the deepest circle of Hell
-  - Animated angels, demons, animals, and vehicles
-- **Environmental storytelling**:
-  - Nine circles of Hell with distinct themes and landmarks
-  - Detailed Earth with cities, farms, volcanoes, airports, and transportation
-  - Heavenly realms with clouds, castles, and celestial gardens
-- **Cinematic experience**:
-  - Smooth camera transitions between destinations
-  - Automatic guided tour covering all major landmarks
-  - Time of day system (Morning, Noon, Dusk, Night) with dynamic lighting
-  - Responsive UI with navigation controls, performance settings, and accessibility options
-- **Technical excellence**:
-  - Works offline - no server or build tools required
-  - Compatible with file:// protocol in modern browsers
-  - Optimized performance with instancing and LOD techniques
-  - Optional procedural audio via Web Audio API
+**Double-click `index.html`.** That is all.
 
-## How to Run
+- Works directly from `file://` in current Chrome, Edge, and Firefox.
+- No web server, no npm/Vite/Webpack, no build step, no internet connection.
+- Three.js is vendored locally in `vendor/three.min.js` (classic non-module build);
+  everything else — geometry, terrain, materials, shaders, sounds — is generated
+  procedurally at load time with a fixed seed, so the same universe is built on
+  every visit.
 
-1. Download or clone this repository
-2. Open `index.html` directly in your web browser (double-click the file)
-3. The application will load and you can begin exploring immediately
+## What's inside
 
-No web server, npm, or build tools are required. The application works completely offline.
+| Path | Contents |
+| --- | --- |
+| `index.html` | Launch page, UI overlay markup, classic `<script>` tags |
+| `css/main.css` | Responsive UI (desktop / tablet / mobile) |
+| `js/core.js` | Seeded RNG, easings, material registry, quality presets, boot sequencer |
+| `js/shaders.js` | Procedural shaders: sky, water, lava, clouds, stars, energy |
+| `js/timeofday.js` | Morning / Noon / Dusk / Night system with smooth transitions |
+| `js/controls.js` | Orbit / zoom / pan + touch (no external OrbitControls needed) |
+| `js/nav.js` | 42 destinations, collision-safe corridor camera flights |
+| `js/builders.js` | Shared voxel builders (angels, souls, heads, buildings, props) |
+| `js/merge.js` | Static-geometry merging for draw-call reduction |
+| `js/actors.js` | Cerberus, Satan, dragons, animals, vehicles — hierarchical animated rigs |
+| `js/hell.js` | Nine circles, Gates of Hell, Acheron/Charon, Minos, Dis, Cocytus… |
+| `js/earth.js` | Terrain, rivers, waterfall, volcano, city, old town, farm, airport… |
+| `js/stairway.js` | Luminous staircase, angels, ascending souls |
+| `js/heaven.js` | Pearly Gates, Saint Peter, clouds, gardens, fountains, castle |
+| `js/audio.js` | Web Audio ambience (realm crossfade, roars, bells) — opt-in |
+| `js/tour.js` | Auto tour, Cerberus and Saint Peter gate rites |
+| `js/ui.js` | Panels, POI navigator, captions, toggles, keyboard shortcuts |
+| `vendor/three.min.js` | Vendored Three.js (classic script build) |
+| `tools/` | Headless verification scripts (development only — not needed to run) |
 
-## Controls
+## Keyboard shortcuts
 
-### Mouse
-- Left Click + Drag: Orbit camera
-- Right Click + Drag: Pan camera
-- Scroll: Zoom camera
+| Key | Action | | Key | Action |
+| --- | --- | --- | --- | --- |
+| `1` `2` `3` | Jump to Hell / Earth / Heaven | | `G` | Start/stop auto tour |
+| `[` `]` | Previous / next destination | | `N` | Skip tour stop |
+| `Space` | Pause tour | | `T` `Y` `U` `I` | Morning / Noon / Dusk / Night |
+| `L` | Toggle labels | | `R` | Reduced motion |
+| `M` | Mute | | `F` | Fullscreen |
+| `P` | Toggle side panel | | `H` / `?` | Help |
 
-### Keyboard
-- WASD/QE: Move camera position
-- 1-3: Switch realms (Hell/Earth/Heaven)
-- T: Start/stop auto tour
-- P: Pause/resume tour
-- M: Toggle sound
-- F: Toggle fullscreen
-- H: Show/hide help
-- L: Toggle labels
-- R: Reset view
-- , / .: Previous/next destination
+## Notes
 
-### Touch (mobile/tablet)
-- Drag with one finger: Orbit
-- Pinch: Zoom
-- Drag with two fingers: Pan
-
-## Features by Realm
-
-### Hell
-- Gates of Hell guarded by animated Cerberus (three heads)
-- All nine circles of Dante's Inferno: Limbo, Lust, Gluttony, Greed, Wrath, Heresy, Violence, Fraud, Treachery
-- River Acheron with Charon's ferry
-- Satan's throne at the deepest point
-- Flying fire-dragons and lavafalls
-- Animated damned souls and demons
-
-### Earth
-- Varied terrain: mountains, volcanoes, rivers, forests
-- Detailed city with buildings, streets, and vehicles
-- Working windmill with rotating blades
-- Airport with taxiing and flying airplanes
-- Farms with crops, barns, and animals
-- Moving cars, trains, and boats
-- Day/night cycle with illuminated windows and streetlights
-
-### Heaven
-- Pearly Gates guarded by Saint Peter
-- Stairway to Heaven connecting Earth and Heaven
-- Kingdom of Heaven castle with courtyards and halls
-- Angel orchestras and harp players
-- Floating souls and peaceful gardens
-- Fountain of light and celestial overlook
-
-## Technical Implementation
-
-- **Rendering**: Three.js r152
-- **Procedural Geometry**: Voxel-style primitives (boxes, spheres, cylinders) combined to create complex structures
-- **Animation**: Custom animation loops for characters and environmental effects
-- **Instancing**: Efficient rendering of repeated objects (trees, buildings, voxels)
-- **Lighting**: Dynamic time-of-day system affecting all realms
-- **UI**: HTML/CSS overlay with responsive design
-- **Audio**: Optional Web Audio API procedural soundscape
-
-## Browser Compatibility
-
-Tested and working in:
-- Google Chrome (latest)
-- Microsoft Edge (latest)
-- Mozilla Firefox (latest)
-
-## Performance Settings
-
-Adjust quality in the UI:
-- Low: Reduced draw distances, simpler effects
-- Medium: Balanced quality and performance (default)
-- High: Maximum detail and effects
-
-## Credits
-
-Created as a complete interactive experience demonstrating procedural generation, animation, and world-building with Three.js.
-
-Enjoy your journey through Hell, Earth, and Heaven!
+- Sound starts only after you press **Sound** (browser autoplay policy).
+- Quality selector (Low/Medium/High) adapts DPR, shadows, particle counts and
+  populations; weak devices are auto-detected at boot.
+- `tools/` and `package.json` exist only for the headless test harness
+  (Playwright + SwiftShader) and are not required for the experience.

@@ -1,7 +1,0 @@
-{
-  "schema": 1,
-  "modelName": "Qwen 3.8 Flash Next",
-  "harness": "opencode",
-  "maxContextWindow": 1000000,
-  "updated": "2026-09-16"
-}

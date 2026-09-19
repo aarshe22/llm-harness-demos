@@ -1,320 +1,187 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voxel Universe: Hell, Earth, Heaven</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden; 
-            background: #000;
-            color: #fff;
-        }
-        #container { 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-        }
-        #ui-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            padding: 20px;
-        }
-        .ui-panel {
-            background: rgba(0, 0, 0, 0.7);
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            max-width: 300px;
-            pointer-events: all;
-        }
-        .ui-panel h3 {
-            margin-top: 0;
-            color: #ffd700;
-            border-bottom: 1px solid #555;
-            padding-bottom: 5px;
-        }
-        .ui-button {
-            background: #4a4a4a;
-            border: none;
-            color: #fff;
-            padding: 8px 12px;
-            margin: 5px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.2s;
-        }
-        .ui-button:hover {
-            background: #5a5a5a;
-        }
-        .ui-button.active {
-            background: #ffd700;
-            color: #000;
-        }
-        .ui-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .realm-btn {
-            width: 100%;
-            margin: 5px 0;
-            padding: 12px;
-            font-size: 16px;
-            background: #8b0000;
-        }
-        .realm-btn.earth { background: #228b22; }
-        .realm-btn.heaven { background: #fffff0; color: #000; }
-        .nav-list {
-            max-height: 200px;
-            overflow-y: auto;
-            margin: 10px 0;
-        }
-        .nav-item {
-            padding: 8px;
-            margin: 5px 0;
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .nav-item:hover {
-            background: rgba(255,255,255,0.2);
-        }
-        .destination-info {
-            background: rgba(0,0,0,0.8);
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        .controls-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin: 10px 0;
-        }
-        .quality-selector, .time-mode {
-            flex: 1;
-            min-width: 120px;
-        }
-        #fps-counter {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            pointer-events: none;
-            z-index: 11;
-        }
-        #loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            color: #fff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 12;
-            font-size: 24px;
-        }
-        #loading-overlay.hidden {
-            display: none;
-        }
-        .help-panel, .about-panel {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
-            color: #fff;
-            padding: 30px;
-            border-radius: 12px;
-            max-width: 500px;
-            line-height: 1.6;
-            display: none;
-            z-index: 13;
-        }
-        .help-panel.active, .about-panel.active {
-            display: block;
-        }
-        .close-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #8b0000;
-            border: none;
-            color: #fff;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .fullscreen-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            border: none;
-            color: #fff;
-            padding: 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            z-index: 11;
-        }
-        .sound-btn {
-            position: absolute;
-            top: 10px;
-            right: 60px;
-            background: rgba(0,0,0,0.7);
-            border: none;
-            color: #fff;
-            padding: 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            z-index: 11;
-        }
-        .mute {
-            opacity: 0.5;
-        }
-        @media (max-width: 768px) {
-            #ui-overlay {
-                align-items: center;
-            }
-            .ui-panel {
-                max-width: 90%;
-            }
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Voxel Cosmos — Hell · Earth · Heaven</title>
+<link rel="stylesheet" href="css/main.css">
 </head>
 <body>
-    <div id="container"></div>
-    <div id="loading-overlay">
-        <div>Loading Voxel Universe...</div>
-        <div id="loading-progress">0%</div>
+
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <!-- ============ Top bar ============ -->
+  <header id="topbar">
+    <button id="btn-menu" class="icon-btn" title="Toggle side panel (P)" aria-label="Toggle panel">☰</button>
+    <div id="brand">
+      <span class="b-hell">HELL</span><span class="b-sep">·</span><span class="b-earth">EARTH</span><span class="b-sep">·</span><span class="b-heaven">HEAVEN</span>
+      <small>a voxel dante</small>
     </div>
-    <div id="ui-overlay">
-        <div class="ui-panel">
-            <h3>Realms</h3>
-            <button class="ui-button realm-btn hell" data-realm="hell">Hell</button>
-            <button class="ui-button realm-btn earth" data-realm="earth">Earth</button>
-            <button class="ui-button realm-btn heaven" data-realm="heaven">Heaven</button>
-        </div>
-        
-        <div class="ui-panel">
-            <h3>Navigation</h3>
-            <div class="controls-row">
-                <button class="ui-button" id="prev-btn">Previous</button>
-                <button class="ui-button" id="next-btn">Next</button>
-            </div>
-            <div class="nav-list" id="nav-list"></div>
-            <div class="controls-row">
-                <button class="ui-button" id="auto-tour-btn">Auto Tour</button>
-                <button class="ui-button" id="stop-tour-btn">Stop Tour</button>
-            </div>
-        </div>
-        
-        <div class="ui-panel">
-            <h3>Time of Day</h3>
-            <div class="controls-row">
-                <button class="ui-button time-mode" data-time="morning">Morning</button>
-                <button class="ui-button time-mode" data-time="noon">Noon</button>
-                <button class="ui-button time-mode" data-time="dusk">Dusk</button>
-                <button class="ui-button time-mode" data-time="night">Night</button>
-            </div>
-        </div>
-        
-        <div class="ui-panel">
-            <h3>Controls</h3>
-            <div class="controls-row">
-                <button class="ui-button" id="reset-view-btn">Reset View</button>
-                <button class="ui-button" id="toggle-labels-btn">Toggle Labels</button>
-                <button class="ui-button" id="toggle-reduced-motion-btn">Reduced Motion</button>
-                <button class="ui-button" id="fullscreen-btn">Fullscreen</button>
-            </div>
-            <div class="controls-row">
-                <button class="ui-button" id="sound-btn">Sound</button>
-                <button class="ui-button" id="help-btn">Help</button>
-                <button class="ui-button" id="about-btn">About</button>
-                <select class="ui-button quality-selector" id="quality-selector">
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                </select>
-            </div>
-        </div>
-        
-        <div class="ui-panel">
-            <h3>Destination Info</h3>
-            <div class="destination-info" id="destination-info">
-                Select a destination to view information.
-            </div>
-        </div>
-        
-        <div class="ui-panel" id="performance-panel">
-            <h3>Performance</h3>
-            <div id="fps-counter">FPS: --</div>
-        </div>
-    </div>
-    
-    <div class="help-panel" id="help-panel">
-        <h3>Controls</h3>
-        <p><strong>Mouse:</strong> Left click and drag to orbit, scroll to zoom, right click to pan</p>
-        <p><strong>Keyboard:</strong></p>
+    <div id="realm-pill" class="pill earth">EARTH</div>
+    <div class="spacer"></div>
+    <div id="fps" class="hud-chip hidden">60 FPS</div>
+    <button id="btn-help" class="icon-btn" title="Help (H)">?</button>
+    <button id="btn-about" class="icon-btn" title="About">i</button>
+    <button id="btn-fullscreen" class="icon-btn" title="Fullscreen (F)">⛶</button>
+  </header>
+
+  <!-- ============ Side panel ============ -->
+  <aside id="sidepanel">
+
+    <section class="panel-block">
+      <div class="realm-tabs">
+        <button data-realm="hell" class="realm-btn hell">🔥 Hell</button>
+        <button data-realm="earth" class="realm-btn earth active">🌍 Earth</button>
+        <button data-realm="heaven" class="realm-btn heaven">😇 Heaven</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Destinations</div>
+      <div id="poi-list"><!-- populated by ui.js --></div>
+      <div class="row">
+        <button id="btn-prev" class="ghost-btn" title="Previous destination ([)">◀ Prev</button>
+        <button id="btn-next" class="ghost-btn" title="Next destination (])">Next ▶</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Guided Tour</div>
+      <button id="btn-tour" class="big-btn tour">▶ Auto Tour</button>
+      <div id="tour-controls" class="row hidden">
+        <button id="btn-pause" class="ghost-btn">⏸ Pause</button>
+        <button id="btn-skip" class="ghost-btn">⏭ Skip</button>
+        <button id="btn-stop" class="ghost-btn danger">⏹ Stop</button>
+      </div>
+      <div id="tour-progress" class="progress hidden"><div id="tour-progress-fill"></div></div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Time of Day</div>
+      <div class="row time-row">
+        <button data-time="morning" class="time-btn">🌅 Morning</button>
+        <button data-time="noon" class="time-btn active">☀️ Noon</button>
+        <button data-time="dusk" class="time-btn">🌇 Dusk</button>
+        <button data-time="night" class="time-btn">🌙 Night</button>
+      </div>
+    </section>
+
+    <section class="panel-block">
+      <div class="block-title">Performance &amp; View</div>
+      <div class="row">
+        <button data-quality="low" class="q-btn">Low</button>
+        <button data-quality="medium" class="q-btn active">Medium</button>
+        <button data-quality="high" class="q-btn">High</button>
+      </div>
+      <div class="row toggles">
+        <button id="btn-labels" class="ghost-btn toggle active">🏷 Labels</button>
+        <button id="btn-motion" class="ghost-btn toggle">🐢 Reduced Motion</button>
+        <button id="btn-fps" class="ghost-btn toggle">📊 FPS</button>
+      </div>
+      <div class="row">
+        <button id="btn-reset" class="ghost-btn">🧭 Reset View</button>
+        <button id="btn-audio" class="ghost-btn toggle">🔊 Sound</button>
+        <button id="btn-mute" class="ghost-btn toggle">🔇 Mute</button>
+      </div>
+    </section>
+
+    <div class="panel-foot">1 / 2 / 3 realms · T Y U I time · [ ] destinations · Space pause tour</div>
+  </aside>
+
+  <!-- ============ Destination caption ============ -->
+  <div id="caption" class="hidden">
+    <div id="caption-title"></div>
+    <div id="caption-desc"></div>
+  </div>
+
+  <!-- ============ Transient message (greetings, roars) ============ -->
+  <div id="toast"></div>
+
+  <!-- ============ Mouse instructions ============ -->
+  <div id="instructions">
+    Drag to orbit · Right-drag or two fingers to pan · Scroll / pinch to zoom<br>
+    Press <b>H</b> for help · Pick a destination from the panel
+  </div>
+
+  <!-- ============ Help panel ============ -->
+  <div id="help-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><span>Controls &amp; Shortcuts</span><button class="modal-close" data-close="help-modal">✕</button></div>
+      <div class="modal-body">
+        <h4>Camera</h4>
         <ul>
-            <li>WASD/QE: Move camera</li>
-            <li>1-3: Switch realms (Hell/Earth/Heaven)</li>
-            <li>T: Start/stop auto tour</li>
-            <li>P: Pause/resume tour</li>
-            <li>M: Toggle sound</li>
-            <li>F: Toggle fullscreen</li>
-            <li>H: Show/hide help</li>
-            <li>L: Toggle labels</li>
-            <li>R: Reset view</li>
-            <li>, / .: Previous/next destination</li>
+          <li><b>Left-drag</b> — orbit · <b>Right-drag</b> — pan · <b>Scroll / pinch</b> — zoom</li>
+          <li><b>Touch</b> — one finger orbit, two fingers pan / pinch-zoom</li>
+          <li><b>Reset View</b> returns to the current destination</li>
         </ul>
-        <button class="close-btn" id="close-help">Close</button>
-    </div>
-    
-    <div class="about-panel" id="about-panel">
-        <h3>About Voxel Universe</h3>
-        <p>An interactive Three.js voxel universe featuring three vertically connected realms: Hell, Earth, and Heaven.</p>
-        <p>Features:</p>
+        <h4>Keyboard</h4>
         <ul>
-            <li>Procedurally generated voxel worlds</li>
-            <li>Animated Cerberus guarding the Gates of Hell</li>
-            <li>Stairway to Heaven connecting Earth and Heaven</li>
-            <li>Saint Peter at the Pearly Gates</li>
-            <li>All nine circles of Dante's Inferno</li>
-            <li>Dynamic time of day system</li>
-            <li>Cinematic auto tour</li>
-            <li>Responsive UI with navigation controls</li>
-            <li>Optional procedural audio</li>
+          <li><b>1 / 2 / 3</b> — jump to Hell / Earth / Heaven overview</li>
+          <li><b>[ / ]</b> — previous / next destination</li>
+          <li><b>G</b> — start/stop auto tour · <b>Space</b> — pause/resume tour · <b>N</b> — skip stop</li>
+          <li><b>T / Y / U / I</b> — Morning / Noon / Dusk / Night</li>
+          <li><b>L</b> labels · <b>R</b> reduced motion · <b>F</b> fullscreen · <b>M</b> mute · <b>P</b> panel · <b>H</b> help</li>
         </ul>
-        <p>Created with Three.js r152</p>
-        <button class="close-btn" id="close-about">Close</button>
+        <h4>Special</h4>
+        <ul>
+          <li>Selecting <b>Cerberus and the Gates of Hell</b> triggers the guardian's roar and the gate opens.</li>
+          <li>Selecting <b>Saint Peter and the Pearly Gates</b> earns his greeting and the gates swing wide.</li>
+          <li>Cerberus heads track your camera as you approach. Beware.</li>
+        </ul>
+      </div>
     </div>
-    
-    <script src="three.min.js"></script>
-    <script src="OrbitControls.js"></script>
-    <script src="main.js"></script>
+  </div>
+
+  <!-- ============ About panel ============ -->
+  <div id="about-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><span>About this world</span><button class="modal-close" data-close="about-modal">✕</button></div>
+      <div class="modal-body">
+        <p><b>Voxel Cosmos</b> is a single continuous vertical universe — the nine circles of Dante's Inferno
+        beneath a living human world, and the Kingdom of Heaven above it — built entirely from procedural
+        voxel geometry with Three.js. No textures, no models, no network: every stone, soul, demon, animal,
+        vehicle, angel and flame is generated from a deterministic seed when the page loads.</p>
+        <p>Descend through the gates Cerberus guards, ride the tour past Charon's ferry and the burning city
+        of Dis, cross the Styx, meet the Dragon at the bottom of the pit — then climb the Stairway, where
+        Saint Peter keeps the Pearly Gates and harps echo between the cloud islands.</p>
+        <p class="dim">Audio is synthesised live with the Web Audio API; it stays off until you ask for it.
+        Tip: lower the quality preset on smaller machines.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Loading overlay ============ -->
+  <div id="loading">
+    <div id="loading-inner">
+      <div id="loading-title">VOXEL&nbsp;COSMOS</div>
+      <div id="loading-sub">Hell · Earth · Heaven</div>
+      <div id="loading-bar"><div id="loading-fill"></div></div>
+      <div id="loading-msg">Waking the sleeping geometry…</div>
+      <div id="loading-err" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Classic (non-module) Three.js build, bundled locally — works under file:// -->
+<script src="vendor/three.min.js"></script>
+
+<!-- Application: plain classic scripts, loaded in dependency order -->
+<script src="js/core.js"></script>
+<script src="js/shaders.js"></script>
+<script src="js/timeofday.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/builders.js"></script>
+<script src="js/merge.js"></script>
+<script src="js/actors.js"></script>
+<script src="js/hell.js"></script>
+<script src="js/earth.js"></script>
+<script src="js/stairway.js"></script>
+<script src="js/heaven.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/tour.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>
