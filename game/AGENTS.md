@@ -20,6 +20,8 @@ Brick-toy inspired Three.js sandbox game. No build step: static files + one npm 
 - Plesk + Passenger run a Node gallery app (`server.js`). It scans top-level folders in
   `httpdocs/` and only serves folders with an `index.html` **directly inside** them.
   Deploy flat into `httpdocs/game/` (never `game/game/`), owned `demo1:psacln`, dirs 755 / files 644.
+- TRAP: `httpdocs` itself must stay `demo1:psaserv` 750 (nginx runs as the psaserv group). A blanket
+  `chown -R demo1:psacln httpdocs` returns 403 on every demo — re-chown just the dir and reload nginx.
 - Vendored runtime deps (no install step on the server): `index.html`, `src/`, and
   `node_modules/three/{package.json, build/three.module.js, build/three.core.js, examples/jsm/utils/BufferGeometryUtils.js}`.
   r186's `three.module.js` starts with `export * from './three.core.js'` — omitting it 404s at runtime.
