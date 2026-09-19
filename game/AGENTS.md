@@ -11,6 +11,9 @@ Brick-toy inspired Three.js sandbox game. No build step: static files + one npm 
 - Bricks snap to a 1-unit XZ grid. `World.solids` is the single AABB collider list; `World.surfaceTop()` backs both player gravity and build snapping.
 
 ## Deployment (demo.badlandscloud.com/game/)
+- SSH as root uses key-based auth (ed25519 deploy key installed in root's `authorized_keys`);
+  connect with the local ssh config / paramiko key-first helper — no password auth needed.
+  Never commit private keys or credential paths to this public repo.
 - Canonical git repo: GitHub `aarshe22/llm-harness-demos` (gallery root repo; this game lives in
   `game/`). Server-side bare clone at `~demo1/git/llm-harness-demos.git` with work-tree = httpdocs.
   Commit against that, push to GitHub. Do not re-add a nested .git inside game/.
