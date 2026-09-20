@@ -3,7 +3,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
 import { INTERIOR_DEF, buildInterior } from './interior.js';
 import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
-import { mosaicCells, instancedMosaicMesh, bannerTexture } from './mosaic.js';
+import { faceMosaic, instancedMosaicMesh, bannerTexture } from './mosaic.js';
+import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
+import { sfx } from './sfx.js';
+import { WEATHERS, SKY, ParticleField, StarField, Funnel, WaveFront } from './weather.js';
+import { sigOf, getState, setState, clearState } from './persist.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -20,6 +24,22 @@ const BED_TOP = -2.2;
 function hash(x, z) {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
   return s - Math.floor(s);
+}
+
+function hash32(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
+function rndFrom(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 class World {
@@ -40,8 +60,15 @@ class World {
     this.spots = [];
     this.zones = [];
     this.respawnAnchors = [];
+    this.props = [];
+    this._propId = 0;
+    this.rand = rndFrom(1);
     this.opts = loadOptions();
     this.applyOptions();
+    this.sig = sigOf(this.opts);
+    const st = getState(this.opts.size, this.sig);
+    this.genSalt = st ? st.salt : (Math.floor(Math.random() * 0x7fffffff) >>> 0);
+    this._pending = st && Array.isArray(st.entries) ? st.entries : [];
     this.over = this.makeBucket('_over');
     this.inHouse = false;
     this.interior = buildInterior(this.scene);
@@ -54,9 +81,10 @@ class World {
     const p = sizePreset(this.opts.size);
     this.preset = p;
     this.half = p.half;
-    // k is the classic "small" scaling reference; size beyond it adds real
-    // extent + generation capacity instead of just stretching props.
-    this.k = this.half / 28;
+    // k is the classic "small" scaling reference. Clamped to >= 1 so smaller
+    // maps never shrink props: map size buys extent + generation capacity
+    // (towns/rural/farms/zones/trees), not object scale.
+    this.k = clamp(this.half / 28, 1, 1.3);
     this.waterTop = 0.4 * this.k;
     const rz = 1; // river keeps its classic spot; size buys far-bank space, not a wider river
     this.river = { x0: -7 * this.k, x1: 7 * this.k, z0: 9 * rz, z1: 19 * rz };
@@ -143,14 +171,83 @@ class World {
   }
 
   addSolid(box, mesh, noRay, noSupport) {
-    this._b.solids.push({ box, brick: null, noSupport: !!noSupport });
+    const rec = { box, brick: null, noSupport: !!noSupport };
+    this._b.solids.push(rec);
     if (mesh) {
       this.addObj(mesh);
       if (!noRay) this._b.staticMeshes.push(mesh);
     }
+    return rec;
+  }
+
+  /* ---- destructible props: registry + damage ---- */
+  registerProp(kind, cx, cz, max, parts, scale = 1) {
+    const p = { id: ++this._propId, key: kind + '#' + this._propId, kind, cx, cz, max, dmg: 0, gone: false, parts, scale, extra: [] };
+    for (const pt of parts) {
+      pt.base = pt.mesh.position.clone();
+      pt.baseQ = pt.mesh.quaternion.clone();
+      pt.hidden = false;
+      if (pt.solid) pt.baseBox = pt.solid.box.clone();
+    }
+    this.props.push(p);
+    return p;
+  }
+
+  hidePart(pt) {
+    if (pt.hidden) return;
+    pt.hidden = true;
+    pt.mesh.visible = false;
+    if (pt.solid) pt.solid.disabled = true;
+  }
+
+  applyHit(p, amount, pt) {
+    if (p.gone) return;
+    p.dmg += amount;
+    if (p.dmg >= p.max) {
+      p.gone = true;
+      for (const q of p.parts) this.hidePart(q);
+      if (p.kind === 'tree') {
+        const stump = merged([addCyl([], 0.3, 0.4, p.cx, 0.2, p.cz)], this.mat(0x8b5a2b));
+        this.addObj(stump);
+        p.extra.push(stump);
+      }
+    } else {
+      const hide = Math.floor((p.dmg / p.max) * p.parts.length);
+      for (let j = 0; j < hide; j++) this.hidePart(p.parts[p.parts.length - 1 - j]);
+    }
+    if (this.onDamage) this.onDamage(p, amount, pt);
+  }
+
+  /* Replay persisted damage without hooks/FX/sound. One-shot queue. */
+  applyPending() {
+    const q = this._pending || [];
+    this._pending = [];
+    for (const [i, d] of q) {
+      const p = this.props[i];
+      if (!p || p.gone) continue;
+      const save = this.onDamage;
+      this.onDamage = null;
+      this.applyHit(p, d, null);
+      this.onDamage = save;
+    }
+  }
+
+  propAt(x, z, r) {
+    let best = null, bd = r;
+    for (const p of this.props) {
+      if (p.gone) continue;
+      const d = Math.hypot(p.cx - x, p.cz - z);
+      if (d < bd) { bd = d; best = p; }
+    }
+    return best;
   }
 
   build() {
+    // Deterministic generation: seeded from preset + salt, so the damage log
+    // (indexed by prop id) replays onto the exact same world after reload.
+    this.rand = rndFrom(hash32(this.opts.size + ':' + this.genSalt));
+    this.props = [];
+    this._propId = 0;
     this.obstacles = [];
     this.zones = [];
     this.respawnAnchors = [];
@@ -189,6 +286,7 @@ class World {
     for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
     this.pickSpots();
+    this.applyPending();
   }
 
   enterHouse() {
@@ -482,16 +580,19 @@ class World {
     const bx = s.x + (s.ry === 0 ? 6 : -6), bz = s.z + 1;
     if (Math.abs(bx) > this.half - 4) return;
     // barn
-    grp.add(merged([addBox([], 4, 2.6, 3, bx, 1.3, bz)], this.mat(0xc0392b)));
+    const barnMesh = merged([addBox([], 4, 2.6, 3, bx, 1.3, bz)], this.mat(0xc0392b));
+    grp.add(barnMesh);
     const rf = [];
     for (const s2 of [-1, 1]) {
       const m = addBox(rf, 3.2, 0.3, 3.6, bx + s2 * 1.0, 3.05, bz);
       m.rotation.z = -s2 * 0.5;
     }
-    grp.add(merged(rf, this.mat(0xf1f3f5)));
-    this.addSolid(new THREE.Box3(
+    const barnRoof = merged(rf, this.mat(0xf1f3f5));
+    grp.add(barnRoof);
+    const barnSolid = this.addSolid(new THREE.Box3(
       new THREE.Vector3(bx - 2, 0, bz - 1.5), new THREE.Vector3(bx + 2, 2.6, bz + 1.5)
     ), null, true);
+    this.registerProp('barn', bx, bz, 220, [{ mesh: barnMesh, solid: barnSolid }, { mesh: barnRoof }]);
     this.obstacles.push({ x: bx, z: bz, w: 2.4, d: 2 });
 
     // crop field: raised walkable soil beds with furrows
@@ -626,13 +727,15 @@ class World {
       new THREE.Vector3(cx + pedW / 2, pedTop, wallZ + pedD / 2)
     ), null, true);
 
-    grp.add(merged([addBox([], wallW, wallH, wallD, cx, pedTop + wallH / 2, wallZ)], this.mat(0x3b3b40)));
+    const wallMesh = merged([addBox([], wallW, wallH, wallD, cx, pedTop + wallH / 2, wallZ)], this.mat(0x3b3b40));
+    grp.add(wallMesh);
     // collider spans wall + projected mosaic depth (symmetric: side-agnostic)
-    const zd = wallD / 2 + 1.8;
-    this.addSolid(new THREE.Box3(
+    const zd = wallD / 2 + 3.0; // covers protruding relief blocks
+    const wallSolid = this.addSolid(new THREE.Box3(
       new THREE.Vector3(cx - wallW / 2 - 0.6, pedTop, wallZ - zd),
       new THREE.Vector3(cx + wallW / 2 + 0.6, pedTop + wallH, wallZ + zd)
     ), null, true);
+    this.registerProp('monument', cx, wallZ, 900, [{ mesh: wallMesh, solid: wallSolid }]);
 
     for (const s2 of [-1, 1]) {
       // buttress fully outside the wall footprint so the mosaic stays visible
@@ -647,13 +750,15 @@ class World {
       grp.add(light);
     }
 
-    // plaque on the wall's public face (same 8-color asset, via the banner)
+    // plaque on the wall's public face (same 16-color mosaic, via the banner)
     const faceSign = stSign; // mosaic/plaque on the plaza/approach side
     const plaque = new THREE.Mesh(new THREE.PlaneGeometry(8 * sc, 2.4 * sc),
       new THREE.MeshBasicMaterial({ color: 0x8f9aa8 }));
     plaque.position.set(cx, pedTop - 1.4 * Math.max(0.7, sc), wallZ + faceSign * (pedD / 2 + 0.06));
     plaque.rotation.y = faceSign > 0 ? 0 : Math.PI;
     grp.add(plaque);
+    const mprop = this.props[this.props.length - 1];
+    if (mprop && mprop.kind === 'monument') mprop.parts.push({ mesh: plaque });
     bannerTexture().then((b) => {
       if (grp.parent) {
         plaque.material.map = b.tex;
@@ -673,48 +778,27 @@ class World {
 
   async _attachMonumentMosaic(mon) {
     try {
-      const m = await mosaicCells(40);
-      const { w, h, cells } = m;
-      // flood-fill the true background (color 4 touching the border) so the
-      // mosaic reads as a face silhouette instead of a black slab
-      const seen = new Uint8Array(w * h);
-      const q = [];
-      const push = (i) => { if (!seen[i] && cells[i] === 4) { seen[i] = 1; q.push(i); } };
-      for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
-      for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
-      while (q.length) {
-        const i = q.pop();
-        const x = i % w;
-        if (x > 0) push(i - 1);
-        if (x < w - 1) push(i + 1);
-        if (i >= w) push(i - w);
-        if (i < w * (h - 1)) push(i + w);
-      }
-      const kept = [];
-      let x0 = w, x1 = -1, y0 = h, y1 = -1;
-      for (let i = 0; i < w * h; i++) {
-        if (seen[i]) continue;
-        const x = i % w, y = (i / w) | 0;
-        kept.push([x, y, cells[i]]);
-        if (x < x0) x0 = x; if (x > x1) x1 = x;
-        if (y < y0) y0 = y; if (y > y1) y1 = y;
-      }
+      const m = await faceMosaic(44);
       if (this.monument !== mon) return;
-      const gw = x1 - x0 + 1, gh = y1 - y0 + 1;
-      if (!gw || !gh) return;
-      const s = Math.min(0.75 * mon.sc, (mon.wallW * 0.82) / gw, (mon.wallH * 0.9) / gh);
-      const off = kept.map(([x, y, c]) => [x - x0, y - y0, c]);
-      // every mosaic cell is a box 3 bricks deep: a true 3D mosaic wall
-      // xFlip so the face is never mirrored for whoever approaches the plaza
-      const mesh = instancedMosaicMesh({ w: gw, h: gh }, off, s, s * 3, 0, mon.faceSign < 0);
-      mesh.position.set(
-        mon.cx,
-        mon.pedTop + mon.wallH / 2 - (gh - 1) * s / 2,
-        mon.wallZ + mon.faceSign * (1.3 + 1.5 * s)
-      );
+      const { w: gw, h: gh, cells } = m;
+      // square grid: pick a cell size so the head fills the wall slab
+      const s = Math.min((mon.wallW * 0.92) / gw, (mon.wallH * 0.92) / gh);
+      const off = [];
+      for (let i = 0; i < gw * gh; i++) off.push([i % gw, (i / gw) | 0, cells[i]]);
+      // each cell is one block; palette role drives forward extrusion (relief)
+      const mesh = instancedMosaicMesh({ w: gw, h: gh }, off, s, 3, 0, false);
+      // rotate so relief protrudes toward the plaza; PI-y keeps the face
+      // un-mirrored from the viewer's side, so no grid flip is needed
+      mesh.rotation.y = mon.faceSign < 0 ? Math.PI : 0;
+      mesh.position.set(mon.cx, mon.pedTop + mon.wallH / 2 - (gh - 1) * s / 2,
+        mon.wallZ + mon.faceSign * 1.32);
       mon.group.add(mesh);
       mon.group.userData.dispose = () => mesh.userData.dispose();
       mon.attached = true;
+      mon.mosaicMesh = mesh;
+      const mp = this.props.find((p) => p.kind === 'monument');
+      if (mp) { mp.parts.push({ mesh }); if (mp.gone) mesh.visible = false; }
+      mon.mesh = mesh;
     } catch (e) {
       console.warn('mosaic asset unavailable:', e && e.message);
     }
@@ -738,21 +822,24 @@ class World {
 
   buildMountain(cx, cz, k) {
     const tiers = [[9, 1.0], [6.4, 1.0], [4.4, 1.0], [2.8, 1.0]];
+    const parts = [];
     let y = 0;
     for (const [size, h] of tiers) {
       const s = size * k;
       const tier = merged([addBox([], s, h, s, cx + 0.5, y + h / 2, cz + 0.5)],
         this.mat(y < 0.1 ? 0x5fb83a : 0x6ac446));
-      this.addSolid(new THREE.Box3(
+      const sol = this.addSolid(new THREE.Box3(
         new THREE.Vector3(cx + 0.5 - s / 2, y, cz + 0.5 - s / 2),
         new THREE.Vector3(cx + 0.5 + s / 2, y + h, cz + 0.5 + s / 2)
       ), tier);
+      parts.push({ mesh: tier, solid: sol });
       y += h;
     }
-    this.addObj(merged([addBox([], 2.8 * k, 0.12, 2.8 * k, cx + 0.5, y + 0.06, cz + 0.5)], this.mat(0x8fda5a)));
+    parts.push({ mesh: this.addObj(merged([addBox([], 2.8 * k, 0.12, 2.8 * k, cx + 0.5, y + 0.06, cz + 0.5)], this.mat(0x8fda5a))) });
     const rock = part(SP, cx + 1.6 * k, y + 0.35, cz + 1.4 * k);
     rock.scale.set(0.6, 0.45, 0.55);
-    this.addObj(merged([rock], this.mat(0xa8b0b8)));
+    parts.push({ mesh: this.addObj(merged([rock], this.mat(0xa8b0b8))) });
+    this.registerProp('mountain', cx, cz, 600, parts);
     this.obstacles.push({ x: cx, z: cz, w: 4.5 * k, d: 4.5 * k });
   }
 
@@ -774,47 +861,53 @@ class World {
 
   buildVolcano(cx, cz, k) {
     const tiers = [[8, 1.3], [5.8, 1.3], [3.9, 1.3], [2.2, 1.0]];
+    const parts = [];
     let y = 0;
     for (const [size, h] of tiers) {
       const s = size * k;
       const tier = merged([addBox([], s, h, s, cx + 0.5, y + h / 2, cz + 0.5)],
         this.mat(y < 0.1 ? 0x6b6f76 : 0x54585f));
-      this.addSolid(new THREE.Box3(
+      const sol = this.addSolid(new THREE.Box3(
         new THREE.Vector3(cx + 0.5 - s / 2, y, cz + 0.5 - s / 2),
         new THREE.Vector3(cx + 0.5 + s / 2, y + h, cz + 0.5 + s / 2)
       ), tier);
+      parts.push({ mesh: tier, solid: sol });
       y += h;
     }
+    const vparts = parts.map((p) => p);
     const lava = mkMat(0xff571a, { emissive: 0xff8f1f, emissiveIntensity: 1.4, roughness: 0.4 });
     const cap = merged([addBox([], 1.6 * k, 0.14, 1.6 * k, cx + 0.5, y + 0.05, cz + 0.5)], lava);
     cap.castShadow = false;
     this.addObj(cap);
+    vparts.push({ mesh: cap });
     const flow = merged([
       (() => { const b = addBox([], 0.7 * k, 1.9, 0.35, 0, 0, 0); b.rotation.x = 0.9; b.position.set(cx + 0.5, y - 0.55, cz + 2.6 * k); return b; })()
     ], lava);
     flow.castShadow = false;
     this.addObj(flow);
+    vparts.push({ mesh: flow });
     const glow = new THREE.PointLight(0xff7b2e, 1.6, 10 * k, 2);
     glow.position.set(cx + 0.5, y + 0.8, cz + 0.5);
     this.addObj(glow);
+    this.registerProp('volcano', cx, cz, 700, vparts);
     this.obstacles.push({ x: cx, z: cz, w: 4 * k, d: 4 * k });
   }
 
   shuffle(list) {
     const a = [...list];
     for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rand() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
   }
 
   buildTree() {
-    const H = this.half, k = this.k;
+    const H = this.half, k = this.k, rand = this.rand;
     let x, z;
     for (let tries = 0; tries < 14; tries++) {
-      const px = Math.round((Math.random() * 2 - 1) * (H - 3) * 2) / 2;
-      const pz = Math.round((Math.random() * 2 - 1) * (H - 3) * 2) / 2;
+      const px = Math.round((rand() * 2 - 1) * (H - 3) * 2) / 2;
+      const pz = Math.round((rand() * 2 - 1) * (H - 3) * 2) / 2;
       if (Math.hypot(px, pz) < 6 * k) continue;
       if (this.propBlocked(px, pz)) continue;
       x = px; z = pz;
@@ -822,14 +915,14 @@ class World {
     }
     if (x === undefined) return;
 
-    const trunkH = 1.4 + Math.random() * 1.1;
+    const trunkH = 1.4 + rand() * 1.1;
     const trunk = [];
     addCyl(trunk, 0.26, trunkH, x, trunkH / 2, z, 0.34);
-    this.addObj(merged(trunk, this.mat(0x8b5a2b)));
+    const trunkMesh = this.addObj(merged(trunk, this.mat(0x8b5a2b)));
 
-    const leafMat = this.mat(Math.random() < 0.6 ? 0x2f9e4f : 0x3fb963);
+    const leafMat = this.mat(rand() < 0.6 ? 0x2f9e4f : 0x3fb963);
     const leaves = [];
-    const cones = Math.random() < 0.55;
+    const cones = rand() < 0.55;
     let y = trunkH;
     [[1.55, 1.3], [1.2, 1.1], [0.8, 0.95]].forEach(([r, h], i) => {
       if (cones) {
@@ -842,11 +935,13 @@ class World {
       }
       y += h * 0.62;
     });
-    this.addObj(merged(leaves, leafMat));
+    const leafMesh = this.addObj(merged(leaves, leafMat));
 
-    this._b.solids.push({ brick: null, noSupport: true, box: new THREE.Box3(
+    const trunkSolid = { brick: null, noSupport: true, box: new THREE.Box3(
       new THREE.Vector3(x - 0.4, 0, z - 0.4), new THREE.Vector3(x + 0.4, trunkH, z + 0.4)
-    )});
+    )};
+    this._b.solids.push(trunkSolid);
+    this.registerProp('tree', x, z, 45, [{ mesh: trunkMesh, solid: trunkSolid }, { mesh: leafMesh }]);
   }
 
   buildVillage() {
@@ -909,6 +1004,8 @@ class World {
     arch.position.set(0, 0, AZ);
     this.addObj(arch);
     this._b.staticMeshes.push(arch);
+    this.registerProp('deco', 0, AZ, 150,
+      arch.children.filter((c) => c.isMesh).map((mesh) => ({ mesh })));
 
     const well = merged([
       (() => { const m = part(CY, 0, 0.45, 0); m.scale.set(1.05, 0.9, 1.05); return m; })(),
@@ -923,16 +1020,19 @@ class World {
     wellGroup.add(well, merged([roofPiece], this.mat(0xe8402a)));
     wellGroup.position.set(6 * k, 0, 2 * k);
     this.addObj(wellGroup);
-    this.addSolid(new THREE.Box3(
+    const wellSolid = this.addSolid(new THREE.Box3(
       new THREE.Vector3(6 * k - 1.1, 0, 2 * k - 1.1), new THREE.Vector3(6 * k + 1.1, 0.9, 2 * k + 1.1)
     ), null, true);
+    this.registerProp('deco', 6 * k, 2 * k, 150,
+      [{ mesh: wellGroup.children[0], solid: wellSolid }, { mesh: wellGroup.children[1] }]);
     this.obstacles.push({ x: 6 * k, z: 2 * k, w: 1.3, d: 1.3 });
   }
 
   buildSchool(cx, cz, k) {
     const w = 8 * k, d = 5.5 * k, bh = 4;
     const grp = new THREE.Group();
-    grp.add(merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xd9b98a)));
+    const bodyMesh = merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xd9b98a));
+    grp.add(bodyMesh);
     const band = [];
     for (let i = -3; i <= 3; i++) addBox(band, 0.9, 0.7, 0.12, i * 1.1 * k, bh - 0.6, d / 2 + 0.03);
     grp.add(merged(band, this.mat(0x2f7de1)));
@@ -949,10 +1049,13 @@ class World {
     grp.position.set(cx, 0, cz);
     this.addObj(grp);
     this._b.staticMeshes.push(grp);
-    this.addSolid(new THREE.Box3(
+    const bodySolid = this.addSolid(new THREE.Box3(
       new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
       new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
     ), null, true);
+    this.registerProp('school', cx, cz, 400,
+      [{ mesh: bodyMesh, solid: bodySolid },
+       ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))]);
     this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
     const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, 0);
     this.doorAnchors.push({
@@ -1005,13 +1108,16 @@ class World {
     grp.position.set(cx, 0, cz);
     this.addObj(grp);
     this._b.staticMeshes.push(grp);
+    this.registerProp('playground', cx, cz, 120,
+      grp.children.filter((c) => c.isMesh).map((mesh) => ({ mesh })));
     this.obstacles.push({ x: cx, z: cz, w: 2.2 * k, d: 2.2 * k });
   }
 
   buildHouse(h) {
     const bw = 5, bd = 4, bh = 3;
     const grp = new THREE.Group();
-    grp.add(merged([addBox([], bw, bh, bd, 0, bh / 2, 0)], this.mat(h.body)));
+    const bodyMesh = merged([addBox([], bw, bh, bd, 0, bh / 2, 0)], this.mat(h.body));
+    grp.add(bodyMesh);
 
     const roof = [];
     for (const s of [-1, 1]) {
@@ -1047,10 +1153,13 @@ class World {
     const axisAligned = Math.abs(h.ry % Math.PI) < 0.01 || Math.abs(Math.abs(h.ry % Math.PI) - Math.PI) < 0.01;
     const w = axisAligned ? bw : bd;
     const d = axisAligned ? bd : bw;
-    this.addSolid(new THREE.Box3(
+    const bodySolid = this.addSolid(new THREE.Box3(
       new THREE.Vector3(h.x - w / 2 - 0.1, 0, h.z - d / 2 - 0.1),
       new THREE.Vector3(h.x + w / 2 + 0.1, bh, h.z + d / 2 + 0.1)
     ), null, true);
+    this.registerProp('house', h.x, h.z, 200,
+      [{ mesh: bodyMesh, solid: bodySolid },
+       ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))]);
     this.houseRects.push({ x: h.x, z: h.z, w: w / 2, d: d / 2 });
 
     // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along facing
@@ -1242,7 +1351,7 @@ class World {
     const x0 = gx + 1e-4, x1 = gx + 1 - 1e-4, z0 = gz + 1e-4, z1 = gz + 1 - 1e-4;
     for (const s of this.solids) {
       const b = s.box;
-      if (s.noSupport || b.max.y > maxY + 1e-4 || b.max.y > 40) continue;
+      if (s.disabled || s.noSupport || b.max.y > maxY + 1e-4 || b.max.y > 40) continue;
       // (noSupport entries are skipped so props never act as build supports)
       if (b.max.x > x0 && b.min.x < x1 && b.max.z > z0 && b.min.z < z1 && b.max.y > top) top = b.max.y;
     }
@@ -1252,6 +1361,7 @@ class World {
   surfaceTopAny(x, z) {
     let top = -Infinity;
     for (const s of this.solids) {
+      if (s.disabled) continue;
       const b = s.box;
       if (b.max.y > -1 && b.max.y > top &&
           x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z) top = b.max.y;
@@ -1374,6 +1484,7 @@ class Player {
     );
     let top = -Infinity;
     for (const s of this.world.solids) {
+      if (s.disabled) continue;
       if (s.box.intersectsBox(box) && s.box.max.y < box.max.y && s.box.max.y > top) top = s.box.max.y;
     }
     return top;
@@ -1385,6 +1496,7 @@ class Player {
       new THREE.Vector3(x + this.radius, head - 0.05, z + this.radius)
     );
     for (const s of this.world.solids) {
+      if (s.disabled) continue;
       if (stepH > 0 && s.box.max.y <= feet + stepH) continue;
       if (s.box.intersectsBox(box)) return true;
     }
@@ -1477,7 +1589,8 @@ class Game {
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 900);
     this.orbit = { yaw: Math.PI, pitch: 0.42, dist: 11, wantDist: 11 };
 
-    this.scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x5f8f3f, 1.0));
+    this.hemi = new THREE.HemisphereLight(0xd8f0ff, 0x5f8f3f, 1.0);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
     sun.position.set(26, 40, 18);
     sun.castShadow = true;
@@ -1509,6 +1622,52 @@ class Game {
     this.ghost = this.makeGhost();
     this.nearDoor = null;
 
+    // build / weapon / weather modes are mutually exclusive
+    this.mode = 'build';
+    this.weapon = 0;
+    this.removeMode = false;
+    this.fireCd = 0;
+    this.boltT = 0;
+    this.holdNdc = null;
+    this._flameSilence = 0;
+    this.rockets = [];
+    this.meteors = [];
+    this._falling = [];
+    this.fx = new Fx(this.scene);
+    this.weaponModels = buildWeaponModels();
+    this.weaponRig = new THREE.Group();
+    this.weaponRig.position.set(0.42, 1.02, 0.18);
+    this.weaponRig.visible = false;
+    this.player.root.add(this.weaponRig);
+    this.showWeaponModel();
+
+    // weather systems
+    this.weather = 'clear';
+    this.weatherDef = WEATHERS[0];
+    this.weatherT = 0;
+    this.weatherDmgT = 0;
+    this.shakeT = 0;
+    this.flashT = 0;
+    this.tornadoPos = new THREE.Vector3(0, 0, 0);
+    this.tornadoTgt = new THREE.Vector3(0, 0, 0);
+    this.waveZ = 0;
+    this.waveId = 0;
+    this.rain = new ParticleField(this.scene, 650, 0xbcd6ea, 0.32);
+    this.snowf = new ParticleField(this.scene, 520, 0xffffff, 0.55);
+    this.stars = new StarField(this.scene);
+    this.funnel = new Funnel(this.scene);
+    this.wave = new WaveFront(this.scene);
+    this.bolt = new THREE.Mesh(BR, new THREE.MeshBasicMaterial({ color: 0xcfe8ff }));
+    this.bolt.visible = false;
+    this.scene.add(this.bolt);
+    this.flash = new THREE.PointLight(0xdfefff, 0, 120, 1);
+    this.flash.position.set(0, 40, 0);
+    this.scene.add(this.flash);
+
+    // persistent damage
+    this._saveT = 0;
+    this.world.onDamage = (p, amt, pt) => this.onPropDamage(p, amt, pt);
+
     this.optionsEl = document.createElement('button');
     this.optionsEl.id = 'btn-options';
     this.optionsEl.textContent = '⚙️';
@@ -1524,6 +1683,8 @@ class Game {
     this.optionsEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.panel.toggle(); });
 
     this.bindDom();
+    this.bindStrips();
+    this.setMode('build');
     this.selectSlot(0);
     this.spawnCollectibles();
     this.bindInput();
@@ -1535,9 +1696,33 @@ class Game {
     this.renderer.setAnimationLoop(this.tick);
   }
 
+  skyTexFor(r) {
+    if (!this._skyTex) this._skyTex = new Map();
+    let tex = this._skyTex.get(this.weather);
+    if (!tex) {
+      const c = document.createElement('canvas');
+      c.width = 16; c.height = 256;
+      const g = c.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, '#' + new THREE.Color(r.bg).getHexString());
+      grad.addColorStop(1, '#' + new THREE.Color(r.fog).lerp(new THREE.Color(0xffffff), 0.35).getHexString());
+      g.fillStyle = grad; g.fillRect(0, 0, 16, 256);
+      tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this._skyTex.set(this.weather, tex);
+    }
+    return tex;
+  }
+
   applyOutdoorFog() {
     const H = this.world.half;
-    this.scene.fog = new THREE.Fog(0xbfe4ff, H * 1.8, H * 4.5);
+    const r = SKY[this.weather] || SKY.clear;
+    this.scene.fog = new THREE.Fog(r.fog, H * (this.weather === 'clear' || this.weather === 'noon' ? 1.8 : 1.1), H * 4.5);
+    this.scene.background = this.skyTexFor(r);
+    this.sun.intensity = r.sun;
+    this.sun.color.setHex(r.sunCol);
+    this.hemi.intensity = r.hemi;
+    this.stars.set(r.star);
   }
 
   makeSky() {
@@ -1669,6 +1854,476 @@ class Game {
     }
   }
 
+  bindStrips() {
+    this.hotbar = document.getElementById('hotbar');
+    this.stripBar = document.getElementById('stripbar');
+    const hud = document.getElementById('hud');
+    this.modePill = document.createElement('div');
+    this.modePill.id = 'mode-pill';
+    hud.appendChild(this.modePill);
+
+    this.weaponSlots = WEAPONS.map((w, i) => {
+      const el = document.createElement('button');
+      el.className = 'slot';
+      el.title = `${w.name} — ${w.dmg} dmg`;
+      el.innerHTML = `<span class="key">${i + 1}</span><span class="wicon">${w.icon}</span>`;
+      el.addEventListener('click', (e) => { e.preventDefault(); this.setMode('weapon'); this.selectWeapon(i); });
+      this.stripBar.appendChild(el);
+      return el;
+    });
+    this.weatherSlots = WEATHERS.map((w) => {
+      const el = document.createElement('button');
+      el.className = 'slot weather-w';
+      el.title = w.name;
+      el.innerHTML = `<span class="wicon">${w.icon}</span>`;
+      el.addEventListener('click', (e) => { e.preventDefault(); this.activateWeather(w.id); });
+      this.stripBar.appendChild(el);
+      return el;
+    });
+  }
+
+  setMode(mode) {
+    if (this.mode === mode) { this.refreshStrips(); return; }
+    this.mode = mode;
+    if (mode !== 'weapon') sfx.setFlame(false);
+    sfx.swap();
+    this.refreshStrips();
+  }
+
+  refreshStrips() {
+    const build = this.mode === 'build';
+    this.hotbar.classList.toggle('hidden', !build);
+    this.stripBar.classList.toggle('hidden', build);
+    const stripWeapons = this.mode === 'weapon';
+    this.weaponSlots.forEach((el, i) => {
+      el.style.display = stripWeapons ? '' : 'none';
+      el.classList.toggle('active', stripWeapons && i === this.weapon);
+    });
+    this.weatherSlots.forEach((el, i) => {
+      el.style.display = this.mode === 'weather' ? '' : 'none';
+      el.classList.toggle('active', this.mode === 'weather' && WEATHERS[i].id === this.weather);
+    });
+    this.weaponRig.visible = this.mode === 'weapon';
+    this.ghost.visible = false;
+    const label = this.mode === 'build' ? '🧱 BUILD'
+      : this.mode === 'weapon' ? `⚔️ WEAPON · ${WEAPONS[this.weapon].name}`
+      : `🌦️ WEATHER · ${this.weatherDef.name}`;
+    this.modePill.textContent = label;
+    this.modePill.className = this.mode === 'weapon' ? 'weapon' : this.mode === 'weather' ? 'weather' : '';
+  }
+
+  selectWeapon(i) {
+    this.weapon = clamp(i, 0, WEAPONS.length - 1);
+    this.showWeaponModel();
+    this.refreshStrips();
+  }
+
+  showWeaponModel() {
+    const def = WEAPONS[this.weapon];
+    for (const c of [...this.weaponRig.children]) this.weaponRig.remove(c);
+    this.weaponRig.add(this.weaponModels[def.id]);
+  }
+
+  /* ------------------------------------------------ weather activation */
+  activateWeather(id) {
+    const def = WEATHERS.find((w) => w.id === id) || WEATHERS[0];
+    this.weather = def.id;
+    this.weatherDef = def;
+    this.weatherT = 0;
+    this.weatherDmgT = 0;
+    this.shakeT = 0;
+    this.boltT = 0;
+    this.bolt.visible = false;
+    this.setMode('weather');
+    sfx.unloopAll();
+    this.rain.points.visible = false;
+    this.snowf.points.visible = false;
+    this.funnel.show(false);
+    this.wave.hide();
+    const p = this.player.pos;
+    switch (def.id) {
+      case 'rain': sfx.loop('rain', { type: 'bandpass', f: 1400, q: 0.5, gain: 0.22, lfo: 0.4, lfoDepth: 300 });
+        this.rain.recenter(p.x, p.z); this.rain.points.visible = true; break;
+      case 'snow': sfx.loop('snow', { type: 'lowpass', f: 420, q: 0.6, gain: 0.1 });
+        this.snowf.recenter(p.x, p.z); this.snowf.points.visible = true; break;
+      case 'thunder': sfx.loop('storm', { type: 'lowpass', f: 900, q: 0.6, gain: 0.26, lfo: 0.25, lfoDepth: 250 });
+        this.rain.recenter(p.x, p.z); this.rain.points.visible = true; break;
+      case 'tornado': sfx.loop('tornado', { type: 'lowpass', f: 260, q: 0.9, gain: 0.34, lfo: 0.18, lfoDepth: 90 });
+        this.funnel.show(true);
+        this.tornadoPos.set(p.x + 22, 0, p.z + 22); this.tornadoTgt.copy(this.tornadoPos); break;
+      case 'hurricane': sfx.loop('hurricane', { type: 'lowpass', f: 520, q: 0.8, gain: 0.4, lfo: 0.5, lfoDepth: 320 });
+        sfx.loop('debris', { type: 'bandpass', f: 2400, q: 1.4, gain: 0.1, lfo: 3.2, lfoDepth: 900 });
+        this.funnel.show(true);
+        this.tornadoPos.set(p.x + 18, 0, p.z - 18); this.tornadoTgt.copy(this.tornadoPos); break;
+      case 'quake': sfx.loop('quake', { type: 'lowpass', f: 65, q: 1.2, gain: 0.42 });
+        this.shakeT = 9999; break;
+      case 'tsunami': sfx.wave(); this.waveId++;
+        this.waveZ = -this.world.half - 14; break;
+      case 'meteor': sfx.meteorWhistle(); this.spawnMeteor(); break;
+      default: break; // clear/morning/noon/evening/night: ambience only
+    }
+    this.applyOutdoorFog();
+    this.refreshStrips();
+    this.toast(`${def.icon} ${def.name} — ${def.dmg ? `${def.dmg} damage every ${def.every}s` : 'no damage, sky only'}`, 'good');
+  }
+
+  /* ----------------------------------------------------- combat helpers */
+  propBox(p) {
+    for (const pt of p.parts) if (pt.baseBox) return pt.baseBox;
+    const s = 2 * p.scale;
+    return new THREE.Box3(new THREE.Vector3(p.cx - s, 0, p.cz - s), new THREE.Vector3(p.cx + s, 3, p.cz + s));
+  }
+
+  hitPoint(p, from) {
+    return nearestPointOnBox(this.propBox(p), from, new THREE.Vector3());
+  }
+
+  bricksInRadius(center, r, cb) {
+    for (const rec of [...this.world.brickMap.values()]) {
+      const c = new THREE.Vector3();
+      rec.box.getCenter(c);
+      if (c.distanceTo(center) <= r) cb(rec);
+    }
+  }
+
+  hurtBrick(rec, amount) {
+    rec._dmg = (rec._dmg || 0) + amount;
+    if (rec._dmg < 25) { sfx.crack(); return; }
+    const c = new THREE.Vector3();
+    rec.box.getCenter(c);
+    this.fx.spawn(c.x, c.y, c.z, 'debris', 10);
+    this.fx.spawn(c.x, c.y, c.z, 'smoke', 4);
+    sfx.thud();
+    this.world.removeBrick(rec);
+  }
+
+  /* Ray-march against all solid boxes (terrain, props, bricks) */
+  rayScene(ro, rd, maxDist) {
+    let best = maxDist, solid = null;
+    for (const s of this.world.solids) {
+      if (s.disabled) continue;
+      const t = rayAabb(ro, rd, s.box);
+      if (t !== null && t < best) { best = t; solid = s; }
+    }
+    return { t: best, solid };
+  }
+
+  onPropDamage(p, amount, pt) {
+    const at = pt || new THREE.Vector3(p.cx, 1.5, p.cz);
+    this.fx.spawn(at.x, at.y, at.z, 'smoke', 4);
+    sfx.crack();
+    if (p.gone) {
+      sfx.destroy();
+      this.fx.spawn(at.x, at.y, at.z, 'debris', 16);
+      this.fx.spawn(at.x, at.y + 1, at.z, 'smoke', 10);
+      for (const q of p.parts) {
+        if (q.hidden) continue;
+        q.hidden = true;
+        q.mesh.visible = false;
+        if (q.solid) q.solid.disabled = true;
+      }
+      if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+    }
+    this._saveT = 1.0; // debounce persist
+  }
+
+  saveDamage() {
+    const entries = [];
+    this.world.props.forEach((p, i) => { if (p.dmg > 0) entries.push([i, Math.round(p.dmg)]); });
+    setState(this.world.opts.size, {
+      sig: this.world.sig, salt: this.world.genSalt, entries
+    });
+  }
+
+  /* ---------------------------------------------------------- attacks */
+  tryFire(ndc) {
+    if (this.mode !== 'weapon' || !this.started) return false;
+    const def = WEAPONS[this.weapon];
+    if (this.fireCd > 0) return false;
+    this.fireCd = def.cd;
+    const p = this.player.pos;
+    const chest = new THREE.Vector3(p.x, p.y + 1.2, p.z);
+    this.pick.setFromCamera(ndc, this.camera);
+    const ro = this.pick.ray.origin, rd = this.pick.ray.direction;
+
+    if (def.kind === 'rocket') {
+      sfx.launch();
+      const mesh = makeRocketMesh();
+      const muzzle = chest.clone().addScaledVector(rd, 0.9).add(new THREE.Vector3(0, 0.35, 0));
+      mesh.position.copy(muzzle);
+      mesh.lookAt(muzzle.clone().add(rd));
+      this.scene.add(mesh);
+      this.rockets.push({ mesh, vel: rd.clone().multiplyScalar(30), life: def.range / 30 });
+      this.fx.spawn(muzzle.x, muzzle.y, muzzle.z, 'smoke', 8);
+      this._swing(0.5);
+      return true;
+    }
+    if (def.kind === 'stream') {
+      sfx.setFlame(true);
+      this._flameSilence = 0.25;
+      const hit = this.rayScene(ro, rd, def.range);
+      const end = hit.solid ? hit.t - 0.05 : def.range;
+      for (let d = 1; d < end; d += 1.1) {
+        const q = ro.clone().addScaledVector(rd, d);
+        this.fx.spawn(q.x, q.y, q.z, 'fire', 2);
+      }
+      const tip = ro.clone().addScaledVector(rd, end);
+      this.damageSplash(def, tip, chest, 6);
+      if (Math.random() < 0.5) sfx.fireTick();
+      return true;
+    }
+    // melee
+    const fwd = new THREE.Vector3(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw));
+    let hits = 0;
+    for (const prop of this.world.props) {
+      if (prop.gone || hits >= def.maxBreak) continue;
+      const pt = this.hitPoint(prop, chest);
+      const dxz = new THREE.Vector2(pt.x - p.x, pt.z - p.z);
+      if (dxz.length() > def.range) continue;
+      const dxzN = dxz.clone().normalize();
+      const cos = dxzN.x * fwd.x + dxzN.y * fwd.z;
+      if (Math.acos(clamp(cos, -1, 1)) > def.arc / 2) continue;
+      this.world.applyHit(prop, def.dmg, pt);
+      this.fx.spawn(pt.x, pt.y, pt.z, 'debris', 8);
+      hits++;
+    }
+    this.bricksInRadius(chest.clone().addScaledVector(fwd, def.range * 0.7), def.radius + 1.1, (rec) => {
+      if (rec._dmg >= 25) return;
+      this.hurtBrick(rec, def.dmg);
+    });
+    (def.id === 'sword' ? sfx.sword : sfx.hammer)();
+    if (navigator.vibrate) navigator.vibrate(def.id === 'hammer' ? 30 : 12);
+    this._swing(def.id === 'hammer' ? 0.8 : 0.5);
+    return true;
+  }
+
+  _swing(t) {
+    this.weaponRig.userData.swing = t;
+  }
+
+  damageSplash(def, at, from, fallDist = 8) {
+    let n = 0;
+    for (const prop of this.world.props) {
+      if (prop.gone) continue;
+      const pt = this.hitPoint(prop, at);
+      if (pt.distanceTo(at) > def.radius + 2) continue;
+      if (n >= def.maxBreak) break;
+      const falloff = 1 - clamp(pt.distanceTo(at) / (def.radius + 2), 0, 0.85);
+      this.world.applyHit(prop, def.dmg * falloff, pt);
+      n++;
+    }
+    this.bricksInRadius(at, def.radius, (rec) => this.hurtBrick(rec, def.dmg));
+    const pp = this.player.pos;
+    if (at.distanceTo(new THREE.Vector3(pp.x, pp.y + 1, pp.z)) < def.radius + 1.5) {
+      const push = new THREE.Vector3(pp.x - at.x, 0, pp.z - at.z).normalize().multiplyScalar(9);
+      push.y = 6;
+      this.player.vel.add(push);
+      sfx.hurt();
+      this.toast('💥 Blast shockwave!', 'bad');
+    }
+  }
+
+  explode(at, def) {
+    sfx.explode();
+    this.fx.spawn(at.x, at.y, at.z, 'fire', 22);
+    this.fx.spawn(at.x, at.y, at.z, 'smoke', 14);
+    this.fx.spawn(at.x, at.y, at.z, 'debris', 24);
+    this.damageSplash(def, at, null);
+    if (navigator.vibrate) navigator.vibrate([40, 30, 90]);
+  }
+
+  /* ---------------------------------------------------- weather per-frame */
+  weatherPickProp(maxDist = 55) {
+    const p = this.player.pos;
+    const near = this.world.props.filter((pr) =>
+      !pr.gone && Math.hypot(pr.cx - p.x, pr.cz - p.z) < maxDist);
+    if (!near.length) return null;
+    return near[Math.floor(Math.random() * near.length)];
+  }
+
+  strikeLightning() {
+    const target = this.weatherPickProp() || null;
+    const at = target ? this.hitPoint(target, new THREE.Vector3(target.cx, 20, target.cz))
+      : new THREE.Vector3(this.player.pos.x + (Math.random() * 2 - 1) * 30, 0, this.player.pos.z + (Math.random() * 2 - 1) * 30);
+    const H = 34;
+    this.bolt.visible = true;
+    this.bolt.scale.set(0.35, H, 0.35);
+    this.bolt.position.set(at.x, H / 2, at.z);
+    this.flash.position.set(at.x, H * 0.7, at.z);
+    this.flash.intensity = 8;
+    this.boltT = 0.14;
+    sfx.thunder();
+    if (target) {
+      this.world.applyHit(target, this.weatherDef.dmg, new THREE.Vector3(at.x, Math.max(1, at.y), at.z));
+    } else if (this.player.pos.distanceTo(at) < 6) {
+      sfx.hurt();
+    }
+  }
+
+  spawnMeteor() {
+    if (this.mode !== 'weather' || this.weather !== 'meteor') return;
+    const target = this.weatherPickProp(70);
+    const t = target ? new THREE.Vector3(target.cx, 0, target.cz)
+      : new THREE.Vector3(this.player.pos.x + (Math.random() * 2 - 1) * 40, 0, this.player.pos.z + (Math.random() * 2 - 1) * 40);
+    const mesh = new THREE.Mesh(SP, mkMat(0x5a4636, { emissive: 0xff5a1f, emissiveIntensity: 1.6 }));
+    mesh.scale.setScalar(1.4);
+    mesh.position.set(t.x + 14, 46, t.z + 10);
+    this.scene.add(mesh);
+    const vel = t.clone().setY(0.5).sub(mesh.position).normalize().multiplyScalar(26);
+    this.meteors.push({ mesh, vel, target: t });
+    sfx.meteorWhistle();
+  }
+
+  updateWeather(dt) {
+    const def = this.weatherDef;
+    const p = this.player.pos;
+    this.weatherT += dt;
+    this._flameSilence = Math.max(0, this._flameSilence - dt);
+    if (def.id === 'rain' || def.id === 'thunder') this.rain.update(dt, p.x, p.z, -30, -4);
+    if (def.id === 'snow') this.snowf.update(dt, p.x, p.z, -1.6, Math.sin(this.weatherT * 0.4) * 1.2);
+    if (this.boltT > 0) { this.boltT -= dt; this.bolt.visible = this.boltT > 0; }
+    if (this.flash.intensity > 0) this.flash.intensity = Math.max(0, this.flash.intensity - dt * 40);
+
+    // damage ticks
+    if (def.dmg) {
+      this.weatherDmgT += dt;
+      if (this.weatherDmgT >= def.every) {
+        this.weatherDmgT = 0;
+        if (def.strike) {
+          this.strikeLightning();
+        } else if (def.id === 'meteor') {
+          this.spawnMeteor();
+        } else if (def.mover) {
+          // funnel path damage handled continuously below
+        } else if (def.shake) { // earthquake: cracks everything near the player
+          for (const pr of this.world.props) {
+            if (pr.gone || Math.hypot(pr.cx - p.x, pr.cz - p.z) > 42) continue;
+            const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 1, pr.cz));
+            this.world.applyHit(pr, def.dmg, pt);
+            this.fx.spawn(pt.x, pt.y, pt.z, 'debris', 3);
+          }
+          sfx.thud();
+        } else if (def.sweep) { // tsunami tick: wave body damages along its front
+          // handled in wave sweep
+        } else { // rain/snow steady wear near the player
+          const pr = this.weatherPickProp();
+          if (pr) {
+            const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 1.5, pr.cz));
+            this.world.applyHit(pr, def.dmg, pt);
+          }
+        }
+      }
+    }
+
+    // mover: tornado / hurricane funnel roams, sucking up debris and smashing props
+    if (def.mover) {
+      if (this.weatherT > 2.5) {
+        this.weatherT = 0;
+        const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * 18;
+        this.tornadoTgt.set(
+          clamp(p.x + Math.cos(a) * r, -this.world.half + 4, this.world.half - 4),
+          0,
+          clamp(p.z + Math.sin(a) * r, -this.world.half + 4, this.world.half - 4));
+      }
+      const speed = def.id === 'hurricane' ? 10 : 7;
+      const d = this.tornadoTgt.clone().sub(this.tornadoPos); d.y = 0;
+      if (d.length() > 0.5) this.tornadoPos.addScaledVector(d.normalize(), Math.min(speed * dt, d.length()));
+      this.funnel.update(dt, this.tornadoPos.x, 0, this.tornadoPos.z, def.id === 'hurricane' ? 2 : 1);
+      if (def.id === 'hurricane') {
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * Math.PI * 2;
+          this.fx.spawn(this.tornadoPos.x + Math.cos(a) * 5, 1 + Math.random() * 12, this.tornadoPos.z + Math.sin(a) * 5, 'debris', 1);
+        }
+      }
+      this.weatherDmgT += dt;
+      if (this.weatherDmgT >= def.every) {
+        this.weatherDmgT = 0;
+        for (const pr of this.world.props) {
+          if (pr.gone) continue;
+          if (Math.hypot(pr.cx - this.tornadoPos.x, pr.cz - this.tornadoPos.z) > def.radius + 2) continue;
+          const pt = this.hitPoint(pr, this.tornadoPos.clone().setY(2));
+          this.world.applyHit(pr, def.dmg, pt);
+        }
+      }
+    }
+
+    // tsunami sweep
+    if (def.sweep) {
+      const H = this.world.half;
+      this.waveZ += dt * 17;
+      if (this.waveZ > H + 16) { this.waveZ = -H - 16; this.waveId++; sfx.wave(); }
+      this.wave.place(this.player.pos.x * 0.3, this.waveZ, H * 2.4, 9);
+      for (const pr of this.world.props) {
+        if (pr.gone || pr._ts === this.waveId + ':' + Math.floor(this.waveZ / 6)) continue;
+        if (Math.abs(pr.cz - this.waveZ) > 5) continue;
+        pr._ts = this.waveId + ':' + Math.floor(this.waveZ / 6);
+        const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 2, this.waveZ));
+        this.world.applyHit(pr, def.dmg, pt);
+        this.fx.spawn(pr.cx, 2, pr.cz, 'fire', 6);
+      }
+      if (Math.abs(p.z - this.waveZ) < 6 && p.y < 6) {
+        this.player.vel.z += (this.player.pos.z < this.waveZ ? -14 : 14) * dt * 8;
+        this.player.vel.y += 20 * dt;
+      }
+    }
+  }
+
+  updateRockets(dt) {
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i];
+      const step = r.vel.clone().multiplyScalar(dt);
+      const ro = r.mesh.position.clone();
+      const rd = r.vel.clone().normalize();
+      const hit = this.rayScene(ro, rd, step.length() + 0.05);
+      r.mesh.position.add(step);
+      r.life -= dt;
+      this.fx.spawn(r.mesh.position.x, r.mesh.position.y, r.mesh.position.z, 'smoke', 1);
+      let boom = false;
+      if (hit.solid) {
+        boom = true;
+        r.mesh.position.copy(ro).addScaledVector(rd, Math.max(0.05, hit.t - 0.05));
+      } else if (r.life <= 0 || r.mesh.position.y < -2) boom = true;
+      if (boom) {
+        this.explode(r.mesh.position.clone(), WEAPONS[3]);
+        this.scene.remove(r.mesh);
+        this.rockets.splice(i, 1);
+      }
+    }
+  }
+
+  updateMeteors(dt) {
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const m = this.meteors[i];
+      m.mesh.position.addScaledVector(m.vel, dt);
+      this.fx.spawn(m.mesh.position.x, m.mesh.position.y, m.mesh.position.z, 'fire', 3);
+      if (m.mesh.position.y <= 0.6) {
+        const def = { ...WEATHERS.find((w) => w.id === 'meteor'), radius: 6, maxBreak: 6, dmg: 150 };
+        this.explode(new THREE.Vector3(m.mesh.position.x, 0.8, m.mesh.position.z), def);
+        this.scene.remove(m.mesh);
+        this.meteors.splice(i, 1);
+      }
+    }
+  }
+
+  updateFalling(dt) {
+    for (let i = this._falling.length - 1; i >= 0; i--) {
+      const f = this._falling[i];
+      f.t += dt;
+      f.vel.y -= 18 * dt;
+      f.mesh.position.addScaledVector(f.vel, dt);
+      f.mesh.rotation.x += f.spin.x * dt;
+      f.mesh.rotation.z += f.spin.z * dt;
+      if (f.t > 2.4) {
+        f.mesh.visible = false;
+        f.mesh.removeFromParent();
+        this._falling.splice(i, 1);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------- input */
+  bindStripsDone() {}
+
   fitShadow() {
     const span = Math.max(this.world.half, 40) * 1.6;
     const s = this.sun.shadow.camera;
@@ -1678,6 +2333,12 @@ class Game {
   }
 
   regenerateWorld() {
+    clearState(this.world.opts.size); // mammoth reset: regenerate wipes all damage
+    this.world.genSalt = (Math.floor(Math.random() * 0x7fffffff) >>> 0);
+    this.sig = sigOf(this.world.opts);
+    this.world.sig = this.sig;
+    this.world._pending = [];
+    if (this.weather !== 'clear') this.activateWeather('clear');
     if (this.world.inHouse) {
       this.world.exitHouse();
       this.world.interior.group.visible = false;
@@ -1719,6 +2380,7 @@ class Game {
 
   start() {
     this.started = true;
+    this.setMode('build');
     this.intro.classList.add('hidden');
     this.toast(`Grab loose bricks — the bridge needs ${GOAL}`, 'good');
   }
@@ -1752,10 +2414,19 @@ class Game {
       }
       if (e.code === 'Space') { e.preventDefault(); this.jumpQueued = 0.16; return; }
       if (e.code === 'KeyE') { this.toggleDoor(); return; }
+      if (e.code === 'Tab' || e.code === 'KeyB') { e.preventDefault(); this.setMode(this.mode === 'build' ? 'weapon' : 'build'); return; }
+      if (e.code === 'KeyC') { e.preventDefault(); this.setMode(this.mode === 'weather' ? 'build' : 'weather'); return; }
       if (map[e.code]) { this.keys.add(map[e.code]); e.preventDefault(); return; }
-      if (e.code === 'KeyX') this.selectSlot(BRICKS.length);
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= BRICKS.length) this.selectSlot(n - 1);
+      if (Number.isNaN(n)) return;
+      if (this.mode === 'weapon') {
+        if (n >= 1 && n <= WEAPONS.length) this.selectWeapon(n - 1);
+      } else if (this.mode === 'weather') {
+        if (n >= 1 && n <= WEATHERS.length) this.activateWeather(WEATHERS[n - 1].id);
+      } else {
+        if (e.code === 'KeyX') this.selectSlot(BRICKS.length);
+        if (n >= 1 && n <= BRICKS.length) this.selectSlot(n - 1);
+      }
     });
     window.addEventListener('keyup', (e) => { if (map[e.code]) this.keys.delete(map[e.code]); });
     window.addEventListener('blur', () => this.keys.clear());
@@ -1768,6 +2439,13 @@ class Game {
     this.hoverNdc = null;
     c.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch' && this.touchUi(e)) return;
+      if (this.mode === 'weapon' && this.started && !this.world.inHouse && this.pointers.size === 0 && e.button !== 2) {
+        this.holdNdc = this.ndc(e.clientX, e.clientY);
+        this.tryFire(this.holdNdc);
+        try { c.setPointerCapture(e.pointerId); } catch (err) {}
+        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), fire: true });
+        return;
+      }
       try { c.setPointerCapture(e.pointerId); } catch (err) {}
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
       if (this.pointers.size === 2) this.pinch = this.pinchDist();
@@ -1780,6 +2458,7 @@ class Game {
       }
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
+      if (p.fire) this.holdNdc = this.ndc(e.clientX, e.clientY);
       this.orbit.yaw -= dx * 0.0062;
       this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.0055, -0.18, 1.32);
       if (this.pointers.size === 2) {
@@ -1792,6 +2471,7 @@ class Game {
       const p = this.pointers.get(e.pointerId);
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) this.pinch = 0;
+      if (p && p.fire) { this.holdNdc = null; sfx.setFlame(false); return; }
       if (!p) return;
       const quick = performance.now() - p.t < 450;
       const still = Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < 14;
@@ -1938,6 +2618,8 @@ class Game {
 
   actuate(e) {
     if (!this.started) return;
+    if (this.mode === 'weapon') return; // handled by tryFire on pointerdown
+    if (this.mode === 'weather') { this.toast('Pick a weather from the strip below', 'good'); return; }
     const ndc = this.ndc(e.clientX, e.clientY);
     this.pick.setFromCamera(ndc, this.camera);
 
@@ -1968,6 +2650,7 @@ class Game {
     if (!t) return;
     if (!t.valid) { this.toast(`Can't place there — ${t.reason}`, 'bad'); return; }
     const rec = this.world.placeBrick(t.gx, t.gy, t.gz, t.def);
+    if (rec) sfx.place();
     if (rec && this.world.placedCount % 10 === 0) this.toast(`${this.world.placedCount} bricks built. Nice!`, 'good');
   }
 
@@ -2056,7 +2739,7 @@ class Game {
   }
 
   updateGhost() {
-    if (this.removeMode || !this.started || this.pointers.size >= 2) { this.ghost.visible = false; return; }
+    if (this.mode !== 'build' || this.removeMode || !this.started || this.pointers.size >= 2) { this.ghost.visible = false; return; }
     let ndc = null;
     if (this.pointers.size === 1) {
       const p = [...this.pointers.values()][0];
@@ -2179,6 +2862,18 @@ class Game {
     const move = { x: fwd.x * -mz + right.x * mx, z: fwd.z * -mz + right.z * mx };
 
     this.player.update(dt, move, this.jumpQueued > 0);
+    this.fireCd = Math.max(0, this.fireCd - dt);
+    this.tickWeaponRig(dt);
+    if (this.mode === 'weapon' && this.holdNdc && this.pointers.size > 0) this.tryFire(this.holdNdc);
+    this.updateRockets(dt);
+    this.updateMeteors(dt);
+    this.updateFalling(dt);
+    this.fx.update(dt);
+    this._saveT -= dt;
+    if (this._saveT < -1) { this._saveT = 2; this.saveDamage(); }
+    if (!this.world.inHouse && this.started) this.updateWeather(dt);
+    this.stars.move(this.player.pos.x, this.player.pos.z);
+    if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
     this.updateDoorState();
     if (this.world.inHouse) {
       this.world.interior.tick(this.time, dt);
@@ -2209,7 +2904,22 @@ class Game {
       this.confetti.geometry.attributes.position.needsUpdate = true;
     }
 
+    if (this.shakeT > 0) {
+      const s = 0.12;
+      this.camera.position.x += (Math.random() * 2 - 1) * s;
+      this.camera.position.y += (Math.random() * 2 - 1) * s;
+      this.camera.position.z += (Math.random() * 2 - 1) * s;
+    }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  tickWeaponRig(dt) {
+    if (!this.weaponRig.visible) return;
+    const u = this.weaponRig.userData;
+    u.swing = Math.max(0, (u.swing || 0) - dt * 3);
+    const sw = u.swing;
+    this.weaponRig.rotation.x = -0.15 - Math.sin(Math.min(1, sw * 2) * Math.PI) * 1.1;
+    this.weaponRig.rotation.y = -0.2 + Math.sin(Math.min(1, sw * 2) * Math.PI) * 0.5;
   }
 }
 
@@ -2220,3 +2930,4 @@ window.addEventListener('error', (e) => {
 
 const game = new Game();
 window.GAME = game;
+game.debugBricks = BRICKS; // exposed for smoke tests

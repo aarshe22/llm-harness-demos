@@ -97,6 +97,48 @@ body.touch #panel-hint { display: none; }
   font-weight: 700;
   color: #7c8698;
 }
+#stripbar {
+  position: absolute;
+  left: 50%;
+  bottom: 86px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 7px;
+  background: rgba(24, 30, 46, .5);
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-radius: 16px;
+  backdrop-filter: blur(6px);
+  z-index: 4;
+  max-width: 96vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+#stripbar.hidden { display: none; }
+#stripbar .slot .wicon { font-size: 20px; line-height: 24px; }
+#hotbar.hidden { display: none; }
+#mode-pill {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: .4px;
+  color: #fff;
+  background: rgba(37, 99, 235, .85);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+  z-index: 4;
+  pointer-events: none;
+}
+#mode-pill.weapon { background: rgba(220, 38, 38, .88); }
+#mode-pill.weather { background: rgba(14, 116, 144, .9); }
+.slot.weather-w { min-width: 52px; }
+.slot.weather-w .wicon { font-size: 20px; }
+.slot.weather-w.armed { outline: 3px solid #ffd23f; }
+
 .slot.remove { display: grid; place-items: center; font-size: 22px; font-weight: 800; color: #b4321f; }
 .slot .swatch {
   position: absolute;

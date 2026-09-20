@@ -25,9 +25,10 @@
   </div>
 
   <div id="hotbar"></div>
+  <div id="stripbar" class="hidden"></div>
 
   <div class="panel" id="panel-hint">
-    <div id="hint-desktop">WASD move · drag look · Space jump · E enter/exit · 1-6 brick · click place · X remove · ⚙️ options</div>
+    <div id="hint-desktop">WASD move · drag look · Space jump · E enter/exit · 1-6 brick · click place · X remove · B weapon mode · ⚙️ options</div>
     <div id="hint-touch">drag right = look · pad = move · ENTER at doors · tap = place · ⚙️ options</div>
   </div>
 </div>
@@ -36,7 +37,7 @@
 
 <div id="intro" onclick="if(event.target===this)document.getElementById('btn-play').click()">
   <div class="card">
-    <img id="welcome-banner" alt="Maddox Blox welcome — brick mosaic of the face in 8 colors" />
+    <img id="welcome-banner" alt="Maddox Blox welcome — brick mosaic of the face in 16 vibrant colors" />
     <h1>Maddox Blox</h1>
     <p>A brick-toy sandbox. Gather loose bricks, build whatever you like,
        and repair the broken rainbow bridge.</p>
@@ -47,7 +48,7 @@
       <li><b>1-6</b> pick a brick type</li>
       <li>Houses have interiors! Kitchen, bathroom, bedroom, wall TV — go knock.</li>
       <li>⚙️ <b>Options</b>: Tiny → Huge maps (bigger playable world: towns, farms, roads, zones), change object counts, regenerate.</li>
-      <li>🗿 Cross the river to find the <b>giant face-mosaic monument</b> — built from the 8-color welcome banner art.</li>
+      <li>🗿 Cross the river to find the <b>giant face-mosaic monument</b> — built from the same 16-color dithered welcome portrait.</li>
     </ul>
     <button id="btn-play">Start building</button>
   </div>

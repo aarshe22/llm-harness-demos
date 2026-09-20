@@ -1,7 +1,7 @@
 /* World options: data-driven object types, size presets, persistence, settings panel. */
 
 export const OBJECT_TYPES = [
-  { id: 'house', label: 'Houses', icon: '🏠', def: 4, max: 10 },
+  { id: 'house', label: 'Houses', icon: '🏠', def: 4, max: 20 },
   { id: 'school', label: 'School', icon: '🏫', def: 1, max: 3 },
   { id: 'playground', label: 'Playgrounds', icon: '🛝', def: 2, max: 6 },
   { id: 'mountain', label: 'Mountains', icon: '⛰️', def: 4, max: 8 },
@@ -18,9 +18,9 @@ export const SIZES = [
   { id: 'tiny', label: 'Tiny', half: 22, towns: 0, rural: 0, farms: 0, spots: 0.7, trees: 0.5, zones: 1 },
   { id: 'small', label: 'Small', half: 28, towns: 1, rural: 0, farms: 1, spots: 1.0, trees: 1.0, zones: 2 },
   { id: 'large', label: 'Large', half: 42, towns: 2, rural: 1, farms: 2, spots: 1.6, trees: 1.6, zones: 3 },
-  { id: 'huge', label: 'Huge', half: 60, towns: 4, rural: 3, farms: 5, spots: 2.4, trees: 2.2, zones: 5 }
+  { id: 'huge', label: 'Huge', half: 64, towns: 5, rural: 4, farms: 6, spots: 2.4, trees: 2.2, zones: 5 }
 ];
-const MAX_HALF = 60; // hard cap: runaway-memory guard for map size
+const MAX_HALF = 64; // hard cap: runaway-memory guard for map size
 
 const LS_KEY = 'maddox-blox-options-v1';
 
