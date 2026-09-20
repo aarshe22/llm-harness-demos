@@ -2091,7 +2091,7 @@ class Game {
       if (rec._dmg >= 25) return;
       this.hurtBrick(rec, def.dmg);
     });
-    (def.id === 'sword' ? sfx.sword : sfx.hammer)();
+    if (def.id === 'sword') sfx.sword(); else sfx.hammer();
     if (navigator.vibrate) navigator.vibrate(def.id === 'hammer' ? 30 : 12);
     this._swing(def.id === 'hammer' ? 0.8 : 0.5);
     return true;
