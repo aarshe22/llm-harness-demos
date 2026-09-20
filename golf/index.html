@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Voxel Golf — real 18-hole courses in voxels</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b3d2e">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>⛳</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- ============ START SCREEN ============ -->
+<div id="screen-start" class="screen">
+  <div class="panel">
+    <h1>VOXEL GOLF</h1>
+    <div class="subtitle">Real 18-hole courses · voxel edition</div>
+    <div id="course-list" class="course-list"></div>
+    <div class="settings-row">
+      <label><input type="checkbox" id="opt-sound" checked> Sound</label>
+      <label><input type="checkbox" id="opt-meter"> Meter mode (desktop)</label>
+      <label>Quality
+        <select id="opt-quality">
+          <option value="auto">Auto</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+        </select>
+      </label>
+    </div>
+    <div class="btn-row">
+      <button id="btn-start" class="big primary">PLAY 18</button>
+      <button id="btn-help" class="big">HOW TO PLAY</button>
+    </div>
+    <div class="credit">
+      Course layouts derived from public data: golfMapsR (Google Earth / OpenStreetMap traces, ODbL/MIT).
+      Yardages &amp; pars computed from real geometry. Not affiliated with the courses.
+    </div>
+  </div>
+</div>
+
+<!-- ============ HELP ============ -->
+<div id="screen-help" class="screen hidden">
+  <div class="panel">
+    <h2>How to play</h2>
+    <div class="help-grid">
+      <div>
+        <h3>Touch</h3>
+        <ul>
+          <li><b>Drag back</b> from anywhere &amp; release — aim + power (like a slingshot)</li>
+          <li>Two-finger drag: orbit camera · pinch: zoom</li>
+          <li>Tap a club to change · tap <b>Auto</b> for suggestion</li>
+          <li>Buttons at bottom: map, scorecard, camera, drop</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Desktop</h3>
+        <ul>
+          <li><b>Click-drag</b> back from the ball &amp; release to shoot, or</li>
+          <li><b>Space</b> (hold &amp; release) to use the power meter</li>
+          <li><b>A/D or ←/→</b> fine aim · <b>Q/E</b> club · <b>1/2/3</b> shot shape</li>
+          <li><b>Shift</b>+aim = fast · <b>V</b> camera · <b>M</b> map · <b>Tab</b> scorecard · <b>H</b> help</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Rules</h3>
+        <ul>
+          <li>Water: 1 penalty stroke, drop at the margin</li>
+          <li>Out of bounds / lost: 1 penalty, replay the shot</li>
+          <li>Unplayable lie: use <b>Drop +1</b></li>
+          <li>Wind affects your shot — check the flag</li>
+        </ul>
+      </div>
+    </div>
+    <div class="btn-row"><button id="btn-help-close" class="big primary">GOT IT</button></div>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="hud-top-left">
+    <div class="hole-card">
+      <div class="hc-num"><span id="hc-hole">H1</span></div>
+      <div class="hc-lines">
+        <div><span id="hc-par">PAR 4</span> · <span id="hc-yds">412 yds</span></div>
+        <div>SI <span id="hc-si">-</span> · <span id="hc-score">Hole: 0</span></div>
+        <div class="hc-wind"><span id="hc-wind-ico">→</span> <span id="hc-wind">0</span> mph</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud-top-right">
+    <canvas id="minimap" width="200" height="200"></canvas>
+    <div id="mm-dist">Pin —</div>
+  </div>
+
+  <div id="msg-toast"></div>
+
+  <div id="hud-bottom">
+    <div id="lie-row">
+      <span id="lie-badge" class="lie fair">LIE: FAIRWAY</span>
+      <span id="dist-to-pin">TO PIN —</span>
+      <span id="dist-front">—</span>
+    </div>
+    <div id="clubbar-wrap">
+      <div id="clubbar"></div>
+      <button id="club-auto" class="chip auto on" title="Auto club selection">AUTO</button>
+    </div>
+    <div id="power-wrap" class="hidden">
+      <div id="power-fill"></div><div id="power-mark"></div>
+    </div>
+    <div id="shot-row">
+      <span class="lbl">SHAPE</span>
+      <button class="shape-btn" data-s="-1">DRAW</button>
+      <button class="shape-btn on" data-s="0">STRAIGHT</button>
+      <button class="shape-btn" data-s="1">FADE</button>
+      <span class="sep"></span>
+      <button id="btn-drop" title="Unplayable drop, +1 stroke">DROP +1</button>
+      <button id="btn-restart-hole" title="Restart hole">REDO</button>
+    </div>
+    <div id="key-row">
+      <button id="btn-map">MAP</button>
+      <button id="btn-card">CARD</button>
+      <button id="btn-cam">CAM</button>
+      <button id="btn-sound">🔊</button>
+      <button id="btn-menu">MENU</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ HOLE SUMMARY ============ -->
+<div id="screen-hole" class="screen hidden">
+  <div class="panel small">
+    <h2 id="hs-title">Hole complete</h2>
+    <div id="hs-score" class="hs-score">4</div>
+    <div id="hs-label" class="hs-label">PAR</div>
+    <div class="btn-row">
+      <button id="btn-next-hole" class="big primary">NEXT HOLE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ROUND SUMMARY ============ -->
+<div id="screen-round" class="screen hidden">
+  <div class="panel">
+    <h2>Round complete</h2>
+    <div id="rs-total" class="hs-score">—</div>
+    <div id="rs-label" class="hs-label">—</div>
+    <div id="rs-best" class="rs-best"></div>
+    <div id="rs-card" class="mini-card"></div>
+    <div class="btn-row">
+      <button id="btn-again" class="big primary">PLAY AGAIN</button>
+      <button id="btn-lobby" class="big">LOBBY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCORECARD OVERLAY ============ -->
+<div id="scorecard" class="overlay hidden">
+  <div class="panel">
+    <h2>Scorecard</h2>
+    <div id="sc-table" class="sc-table"></div>
+    <div class="btn-row"><button id="btn-sc-close" class="big">CLOSE</button></div>
+  </div>
+</div>
+
+<!-- ============ LOADING ============ -->
+<div id="loading" class="overlay hidden">
+  <div class="load-box">
+    <div class="ball-anim"></div>
+    <div id="load-text">Building hole…</div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="data/courses.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script>UI.boot();</script>
+</body>
+</html>
