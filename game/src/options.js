@@ -11,13 +11,16 @@ export const OBJECT_TYPES = [
   { id: 'deco', label: 'Arch & well', icon: '⛲', def: 1, max: 1 }
 ];
 
+/* Each preset changes the real playable half-extent (half) AND the generation
+   capacity multipliers: towns (extra villages), rural hamlets, farms,
+   collectible spots, trees. `zones` = distinct terrain zones the world carves. */
 export const SIZES = [
-  { id: 'tiny', label: 'Tiny', half: 22 },
-  { id: 'small', label: 'Small', half: 28 },
-  { id: 'large', label: 'Large', half: 36 },
-  { id: 'huge', label: 'Huge', half: 46 }
+  { id: 'tiny', label: 'Tiny', half: 22, towns: 0, rural: 0, farms: 0, spots: 0.7, trees: 0.5, zones: 1 },
+  { id: 'small', label: 'Small', half: 28, towns: 1, rural: 0, farms: 1, spots: 1.0, trees: 1.0, zones: 2 },
+  { id: 'large', label: 'Large', half: 42, towns: 2, rural: 1, farms: 2, spots: 1.6, trees: 1.6, zones: 3 },
+  { id: 'huge', label: 'Huge', half: 60, towns: 4, rural: 3, farms: 5, spots: 2.4, trees: 2.2, zones: 5 }
 ];
-const MAX_HALF = 46; // hard cap: runaway-memory guard for map size
+const MAX_HALF = 60; // hard cap: runaway-memory guard for map size
 
 const LS_KEY = 'maddox-blox-options-v1';
 
@@ -26,10 +29,14 @@ export function sizeHalf(id) {
   return Math.min(s.half, MAX_HALF);
 }
 
+export function sizePreset(id) {
+  return SIZES.find((x) => x.id === id) || SIZES[1];
+}
+
 export function defaultOptions() {
   const counts = {}, enabled = {};
   for (const t of OBJECT_TYPES) { counts[t.id] = t.def; enabled[t.id] = true; }
-  return { size: 'small', counts, enabled };
+  return { size: 'large', counts, enabled };
 }
 
 export function loadOptions() {

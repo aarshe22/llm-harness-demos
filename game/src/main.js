@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
 import { INTERIOR_DEF, buildInterior } from './interior.js';
-import { buildOptionsPanel, loadOptions, sizeHalf } from './options.js';
+import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
+import { mosaicCells, instancedMosaicMesh, bannerTexture } from './mosaic.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -37,6 +38,8 @@ class World {
     this.waterTop = 0.4;
     this.river = { x0: -7, x1: 7, z0: 9, z1: 19 };
     this.spots = [];
+    this.zones = [];
+    this.respawnAnchors = [];
     this.opts = loadOptions();
     this.applyOptions();
     this.over = this.makeBucket('_over');
@@ -48,11 +51,15 @@ class World {
   }
 
   applyOptions() {
-    this.half = sizeHalf(this.opts.size);
-    const k = this.half / 28;
-    this.waterTop = 0.4 * k;
-    this.river = { x0: -7 * k, x1: 7 * k, z0: 9 * k, z1: 19 * k };
-    this.k = k;
+    const p = sizePreset(this.opts.size);
+    this.preset = p;
+    this.half = p.half;
+    // k is the classic "small" scaling reference; size beyond it adds real
+    // extent + generation capacity instead of just stretching props.
+    this.k = this.half / 28;
+    this.waterTop = 0.4 * this.k;
+    const rz = 1; // river keeps its classic spot; size buys far-bank space, not a wider river
+    this.river = { x0: -7 * this.k, x1: 7 * this.k, z0: 9 * rz, z1: 19 * rz };
   }
 
   makeBucket(name) {
@@ -64,7 +71,9 @@ class World {
 
   count(id) {
     const o = this.opts;
-    return o.enabled[id] ? Math.max(0, Math.min(o.counts[id] || 0, 200)) : 0;
+    if (!o.enabled[id]) return 0;
+    const mult = id === 'tree' ? this.preset.trees : id === 'flower' ? this.preset.zones * 0.6 : 1;
+    return Math.max(0, Math.min(Math.round((o.counts[id] || 0) * mult), 200));
   }
 
   addObj(obj) { this._b.group.add(obj); return obj; }
@@ -109,6 +118,7 @@ class World {
     this.over = this.makeBucket('_over');
     this.applyOptions();
     this.build();
+    if (this.onWorldChanged) this.onWorldChanged();
   }
 
   mat(color) {
@@ -141,19 +151,41 @@ class World {
   }
 
   build() {
-    this.solids = [];
-    this.staticMeshes = [];
-    this.doorAnchors = [];
     this.obstacles = [];
+    this.zones = [];
+    this.respawnAnchors = [];
+    this.houseRects = [];
+    this.doorAnchors = [];
+    this.swings = [];
     this._b = this.over;
     this.solids = this.over.solids;
     this.staticMeshes = this.over.staticMeshes;
+    const H = this.half, r = this.river;
     this.buildGround();
     this.buildWater();
     this.buildPaths();
+    // Village stays anchored on the near (z<0) side between the hero spawn and
+    // the river; everything past the bridge is scaled-up exploration space.
+    this.buildVillage();
+    this.buildMonumentSite();
+    // Far-side roads are placed after the monument so they route around it.
+    if (H - r.z1 > 8) {
+      const pad = this.monumentRect;
+      const roadZ = pad ? Math.min(r.z1 + 6, pad.z0 - 6) : r.z1 + 6;
+      this.buildRoad(0.5, r.z1 + 1, 0.5, H - 3, 2.2, pad);
+      if (roadZ > r.z1 + 2) {
+        this.buildRoad(0.5, roadZ, H - 4, roadZ, 2.2, pad);
+        this.buildRoad(0.5, roadZ, -H + 4, roadZ, 2.2, pad);
+      }
+      if (pad) {
+        this.buildRoad(0.5, r.z1 + 1, pad.cx, r.z1 + 1, 2, pad);
+        this.buildRoad(pad.cx, r.z1 + 1, pad.cx, pad.z0 - 7, 2, pad);
+      }
+    }
     this.buildMountains();
     this.buildVolcanoes();
-    this.buildVillage();
+    this.buildExtraTowns();
+    this.buildRuralAndFarms();
     for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
     this.pickSpots();
@@ -174,8 +206,9 @@ class World {
   pickSpots() {
     const H = this.half, k = this.k, r = this.river;
     const cands = [];
-    for (let x = -H + 2; x <= H - 2; x += 1.5)
-      for (let z = -H + 2; z <= H - 2; z += 1.5) cands.push([x, z]);
+    const step = Math.max(1.5, H / 30);
+    for (let x = -H + 2; x <= H - 2; x += step)
+      for (let z = -H + 2; z <= H - 2; z += step) cands.push([x, z]);
     const chosen = [];
     const add = (x, z) => {
       if (this.propBlocked(x, z)) return;
@@ -184,8 +217,14 @@ class World {
     };
     add(11, r.z0 - 2);   // guaranteed near-bridge spots so the goal stays reachable
     add(11, r.z1 + 2);
+    // guarantee at least one spot deep in exploration space (monument plaza)
+    const pad = this.monumentRect;
+    if (pad && !chosen.some(([cx2, cz2]) => Math.hypot(pad.cx - cx2, pad.z0 + 3 - cz2) < 3.2)) {
+      chosen.push([pad.cx, pad.z0 + 3]);
+    }
+    const limit = Math.round(40 * this.preset.spots);
     for (const [x, z] of this.shuffle(cands)) {
-      if (chosen.length >= 40) break;
+      if (chosen.length >= limit) break;
       if (Math.hypot(x, z) < 5 * k) continue;
       add(x, z);
     }
@@ -195,8 +234,11 @@ class World {
   propBlocked(x, z) {
     if (this.inRiver(x, z)) return true;
     if (Math.abs(x) < 3 && Math.abs(z + 3.5) < 2.5) return true;
-    if (Math.abs(x) < 3 && z > -4 * this.k && z < 8 * this.k) return true;
-    if (Math.abs(z - 6.5 * this.k) < 2.5 && Math.abs(x) < 9.5 * this.k) return true;
+    if (Math.abs(x) < 3 && z > -4 * this.k && z < this.river.z0 - 1) return true;
+    if (Math.abs(z - (this.river.z0 - 2.5)) < 2.5 && Math.abs(x) < 9.5 * this.k) return true;
+    for (const h of this.houseRects || []) {
+      if (Math.abs(x - h.x) < h.w + 2 && Math.abs(z - h.z) < h.d + 2) return true;
+    }
     for (const h of this.obstacles) {
       if (Math.abs(x - h.x) < h.w + 1 && Math.abs(z - h.z) < h.d + 1) return true;
     }
@@ -218,11 +260,12 @@ class World {
       this.addSolid(new THREE.Box3(
         new THREE.Vector3(cx - w / 2, -2, cz - d / 2),
         new THREE.Vector3(cx + w / 2, 0, cz + d / 2)
-      ), null, true);
+      ), null, true, true);
     }
     const ground = merged(parts, grass);
     this.addObj(ground);
     this._b.staticMeshes.push(ground);
+    this.registerZones();
 
     const bed = merged([addBox([], r.x1 - r.x0, 1.2, r.z1 - r.z0, 0, BED_TOP - 0.6, (r.z0 + r.z1) / 2)], this.mat(0xd9b98a));
     this.addSolid(new THREE.Box3(
@@ -234,6 +277,18 @@ class World {
     const stems = [];
     const headsByColor = [[], [], [], []];
     const headMats = [0xff5d8f, 0xffd23f, 0xffffff, 0xff8a3d].map((c) => this.mat(c));
+    // terrain-zone ground tints: every tile inside a zone gets a patch of the
+    // zone's color, so zones read as distinct regions of the map.
+    const zoneTint = { village: 0x7cc850, town: 0x86cf5e, rural: 0x97c85e, farm: 0xa9c05c, wild: 0x67b93c, monument: 0x8ad06a };
+    const zonePatches = Object.fromEntries(Object.keys(zoneTint).map((z) => [z, []]));
+    const zoneAt = (x, z) => (this.zones.find((zn) => x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) || {}).id;
+    for (let x = Math.ceil(-H); x <= H; x += 2) {
+      for (let z = Math.ceil(-H); z <= H; z += 2) {
+        const zn = zoneAt(x, z);
+        if (!zn || zn === 'village' || this.propBlocked(x, z)) continue;
+        addBox(zonePatches[zn], 1.7, 0.1, 1.7, x + 0.5, 0.05, z + 0.5);
+      }
+    }
     for (let i = 0; i < this.count('flower'); i++) {
       const x = Math.round((Math.random() * 2 - 1) * (H - 2)) + 0.5;
       const z = Math.round((Math.random() * 2 - 1) * (H - 2)) + 0.5;
@@ -248,6 +303,9 @@ class World {
       }
     }
     this.addObj(merged(patches, this.mat(0x8fda5a)));
+    for (const zid of Object.keys(zonePatches)) {
+      if (zonePatches[zid].length) this.addObj(merged(zonePatches[zid], this.mat(zoneTint[zid])));
+    }
     this.addObj(merged(stems, this.mat(0x2f9e4f)));
     headsByColor.forEach((list, i) => { if (list.length) this.addObj(merged(list, headMats[i])); });
   }
@@ -279,11 +337,387 @@ class World {
   buildPaths() {
     const k = this.k;
     const parts = [];
-    for (let z = -14 * k; z <= 8 * k; z += 2) addBox(parts, 1.6, 0.12, 1.8, 0.5, 0.06, z + 0.5);
-    for (let x = -8 * k; x <= 8 * k; x += 2) addBox(parts, 1.8, 0.12, 1.6, x + 0.5, 0.06, 6.5 * k);
+    const seg = (x0, z0, x1, z1) => {
+      const horiz = Math.abs(x1 - x0) >= Math.abs(z1 - z0);
+      const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) / 2);
+      for (let i = 0; i <= n; i++) {
+        const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n;
+        if (horiz) addBox(parts, 1.8, 0.12, 1.6, x + 0.5, 0.06, z + 0.5);
+        else addBox(parts, 1.6, 0.12, 1.8, x + 0.5, 0.06, z + 0.5);
+      }
+    };
+    seg(0.5, -14 * k, 0.5, this.river.z0 - 2);
+    seg(-8 * k, this.river.z0 - 2.5, 8 * k, this.river.z0 - 2.5);
     const m = merged(parts, this.mat(0xd9cdb6));
     m.receiveShadow = true;
     this.addObj(m);
+    this.respawnAnchors.push({ x: 0.5, z: 3 * k });
+  }
+
+  /* One road segment: thin walkable tiles on solid backing; `avoid` (a rect)
+     is routed around. Adds a collider whose top equals the tile surface so the
+     player can walk roads without step collisions. */
+  buildRoad(x0, z0, x1, z1, width = 2.4, avoid = null) {
+    const horiz = Math.abs(x1 - x0) >= Math.abs(z1 - z0);
+    const parts = [];
+    const solid = [];
+    const along = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0));
+    const n = Math.ceil(along);
+    for (let i = 0; i <= n; i++) {
+      let x = Math.round(x0 + (x1 - x0) * i / n);
+      let z = Math.round(z0 + (z1 - z0) * i / n);
+      if (avoid && x > avoid.x0 - 2 && x < avoid.x1 + 2 && z > avoid.z0 - 2 && z < avoid.z1 + 2) {
+        // jog sideways around the excluded rect, clamped inside the world
+        const H = this.half - 3;
+        if (horiz) x = x < (avoid.x0 + avoid.x1) / 2 ? avoid.x0 - 4 : avoid.x1 + 4;
+        else z = z < (avoid.z0 + avoid.z1) / 2 ? avoid.z0 - 4 : avoid.z1 + 4;
+        if (horiz) x = Math.round(Math.max(-H, Math.min(H, x)));
+        else z = Math.round(Math.max(-H, Math.min(H, z)));
+      }
+      if (horiz) {
+        for (let w = 0; w < width; w++) addBox(parts, 1.05, 0.14, 1, x + 0.5, 0.07, z - Math.floor(width / 2) + w + 0.5);
+        solid.push([[x - 0.5, -0.1, z - Math.floor(width / 2)], [x + 0.6, 0.14, z + Math.ceil(width / 2)]]);
+      } else {
+        for (let w = 0; w < width; w++) addBox(parts, 1, 0.14, 1.05, x - Math.floor(width / 2) + w + 0.5, 0.07, z + 0.5);
+        solid.push([[x - Math.floor(width / 2), -0.1, z - 0.5], [x + Math.ceil(width / 2), 0.14, z + 0.6]]);
+      }
+    }
+    const mesh = merged(parts, this.mat(0xcfc4ab));
+    mesh.receiveShadow = true;
+    this.addObj(mesh);
+    for (const [a, b] of solid) {
+      this.addSolid(new THREE.Box3(new THREE.Vector3(...a), new THREE.Vector3(...b)), null, true, true);
+    }
+  }
+
+  /* Distinct terrain zones carved out of the playable extent; the count grows
+     with the preset (Tiny 1 → Huge 5). Zones drive ground tints and where the
+     towns / rural areas / farms / monument get placed. */
+  registerZones() {
+    const H = this.half, r = this.river, nz = this.preset.zones;
+    const mid2 = (r.z1 + H) / 2;
+    const zones = [{ id: 'village', x0: -H, x1: H, z0: -H, z1: r.z0 }];
+    if (nz >= 2) {
+      zones.push({ id: 'town', x0: -H, x1: -H * 0.25, z0: r.z1, z1: H });
+      zones.push({ id: 'farm', x0: -H * 0.25, x1: H, z0: r.z1, z1: mid2 });
+      zones.push({ id: 'wild', x0: -H * 0.25, x1: H, z0: mid2, z1: H });
+    }
+    if (nz >= 3) {
+      zones.push({ id: 'rural', x0: -H, x1: -H * 0.55, z0: -H, z1: -2 });
+    }
+    if (nz >= 5) {
+      zones.push({ id: 'monument', x0: r.x1 + 6, x1: H * 0.9, z0: r.z0, z1: H });
+    }
+    this.zones = zones;
+  }
+
+  siteInMonument(x, z, pad = 4) {
+    const m = this.monumentRect;
+    return !!m && x > m.x0 - pad && x < m.x1 + pad && z > m.z0 - pad && z < m.z1 + pad;
+  }
+
+  zoneCenter(id, idx = 0) {
+    const z = this.zones.find((zn) => zn.id === id);
+    if (!z) return null;
+    const cx = (z.x0 + z.x1) / 2, cz = (z.z0 + z.z1) / 2;
+    const spread = Math.min(z.x1 - z.x0, z.z1 - z.z0) * 0.3;
+    const a = idx * 2.399963; // golden angle: stable scatter inside the zone
+    return { x: cx + Math.cos(a) * spread, z: cz + Math.sin(a) * spread };
+  }
+
+  /* Extra towns on the far (north) bank — presets carry the capacity. */
+  buildExtraTowns() {
+    const n = this.preset.towns;
+    if (!n) return;
+    const r = this.river, H = this.half;
+    const sites = [
+      { x: -16, dz: 5, ry: 0, body: 0xff7f50, roof: 0x2f7de1 },
+      { x: -24, dz: 8, ry: Math.PI / 2, body: 0x35a7ff, roof: 0xffd23f },
+      { x: -13, dz: 14, ry: -Math.PI / 2, body: 0xffd23f, roof: 0x9b5de5 },
+      { x: -21, dz: 18, ry: Math.PI, body: 0x35b56a, roof: 0xe8402a }
+    ];
+    let placed = 0;
+    for (const st of sites) {
+      if (placed >= n) break;
+      const h = { x: st.x * this.k, z: Math.min(r.z1 + st.dz, H - 4), ry: st.ry, body: st.body, roof: st.roof };
+      if (Math.abs(h.x) > H - 5 || h.z < r.z1 + 4) continue;
+      if (this.propBlocked(h.x, h.z) || this.siteInMonument(h.x, h.z, 5)) continue;
+      if (this.buildHouse(h)) placed++;
+    }
+    for (let i = 0; i < placed; i++) {
+      const rc = this.houseRects[this.houseRects.length - 1 - i];
+      this.respawnAnchors.push({ x: rc.x, z: rc.z + rc.d + 2 });
+    }
+  }
+
+  /* Rural homesteads + farms: capacity scales with preset (rural/farms). */
+  buildRuralAndFarms() {
+    const p = this.preset, H = this.half, r = this.river;
+    if (!p.rural && !p.farms) return;
+    const sites = [];
+    for (let i = 0; i < p.rural; i++) {
+      const c = this.zoneCenter('rural', i + 1) || { x: -H * 0.75, z: -H * 0.5 };
+      const x = Math.max(-H + 6, Math.min(-H * 0.58, c.x));
+      const z = Math.max(-H + 6, Math.min(-4, c.z));
+      sites.push({ x, z, ry: Math.PI, body: 0xd9b98a, roof: 0x8b5a2b, farm: i < Math.min(p.farms, 2) });
+    }
+    for (let i = 0; i < p.farms; i++) {
+      if (i < Math.min(p.rural, 2)) continue; // rural homesteads double as the first farms
+      const c = this.zoneCenter('farm', i) || { x: (r.x1 + H) / 2, z: (r.z1 + H) / 2 };
+      const x = Math.max(r.x1 + 4, Math.min(H - 8, c.x));
+      const z = Math.max(r.z1 + 4, Math.min(H - 8, c.z));
+      sites.push({ x, z, ry: 0, body: 0xc0392b, roof: 0xf1f3f5, farm: true });
+    }
+    for (const st of sites) {
+      if (this.propBlocked(st.x, st.z) || this.siteInMonument(st.x, st.z, 5)) continue;
+      if (!this.buildHouse(st)) continue;
+      this.respawnAnchors.push({ x: st.x, z: st.z + 4 });
+      if (st.farm) this.buildFarm(st);
+    }
+  }
+
+  /* Barn + fenced crop field + pond + haystack; all colliders walkable/edge-safe. */
+  buildFarm(s) {
+    const grp = new THREE.Group();
+    const bx = s.x + (s.ry === 0 ? 6 : -6), bz = s.z + 1;
+    if (Math.abs(bx) > this.half - 4) return;
+    // barn
+    grp.add(merged([addBox([], 4, 2.6, 3, bx, 1.3, bz)], this.mat(0xc0392b)));
+    const rf = [];
+    for (const s2 of [-1, 1]) {
+      const m = addBox(rf, 3.2, 0.3, 3.6, bx + s2 * 1.0, 3.05, bz);
+      m.rotation.z = -s2 * 0.5;
+    }
+    grp.add(merged(rf, this.mat(0xf1f3f5)));
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(bx - 2, 0, bz - 1.5), new THREE.Vector3(bx + 2, 2.6, bz + 1.5)
+    ), null, true);
+    this.obstacles.push({ x: bx, z: bz, w: 2.4, d: 2 });
+
+    // crop field: raised walkable soil beds with furrows
+    const fx = s.x - (s.ry === 0 ? 5 : -5), fz = s.z - 4;
+    const field = new THREE.Group();
+    field.position.set(fx, 0, fz);
+    const beds = [], soil = [];
+    for (let i = 0; i < 4; i++) {
+      addBox(soil, 6.2, 0.28, 1.1, 0, 0.14, i * 1.6 - 2.4);
+      for (let c = 0; c < 5; c++) {
+        const crop = part(SP, c * 1.2 - 2.4, 0.5, i * 1.6 - 2.4);
+        crop.scale.setScalar(0.22);
+        beds.push(crop);
+      }
+    }
+    field.add(merged(soil, this.mat(0x8a5a30)));
+    field.add(merged(beds, this.mat(0x3fb963)));
+    const posts = [];
+    for (const sx of [-3.4, 3.4]) for (const sz of [-3.4, 0, 3.4]) addCyl(posts, 0.08, 1, sx, 0.5, sz, 0.08);
+    field.add(merged(posts, this.mat(0x9a5b3f)));
+    for (const sz of [-3.4, 3.4]) {
+      const rail = addBox([], 6.8, 0.1, 0.1, 0, 0.85, sz); field.add(merged([rail], this.mat(0xd9b98a)));
+    }
+    grp.add(field);
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(fx - 3.1, 0, fz - 3), new THREE.Vector3(fx + 3.1, 0.28, fz + 3)
+    ), null, true, true);
+
+    // pond (rim above water level so it isn't a trap) + haystack
+    const px = fx + 6, pz = fz + 4;
+    if (Math.abs(px) < this.half - 2 && Math.abs(pz) < this.half - 2) {
+      const rim = [];
+      for (let a = 0; a < 8; a++) {
+        addBox(rim, 1.2, 0.5, 1.2, px + Math.cos(a * Math.PI / 4) * 1.9, 0.08, pz + Math.sin(a * Math.PI / 4) * 1.9);
+      }
+      this.addObj(merged(rim, this.mat(0xb9c2cc)));
+      const water = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.06, 8),
+        mkMat(0x2f9bea, { roughness: 0.15, transparent: true, opacity: 0.85 }));
+      water.position.set(px, 0.3, pz);
+      grp.add(water);
+      this.addSolid(new THREE.Box3(
+        new THREE.Vector3(px - 1.5, 0, pz - 1.5), new THREE.Vector3(px + 1.5, 0.3, pz + 1.5)
+      ), null, true, true);
+    }
+    const hay = part(CY, s.x + 3, 0.55, s.z + 3);
+    hay.scale.set(0.9, 1.1, 0.9); hay.rotation.x = Math.PI / 2;
+    grp.add(merged([hay], this.mat(0xe0b53f)));
+    this.addObj(grp);
+  }
+
+  /* The one giant monument. Prefers the far (north) bank; on smaller maps it
+     drops to the south bank in front of the village. Never overlaps props. */
+  buildMonumentSite() {
+    this.monumentRect = null;
+    this.monument = null;
+    const H = this.half, r = this.river;
+    const hitProp = (x0, x1, z0, z1) => {
+      for (const o of this.obstacles) {
+        if (x1 > o.x - o.w - 1 && x0 < o.x + o.w + 1 &&
+            z1 > o.z - o.d - 1 && z0 < o.z + o.d + 1) return true;
+      }
+      for (const h of this.houseRects) {
+        if (x1 > h.x - h.w - 1.5 && x0 < h.x + h.w + 1.5 &&
+            z1 > h.z - h.d - 1.5 && z0 < h.z + h.d + 1.5) return true;
+      }
+      return false;
+    };
+    const zm = this.zones.find((zn) => zn.id === 'monument');
+    const attempts = [];
+    { // north bank
+      const availZ = H - 1.5 - (r.z1 + 5);
+      attempts.push({ side: 1, depth: availZ, prefer: zm ? (zm.x0 + zm.x1) / 2 : (r.x1 + H) / 2 });
+    }
+    { // south bank (in front of the village, works on Tiny/Small)
+      const depth = (-r.z0 - 6) - (-H + 2);
+      attempts.push({ side: -1, depth, prefer: -H * 0.15 });
+    }
+    let chosen = null;
+    for (const at of attempts) {
+      if (at.depth < 10) continue;
+      const sc = at.depth >= 22 ? 1 : 0.8;
+      const wallW = 22 * sc, plazaW = wallW + 10;
+      const plazaD = Math.min(16 * sc + 6, at.depth);
+      if (plazaD < 9 || H * 2 - 4 < plazaW + 4) continue;
+      const cxLo = -H + plazaW / 2 + 1.5, cxHi = H - plazaW / 2 - 1.5;
+      let bd = Infinity, cx = null;
+      for (let c = cxLo; c <= cxHi; c += 2) {
+        const zNear = at.side > 0 ? r.z1 + 5 : -r.z0 - 6;
+        const z0 = at.side > 0 ? zNear : zNear - plazaD;
+        const z1 = z0 + plazaD;
+        if (Math.abs(c - at.prefer) < bd && !hitProp(c - plazaW / 2 - 2, c + plazaW / 2 + 2, z0 - 3, z1 + 3)) {
+          bd = Math.abs(c - at.prefer); cx = c;
+        }
+      }
+      if (cx !== null) { chosen = { at, sc, wallW, plazaW, plazaD, cx: Math.round(cx) }; break; }
+    }
+    if (!chosen) return;
+    const { at, sc, wallW, plazaW, plazaD } = chosen;
+    const wallH = 18 * sc, wallD = 2.6;
+    const cx = chosen.cx;
+    const side = at.side; // +1: plaza at north edge, wall facing south; -1: plaza at south edge, facing north
+    const plazaZ1 = side > 0 ? H - 2 : (-r.z0 - 6);
+    const plazaZ0 = plazaZ1 - plazaD;
+    const wallZ = side > 0 ? plazaZ1 - 2 : plazaZ0 + 2;
+    const pedTop = 1.2 + 4 * Math.max(0.7, sc);
+    const grp = new THREE.Group();
+    grp.name = 'monument';
+
+    // plaza: thick solid, top at y=1.2 — valid flat walkable terrain
+    grp.add(merged([addBox([], plazaW, 1.2, plazaD, cx, 0.6, (plazaZ0 + plazaZ1) / 2)], this.mat(0xb9a98f)));
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(cx - plazaW / 2, 0, plazaZ0),
+      new THREE.Vector3(cx + plazaW / 2, 1.2, plazaZ1)
+    ), null, true, true);
+
+    // steps up to the plaza, on the approach side (walkable 0.4 rises)
+    const stSign = side > 0 ? -1 : 1;
+    for (let i = 0; i < 3; i++) {
+      const sy = 0.4 * (3 - i), sz = (side > 0 ? plazaZ0 : plazaZ1) + stSign * (1.5 + i * 1.5);
+      grp.add(merged([addBox([], plazaW * 0.7, sy, 1.5, cx, sy / 2, sz)], this.mat(0xcfc4ab)));
+      this.addSolid(new THREE.Box3(
+        new THREE.Vector3(cx - plazaW * 0.35, 0, sz - 0.75),
+        new THREE.Vector3(cx + plazaW * 0.35, sy, sz + 0.75)
+      ), null, true, true);
+    }
+
+    // pedestal (buildable support) + wall backing + buttresses
+    const pedW = wallW + 4, pedD = 12 * sc;
+    grp.add(merged([addBox([], pedW, pedTop - 1.2, pedD, cx, (1.2 + pedTop) / 2, wallZ)], this.mat(0x8f9aa8)));
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(cx - pedW / 2, 1.2, wallZ - pedD / 2),
+      new THREE.Vector3(cx + pedW / 2, pedTop, wallZ + pedD / 2)
+    ), null, true);
+
+    grp.add(merged([addBox([], wallW, wallH, wallD, cx, pedTop + wallH / 2, wallZ)], this.mat(0x3b3b40)));
+    // collider spans wall + projected mosaic depth (symmetric: side-agnostic)
+    const zd = wallD / 2 + 1.8;
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(cx - wallW / 2 - 0.6, pedTop, wallZ - zd),
+      new THREE.Vector3(cx + wallW / 2 + 0.6, pedTop + wallH, wallZ + zd)
+    ), null, true);
+
+    for (const s2 of [-1, 1]) {
+      // buttress fully outside the wall footprint so the mosaic stays visible
+      const bx0 = cx + s2 * (wallW / 2 + 1.9), bx1 = cx + s2 * (wallW / 2 + 3.3);
+      grp.add(merged([addBox([], 1.4, wallH * 0.62, 6 * sc, (bx0 + bx1) / 2, pedTop + wallH * 0.31, wallZ)], this.mat(0x7d8896)));
+      this.addSolid(new THREE.Box3(
+        new THREE.Vector3(Math.min(bx0, bx1), pedTop, wallZ - 3 * sc),
+        new THREE.Vector3(Math.max(bx0, bx1), pedTop + wallH * 0.62, wallZ + 3 * sc)
+      ), null, true);
+      const light = new THREE.PointLight(0xffd166, 1.2, 26, 2);
+      light.position.set(cx + s2 * (plazaW / 2 - 3), 5, (side > 0 ? plazaZ1 : plazaZ0) + stSign * 3);
+      grp.add(light);
+    }
+
+    // plaque on the wall's public face (same 8-color asset, via the banner)
+    const faceSign = stSign; // mosaic/plaque on the plaza/approach side
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(8 * sc, 2.4 * sc),
+      new THREE.MeshBasicMaterial({ color: 0x8f9aa8 }));
+    plaque.position.set(cx, pedTop - 1.4 * Math.max(0.7, sc), wallZ + faceSign * (pedD / 2 + 0.06));
+    plaque.rotation.y = faceSign > 0 ? 0 : Math.PI;
+    grp.add(plaque);
+    bannerTexture().then((b) => {
+      if (grp.parent) {
+        plaque.material.map = b.tex;
+        plaque.material.color.setHex(0xffffff);
+        plaque.material.needsUpdate = true;
+      } else b.dispose();
+    }).catch(() => {});
+
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    this.obstacles.push({ x: cx, z: (plazaZ0 + plazaZ1) / 2, w: plazaW / 2, d: plazaD / 2 + 6 });
+    this.monumentRect = { cx, x0: cx - plazaW / 2, x1: cx + plazaW / 2, z0: plazaZ0, z1: plazaZ1 };
+    this.respawnAnchors.push({ x: cx, z: side > 0 ? plazaZ0 + 3 : plazaZ1 - 3 });
+    this.monument = { cx, wallZ, wallW, wallH, pedTop, sc, faceSign, group: grp, attached: false };
+    this._attachMonumentMosaic(this.monument);
+  }
+
+  async _attachMonumentMosaic(mon) {
+    try {
+      const m = await mosaicCells(40);
+      const { w, h, cells } = m;
+      // flood-fill the true background (color 4 touching the border) so the
+      // mosaic reads as a face silhouette instead of a black slab
+      const seen = new Uint8Array(w * h);
+      const q = [];
+      const push = (i) => { if (!seen[i] && cells[i] === 4) { seen[i] = 1; q.push(i); } };
+      for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+      for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+      while (q.length) {
+        const i = q.pop();
+        const x = i % w;
+        if (x > 0) push(i - 1);
+        if (x < w - 1) push(i + 1);
+        if (i >= w) push(i - w);
+        if (i < w * (h - 1)) push(i + w);
+      }
+      const kept = [];
+      let x0 = w, x1 = -1, y0 = h, y1 = -1;
+      for (let i = 0; i < w * h; i++) {
+        if (seen[i]) continue;
+        const x = i % w, y = (i / w) | 0;
+        kept.push([x, y, cells[i]]);
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+      if (this.monument !== mon) return;
+      const gw = x1 - x0 + 1, gh = y1 - y0 + 1;
+      if (!gw || !gh) return;
+      const s = Math.min(0.75 * mon.sc, (mon.wallW * 0.82) / gw, (mon.wallH * 0.9) / gh);
+      const off = kept.map(([x, y, c]) => [x - x0, y - y0, c]);
+      // every mosaic cell is a box 3 bricks deep: a true 3D mosaic wall
+      // xFlip so the face is never mirrored for whoever approaches the plaza
+      const mesh = instancedMosaicMesh({ w: gw, h: gh }, off, s, s * 3, 0, mon.faceSign < 0);
+      mesh.position.set(
+        mon.cx,
+        mon.pedTop + mon.wallH / 2 - (gh - 1) * s / 2,
+        mon.wallZ + mon.faceSign * (1.3 + 1.5 * s)
+      );
+      mon.group.add(mesh);
+      mon.group.userData.dispose = () => mesh.userData.dispose();
+      mon.attached = true;
+    } catch (e) {
+      console.warn('mosaic asset unavailable:', e && e.message);
+    }
   }
 
   buildMountains() {
@@ -434,13 +868,13 @@ class World {
     let placed = 0;
     for (const s of sites) {
       if (placed >= n) break;
-      const h = { x: s.x * k, z: s.z * k, ry: s.ry, body: s.body, roof: s.roof };
+      const h = { x: s.x, z: s.z, ry: s.ry, body: s.body, roof: s.roof };
       if (Math.abs(h.x) > this.half - 5 || Math.abs(h.z) > this.half - 5) continue;
       if (this.buildHouse(h)) placed++;
     }
 
     if (this.count('school')) {
-      const sx = -14 * k, sz = -18 * k;
+      const sx = -14, sz = -18;
       if (!(Math.abs(sx) > this.half - 7 || Math.abs(sz) > this.half - 6) && !this.propBlocked(sx, sz)) {
         this.buildSchool(sx, sz, k);
       }
@@ -450,10 +884,11 @@ class World {
     let pg = 0;
     for (const [bx, bz] of [[17, -19], [-20, 8], [20, 8], [-20, -6], [8, 15], [-9, -23]]) {
       if (pg >= pgN) break;
-      const px = bx * k, pz = bz * k;
+      const px = bx, pz = bz;
       if (Math.abs(px) > this.half - 4.5 || Math.abs(pz) > this.half - 4.5) continue;
       if (this.propBlocked(px, pz)) continue;
       this.buildPlayground(px, pz, k);
+      this.obstacles.push({ x: px, z: pz, w: 2.5, d: 2.5 });
       pg++;
     }
 
@@ -634,11 +1069,12 @@ class World {
     const k = this.k;
 
     const deckW = 3, deckT = 0.5, deckL = 1.06;
-    const zA = 9.1 * k, zB = 18.9 * k, lift = 1.7, yA = 1.35;
+    const r = this.river;
+    const zA = r.z0 + 0.1, zB = r.z1 - 0.1, lift = 1.7, yA = 1.35;
     const N = 26;
     const isBroken = (i) => i >= 8 && i <= 17;
 
-    for (const z of [8.5 * k, 19.5 * k]) {
+    for (const z of [r.z0 - 0.5, r.z1 + 0.5]) {
       const ab = [];
       addBox(ab, 5.2, 1.6, 1.6, 0.5, 0.8, z);
       for (let i = -2; i <= 2; i++) addCyl(ab, 0.17, 0.16, i + 0.5, 1.68, z);
@@ -689,7 +1125,7 @@ class World {
     board.position.set(0.1, 1.8, 0);
     board.castShadow = true;
     sign.add(board);
-    sign.position.set(-3.6 * k, 0, 8 * k);
+    sign.position.set(-3.6 * k, 0, r.z0 - 2);
     sign.rotation.y = 0.4;
     this.addObj(sign);
     this.sign = sign;
@@ -708,13 +1144,13 @@ class World {
       addBox([], 0.4, 1.6, 0.4, -1.7, 0.8, 0),
       addBox([], 0.4, 1.6, 0.4, 1.7, 0.8, 0)
     ], this.mat(0xffd23f)));
-    portal.position.set(0.5, 0, 24.5 * k);
+    portal.position.set(0.5, 0, Math.min(r.z1 + 4, this.half - 2));
     portal.visible = false;
     this.portal = portal;
     this.portalParts = { ring, disc, halo };
     this.addObj(portal);
     this.portalLight = new THREE.PointLight(0xffd166, 0, 24, 2);
-    this.portalLight.position.set(0.5, 3, 24.5 * k);
+    this.portalLight.position.set(0.5, 3, Math.min(r.z1 + 4, this.half - 2));
     this.addObj(this.portalLight);
   }
 
@@ -811,6 +1247,37 @@ class World {
       if (b.max.x > x0 && b.min.x < x1 && b.max.z > z0 && b.min.z < z1 && b.max.y > top) top = b.max.y;
     }
     return top;
+  }
+
+  surfaceTopAny(x, z) {
+    let top = -Infinity;
+    for (const s of this.solids) {
+      const b = s.box;
+      if (b.max.y > -1 && b.max.y > top &&
+          x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z) top = b.max.y;
+    }
+    return top;
+  }
+
+  respawnPlayer(p) {
+    const H = this.half;
+    let x = clamp(p.pos.x, -H + 2, H - 2);
+    let z = clamp(p.pos.z, -H + 2, H - 2);
+    let top = this.surfaceTopAny(x, z);
+    if (top === -Infinity) {
+      const pts = this.respawnAnchors.length ? this.respawnAnchors : [{ x: 0.5, z: 3 }];
+      let best = pts[0], bd = Infinity;
+      for (const a of pts) {
+        const ax = clamp(a.x, -H + 2, H - 2), az = clamp(a.z, -H + 2, H - 2);
+        const d = Math.hypot(p.pos.x - ax, p.pos.z - az);
+        if (d < bd && this.surfaceTopAny(ax, az) > -Infinity) { bd = d; best = { x: ax, z: az }; }
+      }
+      x = best.x; z = best.z;
+      top = this.surfaceTopAny(x, z);
+      if (top === -Infinity) top = 0;
+    }
+    p.pos.set(x, top + 0.05, z);
+    p.vel.set(0, 0, 0);
   }
 
   update(t, dt) {
@@ -963,6 +1430,10 @@ class Player {
     const H = this.world.half;
     this.pos.x = clamp(this.pos.x, -H + 0.5, H - 0.5);
     this.pos.z = clamp(this.pos.z, -H + 0.5, H - 0.5);
+    if (!this.world.inHouse && this.pos.y < -3.5) {
+      this.world.respawnPlayer(this);
+      if (this.fellHook) this.fellHook();
+    }
 
     if (this.vel.y <= 0.5) {
       const g2 = this.groundTopAt(this.pos.x, this.pos.z, this.pos.y - 0.02);
@@ -1003,9 +1474,7 @@ class Game {
 
     this.scene = new THREE.Scene();
     this.scene.background = this.makeSky();
-    this.scene.fog = new THREE.Fog(0xbfe4ff, 70, 170);
-
-    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
+    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 900);
     this.orbit = { yaw: Math.PI, pitch: 0.42, dist: 11, wantDist: 11 };
 
     this.scene.add(new THREE.HemisphereLight(0xd8f0ff, 0x5f8f3f, 1.0));
@@ -1020,7 +1489,9 @@ class Game {
     this.sun = sun;
 
     this.world = new World(this.scene);
+    this.world.onWorldChanged = () => { this.fitShadow(); this.applyOutdoorFog(); };
     this.player = new Player(this.world);
+    this.player.fellHook = () => this.toast('You fell out of the world — respawned on solid ground!', 'bad');
     this.scene.add(this.player.root);
     this.fitShadow();
 
@@ -1059,8 +1530,14 @@ class Game {
     this.resize();
     this.updateHud();
 
+    this.applyOutdoorFog();
     this.tick = this.tick.bind(this);
     this.renderer.setAnimationLoop(this.tick);
+  }
+
+  applyOutdoorFog() {
+    const H = this.world.half;
+    this.scene.fog = new THREE.Fog(0xbfe4ff, H * 1.8, H * 4.5);
   }
 
   makeSky() {
@@ -1121,7 +1598,7 @@ class Game {
     for (let i = 0; i < spots.length; i++) {
       const [x, z] = spots[i];
       const onTop = tops.some((h) => Math.hypot(x - h[0], z - h[1]) < 2.2);
-      const y = onTop ? 4.75 : 0.75;
+      const y = onTop ? 4.75 : this.world.surfaceTopAny(x, z) + 0.75;
       const color = RAINBOW[i % RAINBOW.length];
       const mat = mkMat(color, { emissive: color, emissiveIntensity: 0.25 });
       const grp = new THREE.Group();
@@ -1177,19 +1654,26 @@ class Game {
     bar.appendChild(rm);
     this.slots.push(rm);
 
+    this.bannerImg = document.getElementById('welcome-banner');
     this.elCount = document.getElementById('hud-count');
     this.elNeed = document.getElementById('hud-need');
     this.elNeed.className = 'row need';
     this.toastEl = document.getElementById('toast');
     this.intro = document.getElementById('intro');
     document.getElementById('btn-play').addEventListener('click', () => this.start());
+    if (this.bannerImg) {
+      bannerTexture().then((b) => {
+        if (this.bannerImg) this.bannerImg.src = b.url;
+        else b.dispose();
+      }).catch(() => { if (this.bannerImg) this.bannerImg.style.display = 'none'; });
+    }
   }
 
   fitShadow() {
-    const H = this.world.half;
+    const span = Math.max(this.world.half, 40) * 1.6;
     const s = this.sun.shadow.camera;
-    s.left = -H * 1.5; s.right = H * 1.5; s.top = H * 1.5; s.bottom = -H * 1.5;
-    s.near = 1; s.far = 40 + H * 2.5;
+    s.left = -span; s.right = span; s.top = span; s.bottom = -span;
+    s.near = 1; s.far = 60 + span * 2;
     s.updateProjectionMatrix();
   }
 
@@ -1197,7 +1681,7 @@ class Game {
     if (this.world.inHouse) {
       this.world.exitHouse();
       this.world.interior.group.visible = false;
-      this.scene.fog = new THREE.Fog(0xbfe4ff, 70, 170);
+      this.applyOutdoorFog();
     }
     this.world.rebuild();
     if (this.confetti) {
@@ -1212,13 +1696,17 @@ class Game {
     this.rescueT = 0;
     this.nearDoor = null;
     this.ghost.visible = false;
-    this.player.pos.set(0.5, 0, 3 * this.world.k);
+    this.player.pos.set(0.5, 0, 3);
     this.player.vel.set(0, 0, 0);
     this.orbit.wantDist = 11;
     this.fitShadow();
+    this.applyOutdoorFog();
     this.spawnCollectibles();
     this.updateHud();
-    this.toast('World regenerated', 'good');
+    const p = this.world.preset;
+    const extra = p.towns + p.rural + p.farms;
+    this.toast(`World regenerated — ${p.label} map, ${p.zones} zone${p.zones > 1 ? 's' : ''}`
+      + (extra ? `, ${extra} settlements beyond the village` : '') + ', 1 giant monument', 'good');
   }
 
   selectSlot(i) {
@@ -1249,6 +1737,9 @@ class Game {
     this.elNeed.textContent = left > 0
       ? `Collect ${left} more to fix the rainbow bridge`
       : 'Bridge repaired — portal unlocked!';
+    if (this.world.monumentRect) {
+      this.elNeed.textContent += ' · 🗿 giant face mosaic is north across the bridge';
+    }
   }
 
   bindInput() {
@@ -1516,7 +2007,7 @@ class Game {
     for (let i = 0; i < n; i++) {
       pos[i * 3] = 0.5 + (Math.random() * 2 - 1) * 3;
       pos[i * 3 + 1] = 2 + Math.random() * 6;
-      pos[i * 3 + 2] = 24.5 + (Math.random() * 2 - 1) * 3;
+      pos[i * 3 + 2] = this.world.river.z1 + 5.5 + (Math.random() * 2 - 1) * 3;
       tmp.setHex(RAINBOW[i % RAINBOW.length]);
       col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
       this.confettiVel[i * 3] = (Math.random() * 2 - 1) * 2.4;
@@ -1621,7 +2112,7 @@ class Game {
       const a = this.nearDoor;
       this.world.exitHouse();
       this.world.interior.group.visible = false;
-      this.scene.fog = new THREE.Fog(0xbfe4ff, 70, 170);
+      this.applyOutdoorFog();
       this.player.pos.set(a.world.x + Math.sin(a.yaw) * 1.0, 0.05, a.world.z + Math.cos(a.yaw) * 1.0);
       this.player.vel.set(0, 0, 0);
       this.orbit.wantDist = 11;
