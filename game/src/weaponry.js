@@ -135,6 +135,7 @@ export function buildWeaponModels() {
     const tip = new THREE.Mesh(BR, mkMat(0xffd23f)); tip.scale.set(0.1, 0.08, 0.12); tip.position.set(0, 0.04, 0.9);
     f.add(body, barrel, tank, tip);
   }
+  f.rotation.y = Math.PI; // barrel must point -Z: character forward
   out.flame = f;
 
   const r = new THREE.Group();
@@ -146,6 +147,7 @@ export function buildWeaponModels() {
     const fins = new THREE.Mesh(BR, dark); fins.scale.set(0.24, 0.24, 0.1); fins.position.z = 0.75;
     r.add(tube, ring, sight, nose, fins);
   }
+  r.rotation.y = Math.PI; // tube muzzle faces -Z, not the shooter's back
   out.rpg = r;
 
   for (const grp of Object.values(out)) grp.traverse((o) => { if (o.isMesh) o.castShadow = true; });

@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
 import { INTERIOR_DEF, buildInterior } from './interior.js';
 import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
-import { faceMosaic, instancedMosaicMesh, bannerTexture } from './mosaic.js';
+import { instancedMosaicMesh, bannerTexture, maddoxRaster } from './mosaic.js';
 import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
 import { sfx } from './sfx.js';
 import { WEATHERS, SKY, ParticleField, StarField, Funnel, WaveFront } from './weather.js';
@@ -778,20 +778,18 @@ class World {
 
   async _attachMonumentMosaic(mon) {
     try {
-      const m = await faceMosaic(44);
+      const m = maddoxRaster();
       if (this.monument !== mon) return;
-      const { w: gw, h: gh, cells } = m;
-      // square grid: pick a cell size so the head fills the wall slab
-      const s = Math.min((mon.wallW * 0.92) / gw, (mon.wallH * 0.92) / gh);
-      const off = [];
-      for (let i = 0; i < gw * gh; i++) off.push([i % gw, (i / gw) | 0, cells[i]]);
-      // each cell is one block; palette role drives forward extrusion (relief)
-      const mesh = instancedMosaicMesh({ w: gw, h: gh }, off, s, 3, 0, false);
-      // rotate so relief protrudes toward the plaza; PI-y keeps the face
-      // un-mirrored from the viewer's side, so no grid flip is needed
+      // literal grid: cell size = wallH/96 so all 96 rows stack to the wall
+      // top; 64 cols (64*cell wide) sit centered on the wall backing, which
+      // is wider than the grid, so the full 64x96 grid is backed.
+      const s = mon.wallH / m.h;
+      const mesh = instancedMosaicMesh(m, s, false);
+      // PI-y for a -Z-facing plaza keeps the art un-mirrored and the blocks
+      // protruding toward the viewer
       mesh.rotation.y = mon.faceSign < 0 ? Math.PI : 0;
-      mesh.position.set(mon.cx, mon.pedTop + mon.wallH / 2 - (gh - 1) * s / 2,
-        mon.wallZ + mon.faceSign * 1.32);
+      mesh.position.set(mon.cx, mon.pedTop + mon.wallH / 2,
+        mon.wallZ + mon.faceSign * 1.3);
       mon.group.add(mesh);
       mon.group.userData.dispose = () => mesh.userData.dispose();
       mon.attached = true;
@@ -1442,15 +1440,15 @@ class Player {
     };
 
     box(shirt, 0.76, 0.66, 0.46, 0, 0.3, 0);
-    box(mkMat(0xffffff), 0.34, 0.1, 0.48, 0, 0.6, 0.02);
+    box(mkMat(0xffffff), 0.34, 0.1, 0.48, 0, 0.6, -0.02);
     box(skin, 0.62, 0.6, 0.56, 0, 1.0, 0);
     for (const sx of [-0.15, 0.15]) {
-      box(mkMat(0x22252b), 0.09, 0.11, 0.05, sx, 1.06, 0.29);
-      box(hair, 0.13, 0.045, 0.05, sx, 1.17, 0.29);
+      box(mkMat(0x22252b), 0.09, 0.11, 0.05, sx, 1.06, -0.29);
+      box(hair, 0.13, 0.045, 0.05, sx, 1.17, -0.29);
     }
-    box(mkMat(0xc0392b), 0.22, 0.045, 0.05, 0, 0.88, 0.29);
+    box(mkMat(0xc0392b), 0.22, 0.045, 0.05, 0, 0.88, -0.29);
     box(mkMat(0x2f7de1), 0.66, 0.14, 0.6, 0, 1.34, 0);
-    box(mkMat(0x2f7de1), 0.5, 0.07, 0.26, 0, 1.31, 0.4);
+    box(mkMat(0x2f7de1), 0.5, 0.07, 0.26, 0, 1.31, -0.4);
     const stud = new THREE.Mesh(CY, mkMat(0xffd23f));
     stud.scale.set(0.12, 0.1, 0.12);
     stud.position.y = 1.45;
@@ -1470,7 +1468,7 @@ class Player {
       const leg = new THREE.Group();
       leg.position.set(sx * 0.2, 0.72, 0);
       box(pants, 0.28, 0.72, 0.3, 0, -0.36, 0, leg);
-      box(mkMat(0x22252b), 0.3, 0.14, 0.42, 0, -0.76, 0.06, leg);
+      box(mkMat(0x22252b), 0.3, 0.14, 0.42, 0, -0.76, -0.06, leg);
       g.add(leg);
       this.legs.push(leg);
     }
@@ -1636,7 +1634,7 @@ class Game {
     this.fx = new Fx(this.scene);
     this.weaponModels = buildWeaponModels();
     this.weaponRig = new THREE.Group();
-    this.weaponRig.position.set(0.42, 1.02, 0.18);
+    this.weaponRig.position.set(0.42, 1.02, -0.18);
     this.weaponRig.visible = false;
     this.player.root.add(this.weaponRig);
     this.showWeaponModel();
@@ -2915,11 +2913,14 @@ class Game {
 
   tickWeaponRig(dt) {
     if (!this.weaponRig.visible) return;
-    const u = this.weaponRig.userData;
-    u.swing = Math.max(0, (u.swing || 0) - dt * 3);
-    const sw = u.swing;
-    this.weaponRig.rotation.x = -0.15 - Math.sin(Math.min(1, sw * 2) * Math.PI) * 1.1;
-    this.weaponRig.rotation.y = -0.2 + Math.sin(Math.min(1, sw * 2) * Math.PI) * 0.5;
+    const rig = this.weaponRig.userData;
+    rig.swing = Math.max(0, (rig.swing || 0) - dt * 3);
+    const sw = rig.swing;
+    // rig sits on the chest front with guns/blades pointing -Z; +X pitch
+    // raises the muzzle/tip. Swing = wind up raised, then strike through rest.
+    const u = Math.min(1, sw * 2);
+    this.weaponRig.rotation.x = -0.15 + u * 1.35;
+    this.weaponRig.rotation.y = -0.2 + u * 0.4;
   }
 }
 
