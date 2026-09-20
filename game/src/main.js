@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
 import { INTERIOR_DEF, buildInterior } from './interior.js';
+import { buildOptionsPanel, loadOptions, sizeHalf } from './options.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -13,9 +14,6 @@ const BRICKS = [
   { name: 'Arch', w: 1, h: 2, d: 1, color: 0x9b5de5, studs: [[0, 0]], hollow: true },
   { name: 'Round', w: 1, h: 1, d: 1, color: 0xff8a3d, studs: [[0, 0]], round: true }
 ];
-const HALF = 28;
-const RIVER = { x0: -7, x1: 7, z0: 9, z1: 19 };
-const WATER_TOP = 0.4;
 const BED_TOP = -2.2;
 
 function hash(x, z) {
@@ -29,19 +27,88 @@ class World {
     this.solids = [];
     this.staticMeshes = [];
     this.doorAnchors = [];
-    this.interior = null;
-    this.inHouse = false;
     this.brickMap = new Map();
     this.brickMeshes = [];
     this.placedCount = 0;
     this._mat = new Map();
     this._studs = new Map();
-    this.hillCenters = [[-19, -13], [20, -18], [-21, 15], [21, 12]];
-    this.houseRects = [
-      { x: -11, z: -7, w: 2.8, d: 2.3 }, { x: 9, z: -12, w: 2.3, d: 2.8 },
-      { x: -16, z: 4, w: 2.3, d: 2.8 }, { x: 14, z: 3, w: 2.8, d: 2.3 },
-      { x: 6, z: 2, w: 1.3, d: 1.3 }
-    ];
+    this.obstacles = [];
+    this.half = 28;
+    this.waterTop = 0.4;
+    this.river = { x0: -7, x1: 7, z0: 9, z1: 19 };
+    this.spots = [];
+    this.opts = loadOptions();
+    this.applyOptions();
+    this.over = this.makeBucket('_over');
+    this.inHouse = false;
+    this.interior = buildInterior(this.scene);
+    this.interiorSolids = this.interior.solids.map((box) => ({ box, brick: null }));
+    this.interior.group.visible = false;
+    this.build();
+  }
+
+  applyOptions() {
+    this.half = sizeHalf(this.opts.size);
+    const k = this.half / 28;
+    this.waterTop = 0.4 * k;
+    this.river = { x0: -7 * k, x1: 7 * k, z0: 9 * k, z1: 19 * k };
+    this.k = k;
+  }
+
+  makeBucket(name) {
+    const group = new THREE.Group();
+    group.name = name;
+    this.scene.add(group);
+    return { group, solids: [], staticMeshes: [] };
+  }
+
+  count(id) {
+    const o = this.opts;
+    return o.enabled[id] ? Math.max(0, Math.min(o.counts[id] || 0, 200)) : 0;
+  }
+
+  addObj(obj) { this._b.group.add(obj); return obj; }
+
+  teardown(b) {
+    // shared geometries reused across builds: primitives + cached stud meshes
+    const sharedGeo = new Set([BR, CY, SP, CO]);
+    for (const m of this._studs.values()) sharedGeo.add(m.geometry);
+    b.group.removeFromParent();
+    b.group.traverse((o) => {
+      if (o.isMesh) {
+        if (!sharedGeo.has(o.geometry)) o.geometry.dispose();
+        const shared = this._mat.has(o.material?.color?.getHex?.());
+        if (!shared) {
+          o.material.map?.dispose();
+          o.material.dispose();
+        }
+      }
+    });
+  }
+
+  clearBricks() {
+    const sharedGeo = new Set([BR, CY, SP, CO]);
+    for (const m of this._studs.values()) sharedGeo.add(m.geometry);
+    for (const rec of [...this.brickMap.values()]) {
+      this.scene.remove(rec.group);
+      rec.group.traverse((o) => {
+        if (o.isMesh) {
+          if (!sharedGeo.has(o.geometry)) o.geometry.dispose();
+          if (!this._mat.has(o.material?.color?.getHex?.())) o.material.dispose();
+        }
+      });
+    }
+    this.brickMap.clear();
+    this.brickMeshes = [];
+    this.placedCount = 0;
+  }
+
+  rebuild() {
+    this.teardown(this.over);
+    this.clearBricks();
+    this.over = this.makeBucket('_over');
+    this.applyOptions();
+    this.build();
   }
 
   mat(color) {
@@ -66,24 +133,30 @@ class World {
   }
 
   addSolid(box, mesh, noRay, noSupport) {
-    this.solids.push({ box, brick: null, noSupport: !!noSupport });
+    this._b.solids.push({ box, brick: null, noSupport: !!noSupport });
     if (mesh) {
-      this.scene.add(mesh);
-      if (!noRay) this.staticMeshes.push(mesh);
+      this.addObj(mesh);
+      if (!noRay) this._b.staticMeshes.push(mesh);
     }
   }
 
   build() {
+    this.solids = [];
+    this.staticMeshes = [];
+    this.doorAnchors = [];
+    this.obstacles = [];
+    this._b = this.over;
+    this.solids = this.over.solids;
+    this.staticMeshes = this.over.staticMeshes;
     this.buildGround();
     this.buildWater();
     this.buildPaths();
-    this.buildHills();
+    this.buildMountains();
+    this.buildVolcanoes();
     this.buildVillage();
-    for (let i = 0; i < 24; i++) this.buildTree();
+    for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
-    this.interior = buildInterior(this.scene);
-    this.interiorSolids = this.interior.solids.map((box) => ({ box, brick: null }));
-    this.overSolids = this.solids;
+    this.pickSpots();
   }
 
   enterHouse() {
@@ -92,33 +165,55 @@ class World {
   }
 
   exitHouse() {
-    this.solids = this.overSolids;
+    this.solids = this.over.solids;
     this.inHouse = false;
   }
 
-  inRiver(x, z) { return x > RIVER.x0 && x < RIVER.x1 && z > RIVER.z0 && z < RIVER.z1; }
+  inRiver(x, z) { const r = this.river; return x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1; }
+
+  pickSpots() {
+    const H = this.half, k = this.k, r = this.river;
+    const cands = [];
+    for (let x = -H + 2; x <= H - 2; x += 1.5)
+      for (let z = -H + 2; z <= H - 2; z += 1.5) cands.push([x, z]);
+    const chosen = [];
+    const add = (x, z) => {
+      if (this.propBlocked(x, z)) return;
+      if (chosen.some(([cx, cz]) => Math.hypot(x - cx, z - cz) < 3.2)) return;
+      chosen.push([x, z]);
+    };
+    add(11, r.z0 - 2);   // guaranteed near-bridge spots so the goal stays reachable
+    add(11, r.z1 + 2);
+    for (const [x, z] of this.shuffle(cands)) {
+      if (chosen.length >= 40) break;
+      if (Math.hypot(x, z) < 5 * k) continue;
+      add(x, z);
+    }
+    this.spots = chosen;
+  }
 
   propBlocked(x, z) {
     if (this.inRiver(x, z)) return true;
     if (Math.abs(x) < 3 && Math.abs(z + 3.5) < 2.5) return true;
-    if (Math.abs(x) < 3 && z > -16 && z < 8) return true;
-    if (Math.abs(z - 6.5) < 2.5 && Math.abs(x) < 9.5) return true;
-    for (const h of this.houseRects) {
+    if (Math.abs(x) < 3 && z > -4 * this.k && z < 8 * this.k) return true;
+    if (Math.abs(z - 6.5 * this.k) < 2.5 && Math.abs(x) < 9.5 * this.k) return true;
+    for (const h of this.obstacles) {
       if (Math.abs(x - h.x) < h.w + 1 && Math.abs(z - h.z) < h.d + 1) return true;
     }
     return false;
   }
 
   buildGround() {
-    const grass = this.mat(0x74c745);
+    const H = this.half, r = this.river, grass = this.mat(0x74c745);
     const regions = [
-      [0, -10, 2 * (HALF + 1), RIVER.z0 + HALF + 1],
-      [0, 24, 2 * (HALF + 1), HALF + 1 - RIVER.z1],
-      [-18, 14, RIVER.x0 + HALF + 1, RIVER.z1 - RIVER.z0],
-      [18, 14, HALF + 1 - RIVER.x1, RIVER.z1 - RIVER.z0]
+      [0, (r.z0 - H - 1) / 2, 2 * (H + 1), r.z0 + H + 1],
+      [0, (r.z1 + H + 1) / 2, 2 * (H + 1), H + 1 - r.z1],
+      [(r.x0 - H - 1) / 2, (r.z0 + r.z1) / 2, r.x0 + H + 1, r.z1 - r.z0],
+      [(r.x1 + H + 1) / 2, (r.z0 + r.z1) / 2, H + 1 - r.x1, r.z1 - r.z0]
     ];
     const parts = [];
     for (const [cx, cz, w, d] of regions) {
+      if (w <= 0 || d <= 0) continue;
       addBox(parts, w, 2, d, cx, -1, cz);
       this.addSolid(new THREE.Box3(
         new THREE.Vector3(cx - w / 2, -2, cz - d / 2),
@@ -126,22 +221,22 @@ class World {
       ), null, true);
     }
     const ground = merged(parts, grass);
-    this.scene.add(ground);
-    this.staticMeshes.push(ground);
+    this.addObj(ground);
+    this._b.staticMeshes.push(ground);
 
-    const bed = merged([addBox([], RIVER.x1 - RIVER.x0, 1.2, RIVER.z1 - RIVER.z0, 0, BED_TOP - 0.6, 14)], this.mat(0xd9b98a));
+    const bed = merged([addBox([], r.x1 - r.x0, 1.2, r.z1 - r.z0, 0, BED_TOP - 0.6, (r.z0 + r.z1) / 2)], this.mat(0xd9b98a));
     this.addSolid(new THREE.Box3(
-      new THREE.Vector3(RIVER.x0, BED_TOP - 1, RIVER.z0),
-      new THREE.Vector3(RIVER.x1, BED_TOP, RIVER.z1)
+      new THREE.Vector3(r.x0, BED_TOP - 1, r.z0),
+      new THREE.Vector3(r.x1, BED_TOP, r.z1)
     ), bed, true);
 
     const patches = [];
     const stems = [];
     const headsByColor = [[], [], [], []];
     const headMats = [0xff5d8f, 0xffd23f, 0xffffff, 0xff8a3d].map((c) => this.mat(c));
-    for (let i = 0; i < 90; i++) {
-      const x = Math.round((Math.random() * 2 - 1) * (HALF - 2)) + 0.5;
-      const z = Math.round((Math.random() * 2 - 1) * (HALF - 2)) + 0.5;
+    for (let i = 0; i < this.count('flower'); i++) {
+      const x = Math.round((Math.random() * 2 - 1) * (H - 2)) + 0.5;
+      const z = Math.round((Math.random() * 2 - 1) * (H - 2)) + 0.5;
       if (this.propBlocked(x, z)) continue;
       if (hash(x, z) < 0.5) {
         addBox(patches, 1, 0.12, 1, x, 0.06, z);
@@ -152,17 +247,18 @@ class World {
         headsByColor[i % 4].push(hd);
       }
     }
-    this.scene.add(merged(patches, this.mat(0x8fda5a)));
-    this.scene.add(merged(stems, this.mat(0x2f9e4f)));
-    headsByColor.forEach((list, i) => { if (list.length) this.scene.add(merged(list, headMats[i])); });
+    this.addObj(merged(patches, this.mat(0x8fda5a)));
+    this.addObj(merged(stems, this.mat(0x2f9e4f)));
+    headsByColor.forEach((list, i) => { if (list.length) this.addObj(merged(list, headMats[i])); });
   }
 
   buildWater() {
+    const r = this.river;
     const mat = mkMat(0x2f9bea, { roughness: 0.15, transparent: true, opacity: 0.85, depthWrite: false });
-    const h = WATER_TOP - BED_TOP + 0.15;
+    const h = this.waterTop - BED_TOP + 0.15;
     const parts = [];
-    for (let x = RIVER.x0; x < RIVER.x1; x++) {
-      for (let z = RIVER.z0; z < RIVER.z1; z++) {
+    for (let x = Math.ceil(r.x0); x < r.x1; x++) {
+      for (let z = Math.ceil(r.z0); z < r.z1; z++) {
         addBox(parts, 1, h, 1, x + 0.5, BED_TOP - 0.15 + h / 2, z + 0.5);
       }
     }
@@ -170,52 +266,122 @@ class World {
     water.castShadow = false;
     water.renderOrder = 2;
     this.water = water;
-    this.scene.add(water);
-    this.staticMeshes.push(water);
+    this.addObj(water);
+    this._b.staticMeshes.push(water);
 
     const shore = [];
-    for (const z of [RIVER.z0 - 1, RIVER.z1]) {
-      for (let x = RIVER.x0 - 1; x < RIVER.x1 + 1; x++) addBox(shore, 1, 0.1, 1, x + 0.5, 0.05, z + 0.5);
+    for (const z of [Math.floor(r.z0) - 1, Math.ceil(r.z1)]) {
+      for (let x = Math.floor(r.x0) - 1; x < Math.ceil(r.x1) + 1; x++) addBox(shore, 1, 0.1, 1, x + 0.5, 0.05, z + 0.5);
     }
-    this.scene.add(merged(shore, this.mat(0xe8c78a)));
+    this.addObj(merged(shore, this.mat(0xe8c78a)));
   }
 
   buildPaths() {
+    const k = this.k;
     const parts = [];
-    for (let z = -14; z <= 8; z += 2) addBox(parts, 1.6, 0.12, 1.8, 0.5, 0.06, z + 0.5);
-    for (let x = -8; x <= 8; x += 2) addBox(parts, 1.8, 0.12, 1.6, x + 0.5, 0.06, 6.5);
+    for (let z = -14 * k; z <= 8 * k; z += 2) addBox(parts, 1.6, 0.12, 1.8, 0.5, 0.06, z + 0.5);
+    for (let x = -8 * k; x <= 8 * k; x += 2) addBox(parts, 1.8, 0.12, 1.6, x + 0.5, 0.06, 6.5 * k);
     const m = merged(parts, this.mat(0xd9cdb6));
     m.receiveShadow = true;
-    this.scene.add(m);
+    this.addObj(m);
   }
 
-  buildHills() {
-    for (const [cx, cz] of this.hillCenters) {
-      const tiers = [[9, 1.0], [6.4, 1.0], [4.4, 1.0], [2.8, 1.0]];
-      let y = 0;
-      for (const [size, h] of tiers) {
-        const tier = merged([addBox([], size, h, size, cx + 0.5, y + h / 2, cz + 0.5)],
-          this.mat(y < 0.1 ? 0x5fb83a : 0x6ac446));
-        this.addSolid(new THREE.Box3(
-          new THREE.Vector3(cx + 0.5 - size / 2, y, cz + 0.5 - size / 2),
-          new THREE.Vector3(cx + 0.5 + size / 2, y + h, cz + 0.5 + size / 2)
-        ), tier);
-        y += h;
-      }
-      this.scene.add(merged([addBox([], 2.8, 0.12, 2.8, cx + 0.5, y + 0.06, cz + 0.5)], this.mat(0x8fda5a)));
-      const rock = part(SP, cx + 1.6, y + 0.35, cz + 1.4);
-      rock.scale.set(0.6, 0.45, 0.55);
-      this.scene.add(merged([rock], this.mat(0xa8b0b8)));
+  buildMountains() {
+    this.mountCenters = [];
+    const n = this.count('mountain');
+    const cands = [[-19, -13], [20, -18], [-21, 15], [21, 12], [-24, -2], [24, -8], [-8, -24], [13, -23]];
+    const k = this.k;
+    for (const [bx, bz] of this.shuffle(cands)) {
+      if (this.mountCenters.length >= n) break;
+      const cx = bx * k, cz = bz * k;
+      if (Math.abs(cx) > this.half - 6 || Math.abs(cz) > this.half - 6) continue;
+      if (this.propBlocked(cx, cz)) continue;
+      if (this.mountCenters.some((m) => Math.hypot(cx - m[0], cz - m[1]) < 9 * k)) continue;
+      this.mountCenters.push([cx, cz]);
+      this.buildMountain(cx, cz, k);
     }
   }
 
+  buildMountain(cx, cz, k) {
+    const tiers = [[9, 1.0], [6.4, 1.0], [4.4, 1.0], [2.8, 1.0]];
+    let y = 0;
+    for (const [size, h] of tiers) {
+      const s = size * k;
+      const tier = merged([addBox([], s, h, s, cx + 0.5, y + h / 2, cz + 0.5)],
+        this.mat(y < 0.1 ? 0x5fb83a : 0x6ac446));
+      this.addSolid(new THREE.Box3(
+        new THREE.Vector3(cx + 0.5 - s / 2, y, cz + 0.5 - s / 2),
+        new THREE.Vector3(cx + 0.5 + s / 2, y + h, cz + 0.5 + s / 2)
+      ), tier);
+      y += h;
+    }
+    this.addObj(merged([addBox([], 2.8 * k, 0.12, 2.8 * k, cx + 0.5, y + 0.06, cz + 0.5)], this.mat(0x8fda5a)));
+    const rock = part(SP, cx + 1.6 * k, y + 0.35, cz + 1.4 * k);
+    rock.scale.set(0.6, 0.45, 0.55);
+    this.addObj(merged([rock], this.mat(0xa8b0b8)));
+    this.obstacles.push({ x: cx, z: cz, w: 4.5 * k, d: 4.5 * k });
+  }
+
+  buildVolcanoes() {
+    this.volcanoCenters = [];
+    const n = this.count('volcano');
+    const cands = [[12, 21], [-13, 20], [22, -15], [-17, -22]];
+    const k = this.k;
+    for (const [bx, bz] of this.shuffle(cands)) {
+      if (this.volcanoCenters.length >= n) break;
+      const cx = bx * k, cz = bz * k;
+      if (Math.abs(cx) > this.half - 7 || Math.abs(cz) > this.half - 6) continue;
+      if (this.propBlocked(cx, cz)) continue;
+      if ([...this.mountCenters, ...this.volcanoCenters].some((m) => Math.hypot(cx - m[0], cz - m[1]) < 8 * k)) continue;
+      this.volcanoCenters.push([cx, cz]);
+      this.buildVolcano(cx, cz, k);
+    }
+  }
+
+  buildVolcano(cx, cz, k) {
+    const tiers = [[8, 1.3], [5.8, 1.3], [3.9, 1.3], [2.2, 1.0]];
+    let y = 0;
+    for (const [size, h] of tiers) {
+      const s = size * k;
+      const tier = merged([addBox([], s, h, s, cx + 0.5, y + h / 2, cz + 0.5)],
+        this.mat(y < 0.1 ? 0x6b6f76 : 0x54585f));
+      this.addSolid(new THREE.Box3(
+        new THREE.Vector3(cx + 0.5 - s / 2, y, cz + 0.5 - s / 2),
+        new THREE.Vector3(cx + 0.5 + s / 2, y + h, cz + 0.5 + s / 2)
+      ), tier);
+      y += h;
+    }
+    const lava = mkMat(0xff571a, { emissive: 0xff8f1f, emissiveIntensity: 1.4, roughness: 0.4 });
+    const cap = merged([addBox([], 1.6 * k, 0.14, 1.6 * k, cx + 0.5, y + 0.05, cz + 0.5)], lava);
+    cap.castShadow = false;
+    this.addObj(cap);
+    const flow = merged([
+      (() => { const b = addBox([], 0.7 * k, 1.9, 0.35, 0, 0, 0); b.rotation.x = 0.9; b.position.set(cx + 0.5, y - 0.55, cz + 2.6 * k); return b; })()
+    ], lava);
+    flow.castShadow = false;
+    this.addObj(flow);
+    const glow = new THREE.PointLight(0xff7b2e, 1.6, 10 * k, 2);
+    glow.position.set(cx + 0.5, y + 0.8, cz + 0.5);
+    this.addObj(glow);
+    this.obstacles.push({ x: cx, z: cz, w: 4 * k, d: 4 * k });
+  }
+
+  shuffle(list) {
+    const a = [...list];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
   buildTree() {
+    const H = this.half, k = this.k;
     let x, z;
     for (let tries = 0; tries < 14; tries++) {
-      const px = Math.round((Math.random() * 2 - 1) * (HALF - 3) * 2) / 2;
-      const pz = Math.round((Math.random() * 2 - 1) * (HALF - 3) * 2) / 2;
-      if (Math.hypot(px, pz) < 6) continue;
-      if (this.hillCenters.some((h) => Math.hypot(px - h[0], pz - h[1]) < 6)) continue;
+      const px = Math.round((Math.random() * 2 - 1) * (H - 3) * 2) / 2;
+      const pz = Math.round((Math.random() * 2 - 1) * (H - 3) * 2) / 2;
+      if (Math.hypot(px, pz) < 6 * k) continue;
       if (this.propBlocked(px, pz)) continue;
       x = px; z = pz;
       break;
@@ -225,7 +391,7 @@ class World {
     const trunkH = 1.4 + Math.random() * 1.1;
     const trunk = [];
     addCyl(trunk, 0.26, trunkH, x, trunkH / 2, z, 0.34);
-    this.scene.add(merged(trunk, this.mat(0x8b5a2b)));
+    this.addObj(merged(trunk, this.mat(0x8b5a2b)));
 
     const leafMat = this.mat(Math.random() < 0.6 ? 0x2f9e4f : 0x3fb963);
     const leaves = [];
@@ -242,35 +408,72 @@ class World {
       }
       y += h * 0.62;
     });
-    this.scene.add(merged(leaves, leafMat));
+    this.addObj(merged(leaves, leafMat));
 
-    this.solids.push({ brick: null, noSupport: true, box: new THREE.Box3(
+    this._b.solids.push({ brick: null, noSupport: true, box: new THREE.Box3(
       new THREE.Vector3(x - 0.4, 0, z - 0.4), new THREE.Vector3(x + 0.4, trunkH, z + 0.4)
     )});
   }
 
   buildVillage() {
-    const houses = [
+    const k = this.k;
+    this.swings = [];
+    this.houseRects = [];
+    const sites = [
       { x: -11, z: -7, ry: 0, body: 0xe8402a, roof: 0x2f7de1 },
       { x: 9, z: -12, ry: Math.PI / 2, body: 0xffc42e, roof: 0x35b56a },
       { x: -16, z: 4, ry: -Math.PI / 2, body: 0x35a7ff, roof: 0xff7f50 },
-      { x: 14, z: 3, ry: Math.PI, body: 0x35b56a, roof: 0xffd23f }
+      { x: 14, z: 3, ry: Math.PI, body: 0x35b56a, roof: 0xffd23f },
+      { x: -22, z: -18, ry: 0, body: 0xff8a3d, roof: 0x9b5de5 },
+      { x: 21, z: -3, ry: -Math.PI / 2, body: 0x9b5de5, roof: 0xe8402a },
+      { x: -6, z: 22, ry: Math.PI, body: 0x2f7de1, roof: 0xffc42e },
+      { x: 17, z: 18, ry: Math.PI / 2, body: 0xffd23f, roof: 0x35a7ff },
+      { x: -24, z: 20, ry: 0, body: 0x35b56a, roof: 0xff8a3d }
     ];
-    for (const h of houses) this.buildHouse(h);
+    const n = this.count('house');
+    let placed = 0;
+    for (const s of sites) {
+      if (placed >= n) break;
+      const h = { x: s.x * k, z: s.z * k, ry: s.ry, body: s.body, roof: s.roof };
+      if (Math.abs(h.x) > this.half - 5 || Math.abs(h.z) > this.half - 5) continue;
+      if (this.buildHouse(h)) placed++;
+    }
 
+    if (this.count('school')) {
+      const sx = -14 * k, sz = -18 * k;
+      if (!(Math.abs(sx) > this.half - 7 || Math.abs(sz) > this.half - 6) && !this.propBlocked(sx, sz)) {
+        this.buildSchool(sx, sz, k);
+      }
+    }
+
+    const pgN = this.count('playground');
+    let pg = 0;
+    for (const [bx, bz] of [[17, -19], [-20, 8], [20, 8], [-20, -6], [8, 15], [-9, -23]]) {
+      if (pg >= pgN) break;
+      const px = bx * k, pz = bz * k;
+      if (Math.abs(px) > this.half - 4.5 || Math.abs(pz) > this.half - 4.5) continue;
+      if (this.propBlocked(px, pz)) continue;
+      this.buildPlayground(px, pz, k);
+      pg++;
+    }
+
+    if (this.count('deco')) this.buildDeco(k);
+  }
+
+  buildDeco(k) {
+    const AZ = -3.5 * k;
     const arch = new THREE.Group();
-    const AZ = -3.5;
     const azOff = new THREE.Vector3(0, 0, AZ);
-    for (const sx of [-2.5, 2.5]) {
+    for (const sx of [-2.5 * k, 2.5 * k]) {
       arch.add(merged([addBox([], 0.7, 3.4, 0.7, sx, 1.7, 0)], this.mat(0xf1f3f5)));
       this.addSolid(new THREE.Box3(
         new THREE.Vector3(sx - 0.35, 0, -0.35), new THREE.Vector3(sx + 0.35, 3.4, 0.35)
       ).translate(azOff), null, true);
     }
-    arch.add(merged([addBox([], 5.7, 0.8, 0.7, 0, 3.8, 0)], this.mat(0xffd23f)));
+    arch.add(merged([addBox([], 5.7 * k, 0.8, 0.7, 0, 3.8, 0)], this.mat(0xffd23f)));
     arch.position.set(0, 0, AZ);
-    this.scene.add(arch);
-    this.staticMeshes.push(arch);
+    this.addObj(arch);
+    this._b.staticMeshes.push(arch);
 
     const well = merged([
       (() => { const m = part(CY, 0, 0.45, 0); m.scale.set(1.05, 0.9, 1.05); return m; })(),
@@ -283,9 +486,91 @@ class World {
     roofPiece.rotation.y = Math.PI / 4;
     const wellGroup = new THREE.Group();
     wellGroup.add(well, merged([roofPiece], this.mat(0xe8402a)));
-    wellGroup.position.set(6, 0, 2);
-    this.scene.add(wellGroup);
-    this.addSolid(new THREE.Box3(new THREE.Vector3(4.9, 0, 0.9), new THREE.Vector3(7.1, 0.9, 3.1)), null, true);
+    wellGroup.position.set(6 * k, 0, 2 * k);
+    this.addObj(wellGroup);
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(6 * k - 1.1, 0, 2 * k - 1.1), new THREE.Vector3(6 * k + 1.1, 0.9, 2 * k + 1.1)
+    ), null, true);
+    this.obstacles.push({ x: 6 * k, z: 2 * k, w: 1.3, d: 1.3 });
+  }
+
+  buildSchool(cx, cz, k) {
+    const w = 8 * k, d = 5.5 * k, bh = 4;
+    const grp = new THREE.Group();
+    grp.add(merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xd9b98a)));
+    const band = [];
+    for (let i = -3; i <= 3; i++) addBox(band, 0.9, 0.7, 0.12, i * 1.1 * k, bh - 0.6, d / 2 + 0.03);
+    grp.add(merged(band, this.mat(0x2f7de1)));
+    const win = [];
+    for (const r of [1.3, 2.5]) for (let i = -3; i <= 3; i++) addBox(win, 0.8, 0.8, 0.08, i * 1.1 * k, r, d / 2 + 0.03);
+    grp.add(merged(win, this.mat(0x9fe0ff)));
+    grp.add(merged([addBox([], 1.6, 2.4, 0.12, 0, 1.2, d / 2 + 0.05)], this.mat(0x8b5a2b)));
+    const flagPole = [];
+    addCyl(flagPole, 0.07, 4.6, w / 2 + 1.2 * k, 2.3, d / 2 + 1.2 * k);
+    grp.add(merged(flagPole, this.mat(0xf1f3f5)));
+    const flag = new THREE.Mesh(BR.clone().scale(1.1, 0.66, 0.06), this.mat(0xe8402a));
+    flag.position.set(w / 2 + 1.75 * k, 4.2, d / 2 + 1.2 * k);
+    grp.add(flag);
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    this.addSolid(new THREE.Box3(
+      new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
+      new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
+    ), null, true);
+    this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
+    const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, 0);
+    this.doorAnchors.push({
+      world: new THREE.Vector3(cx + dir.x * (d / 2 + 1.6), 0, cz + dir.z * (d / 2 + 1.6)),
+      yaw: 0
+    });
+  }
+
+  buildPlayground(cx, cz, k) {
+    const grp = new THREE.Group();
+    // sand pit
+    grp.add(merged([addBox([], 3.4 * k, 0.14, 3.4 * k, 0, 0.07, 0)], this.mat(0xe8c78a)));
+    // slide
+    const slide = [];
+    addCyl(slide, 0.09, 1.5, -1.1 * k, 0.75, -0.8 * k);
+    addCyl(slide, 0.09, 1.5, -1.1 * k, 0.75, -0.2 * k);
+    grp.add(merged(slide, this.mat(0x35a7ff)));
+    const ladder = [];
+    for (const ry of [0.5, 0.9, 1.3]) addCyl(ladder, 0.05, 0.5, -1.1 * k, ry, -1.15 * k, 0.05);
+    grp.add(merged(ladder, this.mat(0xf1f3f5)));
+    const chute = addBox([], 0.55, 1.9, 0.1, -0.4 * k, 0.85, 0.45 * k);
+    chute.rotation.x = -0.9;
+    grp.add(merged([chute], this.mat(0xffd23f)));
+    const plat = [];
+    addBox(plat, 0.7, 0.14, 1.0, -1.1 * k, 1.5, -0.5 * k);
+    grp.add(merged(plat, this.mat(0x35b56a)));
+    // swing
+    const frame = [];
+    for (const sx of [-1.65, -0.95]) {
+      addCyl(frame, 0.07, 2.1, sx * k, 1.05, 1.15 * k, 0.06);
+      addCyl(frame, 0.07, 2.1, sx * k, 1.05, 1.85 * k, 0.06);
+    }
+    addCyl(frame, 0.06, 0.85, -1.3 * k, 2.08, 1.5 * k, 0.06).rotation.x = Math.PI / 2;
+    grp.add(merged(frame, this.mat(0xe8402a)));
+    const swing = new THREE.Group();
+    const ropes = [];
+    for (const sx of [-0.12, 0.12]) addCyl(ropes, 0.02, 1.1, sx, -0.58, 0, 0.02);
+    const seat = addBox([], 0.4, 0.06, 0.2, 0, -1.13, 0);
+    swing.add(merged([...ropes, seat], this.mat(0x9b5de5)));
+    swing.position.set(-1.3 * k, 2.08, 1.5 * k);   // pivot at the top bar
+    grp.add(swing);
+    this.swings.push(swing);
+    // seesaw
+    const fulcrum = [];
+    addBox(fulcrum, 0.3, 0.5, 0.3, 1.3 * k, 0.25, 1.3 * k);
+    grp.add(merged(fulcrum, this.mat(0x2f9e4f)));
+    const board = addBox([], 2.2 * k, 0.12, 0.4, 1.3 * k, 0.56, 1.3 * k);
+    board.rotation.z = 0.16;
+    grp.add(merged([board], this.mat(0xff8a3d)));
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    this.obstacles.push({ x: cx, z: cz, w: 2.2 * k, d: 2.2 * k });
   }
 
   buildHouse(h) {
@@ -321,8 +606,8 @@ class World {
 
     grp.position.set(h.x, 0, h.z);
     grp.rotation.y = h.ry;
-    this.scene.add(grp);
-    this.staticMeshes.push(grp);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
 
     const axisAligned = Math.abs(h.ry % Math.PI) < 0.01 || Math.abs(Math.abs(h.ry % Math.PI) - Math.PI) < 0.01;
     const w = axisAligned ? bw : bd;
@@ -331,6 +616,7 @@ class World {
       new THREE.Vector3(h.x - w / 2 - 0.1, 0, h.z - d / 2 - 0.1),
       new THREE.Vector3(h.x + w / 2 + 0.1, bh, h.z + d / 2 + 0.1)
     ), null, true);
+    this.houseRects.push({ x: h.x, z: h.z, w: w / 2, d: d / 2 });
 
     // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along facing
     const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, h.ry);
@@ -338,19 +624,21 @@ class World {
       world: new THREE.Vector3(h.x + dir.x * 1.6, 0, h.z + dir.z * 1.6),
       yaw: h.ry
     });
+    return true;
   }
 
   buildBridge() {
     const g = new THREE.Group();
     this.bridge = g;
     this.bridgePieces = [];
+    const k = this.k;
 
     const deckW = 3, deckT = 0.5, deckL = 1.06;
-    const zA = 9.1, zB = 18.9, lift = 1.7, yA = 1.35;
+    const zA = 9.1 * k, zB = 18.9 * k, lift = 1.7, yA = 1.35;
     const N = 26;
     const isBroken = (i) => i >= 8 && i <= 17;
 
-    for (const z of [8.5, 19.5]) {
+    for (const z of [8.5 * k, 19.5 * k]) {
       const ab = [];
       addBox(ab, 5.2, 1.6, 1.6, 0.5, 0.8, z);
       for (let i = -2; i <= 2; i++) addCyl(ab, 0.17, 0.16, i + 0.5, 1.68, z);
@@ -388,9 +676,9 @@ class World {
       this.bridgePieces.push({ piece, broken: isBroken(i) });
       if (isBroken(i)) piece.visible = false;
       else this.addBridgeSolid(piece);
-      this.staticMeshes.push(deck);
+      this._b.staticMeshes.push(deck);
     }
-    this.scene.add(g);
+    this.addObj(g);
 
     const post = part(CY, 0, 0.9, 0);
     post.scale.set(0.12, 1.8, 0.12);
@@ -401,9 +689,9 @@ class World {
     board.position.set(0.1, 1.8, 0);
     board.castShadow = true;
     sign.add(board);
-    sign.position.set(-3.6, 0, 8);
+    sign.position.set(-3.6 * k, 0, 8 * k);
     sign.rotation.y = 0.4;
-    this.scene.add(sign);
+    this.addObj(sign);
     this.sign = sign;
 
     const portal = new THREE.Group();
@@ -420,14 +708,14 @@ class World {
       addBox([], 0.4, 1.6, 0.4, -1.7, 0.8, 0),
       addBox([], 0.4, 1.6, 0.4, 1.7, 0.8, 0)
     ], this.mat(0xffd23f)));
-    portal.position.set(0.5, 0, 24.5);
+    portal.position.set(0.5, 0, 24.5 * k);
     portal.visible = false;
     this.portal = portal;
     this.portalParts = { ring, disc, halo };
-    this.scene.add(portal);
+    this.addObj(portal);
     this.portalLight = new THREE.PointLight(0xffd166, 0, 24, 2);
-    this.portalLight.position.set(0.5, 3, 24.5);
-    this.scene.add(this.portalLight);
+    this.portalLight.position.set(0.5, 3, 24.5 * k);
+    this.addObj(this.portalLight);
   }
 
   addBridgeSolid(piece) {
@@ -527,6 +815,7 @@ class World {
 
   update(t, dt) {
     if (this.water) this.water.position.y = Math.sin(t * 1.4) * 0.03;
+    for (const s of this.swings || []) s.rotation.x = Math.sin(t * 1.8 + s.position.x) * 0.35;
     for (const p of this.bridgePieces) {
       if (p.pop) {
         p.pop = Math.max(0, p.pop - dt * 1.6);
@@ -671,8 +960,9 @@ class Player {
     if (!this.blocked(this.pos.x, nz, feet, head, stepH)) this.pos.z = nz; else this.vel.z *= 0.2;
 
     this.pos.y += this.vel.y * dt;
-    this.pos.x = clamp(this.pos.x, -HALF + 0.5, HALF - 0.5);
-    this.pos.z = clamp(this.pos.z, -HALF + 0.5, HALF - 0.5);
+    const H = this.world.half;
+    this.pos.x = clamp(this.pos.x, -H + 0.5, H - 0.5);
+    this.pos.z = clamp(this.pos.z, -H + 0.5, H - 0.5);
 
     if (this.vel.y <= 0.5) {
       const g2 = this.groundTopAt(this.pos.x, this.pos.z, this.pos.y - 0.02);
@@ -730,9 +1020,9 @@ class Game {
     this.sun = sun;
 
     this.world = new World(this.scene);
-    this.world.build();
     this.player = new Player(this.world);
     this.scene.add(this.player.root);
+    this.fitShadow();
 
     this.clock = new THREE.Clock();
     this.time = 0;
@@ -747,7 +1037,20 @@ class Game {
     this.rescueT = 0;
     this.ghost = this.makeGhost();
     this.nearDoor = null;
-    this.world.interior.group.visible = false;
+
+    this.optionsEl = document.createElement('button');
+    this.optionsEl.id = 'btn-options';
+    this.optionsEl.textContent = '⚙️';
+    this.optionsEl.title = 'World options';
+    this.optionsEl.setAttribute('aria-label', 'World options');
+    this.panel = buildOptionsPanel(this.world.opts, {
+      onOpen: () => { this.keys.clear(); this.pointers.clear(); },
+      onRegen: () => this.regenerateWorld()
+    });
+    document.getElementById('hud').appendChild(this.optionsEl);
+    document.body.appendChild(this.panel.el);
+    this.optionsEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.optionsEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.panel.toggle(); });
 
     this.bindDom();
     this.selectSlot(0);
@@ -798,6 +1101,8 @@ class Game {
   }
 
   spawnCollectibles() {
+    this.clearCollectibles();
+    this._colGeos = [];
     const studsGeo = mergeGeometries([-0.22, 0.22].map((sx) => {
       const m = new THREE.Mesh(CY);
       m.scale.set(0.11, 0.09, 0.11);
@@ -807,19 +1112,16 @@ class Game {
     }), false);
     const gA = BR.clone().scale(0.55, 0.55, 0.55);
     const gB = BR.clone().scale(1.05, 0.42, 0.55);
+    const ringGeo = new THREE.TorusGeometry(0.72, 0.05, 6, 18);
+    this._colGeos.push(studsGeo, gA, gB, ringGeo);
 
-    const spots = [
-      [0, -6], [2.5, -9], [-2.5, -9], [6, -4], [-6, -4], [-11, -2], [9, -6.5],
-      [14, 6.5], [-16, 9], [-4.5, 5.5], [4.5, 5.5], [0, -18], [-8, -16], [8, -16],
-      [12, -20], [-13, -19], [18, 6], [-18, -3], [-19, -13], [20, -18], [-21, 15],
-      [21, 12], [-23, 8], [23, -8], [-9, 23], [9, 23], [0, 22.5], [20, 22], [24, 20],
-      [-4, 21], [6, 22], [-24, 0]
-    ];
+    const tops = [...(this.world.mountCenters || []), ...(this.world.volcanoCenters || [])];
+    const spots = this.world.spots;
     this.collectibles = [];
     for (let i = 0; i < spots.length; i++) {
       const [x, z] = spots[i];
-      const onHill = this.world.hillCenters.some((h) => Math.hypot(x - h[0], z - h[1]) < 2);
-      const y = onHill ? 4.75 : 0.75;
+      const onTop = tops.some((h) => Math.hypot(x - h[0], z - h[1]) < 2.2);
+      const y = onTop ? 4.75 : 0.75;
       const color = RAINBOW[i % RAINBOW.length];
       const mat = mkMat(color, { emissive: color, emissiveIntensity: 0.25 });
       const grp = new THREE.Group();
@@ -831,7 +1133,7 @@ class Game {
         st.position.y = 0.02;
         grp.add(st);
       }
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.05, 6, 18),
+      const ring = new THREE.Mesh(ringGeo,
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 }));
       ring.rotation.x = Math.PI / 2;
       ring.position.y = -0.3;
@@ -839,9 +1141,20 @@ class Game {
       grp.position.set(x, y, z);
       grp.userData.phase = i * 0.6;
       grp.userData.baseY = y;
+      grp.userData.disposables = [mat, ring.material];
       this.scene.add(grp);
       this.collectibles.push(grp);
     }
+  }
+
+  clearCollectibles() {
+    for (const b of this.collectibles || []) {
+      this.scene.remove(b);
+      for (const m of b.userData.disposables || []) m.dispose();
+    }
+    this.collectibles = [];
+    for (const g of this._colGeos || []) g.dispose();
+    this._colGeos = [];
   }
 
   bindDom() {
@@ -870,6 +1183,42 @@ class Game {
     this.toastEl = document.getElementById('toast');
     this.intro = document.getElementById('intro');
     document.getElementById('btn-play').addEventListener('click', () => this.start());
+  }
+
+  fitShadow() {
+    const H = this.world.half;
+    const s = this.sun.shadow.camera;
+    s.left = -H * 1.5; s.right = H * 1.5; s.top = H * 1.5; s.bottom = -H * 1.5;
+    s.near = 1; s.far = 40 + H * 2.5;
+    s.updateProjectionMatrix();
+  }
+
+  regenerateWorld() {
+    if (this.world.inHouse) {
+      this.world.exitHouse();
+      this.world.interior.group.visible = false;
+      this.scene.fog = new THREE.Fog(0xbfe4ff, 70, 170);
+    }
+    this.world.rebuild();
+    if (this.confetti) {
+      this.scene.remove(this.confetti);
+      this.confetti.geometry.dispose();
+      this.confetti.material.dispose();
+      this.confetti = null;
+    }
+    this.clearCollectibles();
+    this.collected = 0;
+    this.repaired = false;
+    this.rescueT = 0;
+    this.nearDoor = null;
+    this.ghost.visible = false;
+    this.player.pos.set(0.5, 0, 3 * this.world.k);
+    this.player.vel.set(0, 0, 0);
+    this.orbit.wantDist = 11;
+    this.fitShadow();
+    this.spawnCollectibles();
+    this.updateHud();
+    this.toast('World regenerated', 'good');
   }
 
   selectSlot(i) {
@@ -906,6 +1255,10 @@ class Game {
     this.keys = new Set();
     const map = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' };
     window.addEventListener('keydown', (e) => {
+      if (this.panel?.isOpen) {
+        if (e.code === 'Escape') this.panel.close();
+        return;
+      }
       if (e.code === 'Space') { e.preventDefault(); this.jumpQueued = 0.16; return; }
       if (e.code === 'KeyE') { this.toggleDoor(); return; }
       if (map[e.code]) { this.keys.add(map[e.code]); e.preventDefault(); return; }
@@ -1060,7 +1413,7 @@ class Game {
       if (n.y > 0.5) {
         gx = Math.floor(point.x + 0.5);
         gz = Math.floor(point.z + 0.5);
-        gy = brick ? brick.box.max.y : (hit.object === this.world.water ? WATER_TOP : 0);
+        gy = brick ? brick.box.max.y : (hit.object === this.world.water ? this.world.waterTop : 0);
       } else {
         const dx = n.x > 0.5 ? 1 : n.x < -0.5 ? -1 : 0;
         const dz = n.z > 0.5 ? 1 : n.z < -0.5 ? -1 : 0;
@@ -1079,7 +1432,7 @@ class Game {
     const support = this.world.surfaceTop(gx, gz, gy + 8);
     if (support > gy + 1e-3) gy = support;
 
-    if (gy > 14 || Math.abs(gx) > HALF || Math.abs(gz) > HALF) {
+    if (gy > 14 || Math.abs(gx) > this.world.half || Math.abs(gz) > this.world.half) {
       return { valid: false, reason: 'out of range', gx, gy, gz, def };
     }
     if (this.world.brickMap.has(this.world.brickKey(gx, gy, gz))) {
@@ -1201,8 +1554,8 @@ class Game {
     const want = target.clone().addScaledVector(dir, o.dist);
     const groundY = this.world.surfaceTop(Math.floor(want.x + 0.5), Math.floor(want.z + 0.5), 60);
     want.y = Math.max(want.y, Math.max(groundY, p.y) + 0.9);
-    want.x = clamp(want.x, -HALF - 8, HALF + 8);
-    want.z = clamp(want.z, -HALF - 8, HALF + 8);
+    want.x = clamp(want.x, -this.world.half - 8, this.world.half + 8);
+    want.z = clamp(want.z, -this.world.half - 8, this.world.half + 8);
     this.camera.position.lerp(want, Math.min(1, dt * 9));
     this.camera.lookAt(target);
 
@@ -1296,7 +1649,9 @@ class Game {
       this.rescueT += dt;
       if (this.rescueT > 1.2) {
         const p = this.player;
-        p.pos.z = p.pos.z < 14 ? RIVER.z0 - 1.2 : RIVER.z1 + 1.2;
+        const rz = this.world.river;
+        const mid = (rz.z0 + rz.z1) / 2;
+        p.pos.z = p.pos.z < mid ? rz.z0 - 1.2 : rz.z1 + 1.2;
         p.pos.y = 0;
         p.vel.set(0, 0, 0);
         this.rescueT = 0;

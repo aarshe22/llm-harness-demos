@@ -8,7 +8,9 @@ Brick-toy inspired Three.js sandbox game. No build step: static files + one npm 
 
 ## Structure
 - `src/main.js` — the whole game: World (terrain, river, bridge, village, trees, hills), Player (AABB + step-up collision), Game (input, build/remove, collectibles, HUD, camera).
+- `src/options.js` — ⚙️ world options: map-size presets (capped at half=46), and `OBJECT_TYPES` (house/school/playground/mountain/volcano/tree/flower/deco) each with a count slider + on/off toggle. Persisted in `localStorage` (`maddox-blox-options-v1`); applied on "Regenerate world", no page reload.
 - Bricks snap to a 1-unit XZ grid. `World.solids` is the single AABB collider list; `World.surfaceTop()` backs both player gravity and build snapping.
+- Overworld meshes/colliders live in a per-build bucket group (`World.over`); `World.rebuild()` disposes that group (skipping shared primitives `BR/CY/SP/CO` and cached stud meshes) and rebuilds from current options. Player/collectibles respawn in `Game.regenerateWorld()`. Everything positional scales off `World.half`/`World.k` — no absolute map constants.
 
 ## Deployment (demo.badlandscloud.com/game/)
 - SSH as root uses key-based auth (ed25519 deploy key installed in root's `authorized_keys`);
