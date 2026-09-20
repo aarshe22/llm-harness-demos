@@ -1414,7 +1414,7 @@ class Player {
     this.world = world;
     this.pos = new THREE.Vector3(0.5, 0, 3);
     this.vel = new THREE.Vector3();
-    this.yaw = 0;
+    this.yaw = Math.PI;
     this.radius = 0.4;
     this.height = 1.85;
     this.coyote = 0;
@@ -1564,7 +1564,7 @@ class Player {
 
     this.root.position.set(this.pos.x, this.pos.y + bob, this.pos.z);
     if (horiz > 0.6) {
-      const want = Math.atan2(this.vel.x, this.vel.z);
+      const want = Math.atan2(-this.vel.x, -this.vel.z);
       let d = want - this.yaw;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
@@ -1627,8 +1627,8 @@ class Game {
     this.fireCd = 0;
     this.boltT = 0;
     this.holdNdc = null;
-    this._flameSilence = 0;
     this.rockets = [];
+    this.fireballs = [];
     this.meteors = [];
     this._falling = [];
     this.fx = new Fx(this.scene);
@@ -2044,34 +2044,39 @@ class Game {
     this.pick.setFromCamera(ndc, this.camera);
     const ro = this.pick.ray.origin, rd = this.pick.ray.direction;
 
+    const fwd = new THREE.Vector3(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw));
+    // projectiles follow the body heading, flat-horizontal
+    const aim = fwd.clone();
+
     if (def.kind === 'rocket') {
       sfx.launch();
       const mesh = makeRocketMesh();
-      const muzzle = chest.clone().addScaledVector(rd, 0.9).add(new THREE.Vector3(0, 0.35, 0));
+      const muzzle = chest.clone().addScaledVector(aim, 0.9).add(new THREE.Vector3(0, 0.15, 0));
       mesh.position.copy(muzzle);
-      mesh.lookAt(muzzle.clone().add(rd));
+      mesh.lookAt(muzzle.clone().add(aim));
       this.scene.add(mesh);
-      this.rockets.push({ mesh, vel: rd.clone().multiplyScalar(30), life: def.range / 30 });
+      // straight forward + horizontal; a gentle 1.0 m/s^2 lift arches it slightly
+      this.rockets.push({ mesh, vel: aim.clone().multiplyScalar(26).setY(0.35),
+        life: def.range / 26, kind: 'rocket' });
       this.fx.spawn(muzzle.x, muzzle.y, muzzle.z, 'smoke', 8);
       this._swing(0.5);
       return true;
     }
     if (def.kind === 'stream') {
-      sfx.setFlame(true);
-      this._flameSilence = 0.25;
-      const hit = this.rayScene(ro, rd, def.range);
-      const end = hit.solid ? hit.t - 0.05 : def.range;
-      for (let d = 1; d < end; d += 1.1) {
-        const q = ro.clone().addScaledVector(rd, d);
-        this.fx.spawn(q.x, q.y, q.z, 'fire', 2);
-      }
-      const tip = ro.clone().addScaledVector(rd, end);
-      this.damageSplash(def, tip, chest, 6);
-      if (Math.random() < 0.5) sfx.fireTick();
+      if (!this.fireballs) this.fireballs = [];
+      sfx.fireTick();
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8),
+        new THREE.MeshStandardMaterial({ color: 0xff8c1a, emissive: 0xff5500, emissiveIntensity: 1.6 }));
+      const muzzle = chest.clone().addScaledVector(aim, 0.75).add(new THREE.Vector3(0, 0.25, 0));
+      ball.position.copy(muzzle);
+      this.scene.add(ball);
+      // lob forward with an upward arc: 10 m/s horizontal, 6.5 m/s up
+      this.fireballs.push({ mesh: ball, vel: aim.clone().multiplyScalar(10).setY(6.5), life: 4 });
+      this.fx.spawn(muzzle.x, muzzle.y, muzzle.z, 'fire', 4);
+      this._swing(0.35);
       return true;
     }
     // melee
-    const fwd = new THREE.Vector3(-Math.sin(this.player.yaw), 0, -Math.cos(this.player.yaw));
     let hits = 0;
     for (const prop of this.world.props) {
       if (prop.gone || hits >= def.maxBreak) continue;
@@ -2176,7 +2181,6 @@ class Game {
     const def = this.weatherDef;
     const p = this.player.pos;
     this.weatherT += dt;
-    this._flameSilence = Math.max(0, this._flameSilence - dt);
     if (def.id === 'rain' || def.id === 'thunder') this.rain.update(dt, p.x, p.z, -30, -4);
     if (def.id === 'snow') this.snowf.update(dt, p.x, p.z, -1.6, Math.sin(this.weatherT * 0.4) * 1.2);
     if (this.boltT > 0) { this.boltT -= dt; this.bolt.visible = this.boltT > 0; }
@@ -2273,7 +2277,9 @@ class Game {
       const ro = r.mesh.position.clone();
       const rd = r.vel.clone().normalize();
       const hit = this.rayScene(ro, rd, step.length() + 0.05);
+      r.vel.y += 1.0 * dt; // slight upward arch over the flight
       r.mesh.position.add(step);
+      if (r.vel.lengthSq() > 0.01) r.mesh.lookAt(r.mesh.position.clone().add(r.vel));
       r.life -= dt;
       this.fx.spawn(r.mesh.position.x, r.mesh.position.y, r.mesh.position.z, 'smoke', 1);
       let boom = false;
@@ -2285,6 +2291,33 @@ class Game {
         this.explode(r.mesh.position.clone(), WEAPONS[3]);
         this.scene.remove(r.mesh);
         this.rockets.splice(i, 1);
+      }
+    }
+  }
+
+  /* Lobbed fireballs: gravity arc, detonate on terrain/props/timeout. */
+  updateFireballs(dt) {
+    if (!this.fireballs || !this.fireballs.length) return;
+    const def = { ...WEAPONS[2], radius: 2.6, dmg: 30, maxBreak: 4 };
+    for (let i = this.fireballs.length - 1; i >= 0; i--) {
+      const b = this.fireballs[i];
+      b.vel.y -= 9.8 * dt;
+      const step = b.vel.clone().multiplyScalar(dt);
+      const ro = b.mesh.position.clone();
+      const rd = b.vel.clone().normalize();
+      const hit = this.rayScene(ro, rd, step.length() + 0.05);
+      b.mesh.position.add(step);
+      b.life -= dt;
+      this.fx.spawn(b.mesh.position.x, b.mesh.position.y, b.mesh.position.z, 'fire', 2);
+      const groundY = this.world.inHouse ? -Infinity
+        : this.world.surfaceTop(Math.floor(b.mesh.position.x + 0.5), Math.floor(b.mesh.position.z + 0.5), 60);
+      let boom = hit.solid || b.life <= 0 ||
+        (groundY > -Infinity && b.mesh.position.y + b.vel.y * dt <= groundY + 0.05) ||
+        b.mesh.position.y < -2;
+      if (boom) {
+        this.explode(b.mesh.position.clone(), def);
+        this.scene.remove(b.mesh);
+        this.fireballs.splice(i, 1);
       }
     }
   }
@@ -2864,6 +2897,7 @@ class Game {
     this.tickWeaponRig(dt);
     if (this.mode === 'weapon' && this.holdNdc && this.pointers.size > 0) this.tryFire(this.holdNdc);
     this.updateRockets(dt);
+    this.updateFireballs(dt);
     this.updateMeteors(dt);
     this.updateFalling(dt);
     this.fx.update(dt);
@@ -2916,10 +2950,10 @@ class Game {
     const rig = this.weaponRig.userData;
     rig.swing = Math.max(0, (rig.swing || 0) - dt * 3);
     const sw = rig.swing;
-    // rig sits on the chest front with guns/blades pointing -Z; +X pitch
-    // raises the muzzle/tip. Swing = wind up raised, then strike through rest.
+    // -X pitch tips a -Z-pointing weapon forward/down. Rest pose is raked
+    // back (-0.15); at fire it pitches forward and strikes, snapping back.
     const u = Math.min(1, sw * 2);
-    this.weaponRig.rotation.x = -0.15 + u * 1.35;
+    this.weaponRig.rotation.x = -0.15 - u * 1.25;
     this.weaponRig.rotation.y = -0.2 + u * 0.4;
   }
 }

@@ -6,7 +6,7 @@ import { BR, CY, mkMat, clamp } from './brickkit.js';
 export const WEAPONS = [
   { id: 'sword',  name: 'Brick Sword',  icon: '🗡️', dmg: 20,  radius: 0.6, maxBreak: 2, range: 2.7, arc: 1.25, cd: 0.55, kind: 'melee' },
   { id: 'hammer', name: 'Brick Hammer', icon: '🔨', dmg: 50,  radius: 1.0, maxBreak: 3, range: 3.0, arc: 1.40, cd: 0.95, kind: 'melee' },
-  { id: 'flame',  name: 'Flamethrower', icon: '🔥', dmg: 7,   radius: 0.8, maxBreak: 1, range: 8.0, cd: 0.12, kind: 'stream', ignite: true },
+  { id: 'flame',  name: 'Flamethrower', icon: '🔥', dmg: 7,   radius: 0.8, maxBreak: 1, range: 8.0, cd: 0.3,  kind: 'stream', ignite: true },
   { id: 'rpg',    name: 'Shoulder RPG', icon: '🚀', dmg: 150, radius: 5.2, maxBreak: 6, range: 70,  cd: 1.8, kind: 'rocket', ignite: true }
 ];
 
@@ -155,12 +155,20 @@ export function buildWeaponModels() {
 }
 
 export function makeRocketMesh() {
+  // RPG ammo is literally a flying 2x4 LEGO brick, long axis +Z (lookAt aims it)
   const g = new THREE.Group();
-  const body = new THREE.Mesh(CY, mkMat(0xb9c2cc, { metalness: 0.4 }));
-  body.scale.set(0.1, 0.5, 0.1); body.rotation.x = Math.PI / 2;
-  const nose = new THREE.Mesh(BR, mkMat(0xc0392b)); nose.scale.set(0.1, 0.1, 0.28); nose.position.z = 0.38;
-  const fins = new THREE.Mesh(BR, mkMat(0x22252b)); fins.scale.set(0.22, 0.22, 0.08); fins.position.z = -0.26;
-  g.add(body, nose, fins);
+  const brick = new THREE.Mesh(BR, mkMat(0xc0392b, { roughness: 0.45 }));
+  brick.scale.set(0.5, 0.26, 1.0);
+  g.add(brick);
+  const stud = mkMat(0xd8543f, { roughness: 0.45 });
+  for (const sx of [-0.13, 0.13]) {
+    for (const sz of [-0.3, -0.1, 0.1, 0.3]) {
+      const s = new THREE.Mesh(CY, stud);
+      s.scale.set(0.085, 0.07, 0.085);
+      s.position.set(sx, 0.16, sz);
+      g.add(s);
+    }
+  }
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
