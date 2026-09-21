@@ -18,7 +18,8 @@ export const WEATHERS = [
   { id: 'quake',    name: 'Earthquake',     icon: '🫨',  dmg: 10,  every: 0.9, shake: true },
   { id: 'hurricane',name: 'Hurricane',      icon: '🌀',  dmg: 24,  every: 0.7, mover: true, radius: 6 },
   { id: 'tsunami',  name: 'Tsunami',        icon: '🌊',  dmg: 60,  sweep: true },
-  { id: 'meteor',   name: 'Meteor Strike',  icon: '☄️',  dmg: 150, every: 2.2, meteor: true, radius: 6 }
+  { id: 'meteor',   name: 'Meteor Strike',  icon: '☄️',  dmg: 150, every: 2.2, meteor: true, radius: 6 },
+  { id: 'nuke',     name: '25kt Nuke Airdrop',  icon: '☢️',  dmg: 400, every: 0.5, radius: 26, nuke: true }
 ];
 
 /* Sky/light recipe per condition id. */
@@ -35,7 +36,8 @@ export const SKY = {
   quake:    { bg: 0x9a7f66, fog: 0xb09276, sun: 1.2, sunCol: 0xffc27d, hemi: 0.7, star: false },
   hurricane:{ bg: 0x46586a, fog: 0x5a6d7e, sun: 0.55, sunCol: 0xaebfd0, hemi: 0.45, star: false },
   tsunami:  { bg: 0x33465c, fog: 0x44586e, sun: 0.7, sunCol: 0xbcd2e8, hemi: 0.55, star: false },
-  meteor:   { bg: 0x511f1f, fog: 0x6b3030, sun: 1.1, sunCol: 0xff8a5c, hemi: 0.6, star: false }
+  meteor:   { bg: 0x511f1f, fog: 0x6b3030, sun: 1.1, sunCol: 0xff8a5c, hemi: 0.6, star: false },
+  nuke:     { bg: 0x6b5a3c, fog: 0x8a7454, sun: 1.5, sunCol: 0xffd9a0, hemi: 0.75, star: false }
 };
 
 /* Particle curtain (rain/hurricane) or drift (snow): points recycled inside a

@@ -3,11 +3,22 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
 import { INTERIOR_DEF, buildInterior } from './interior.js';
 import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
-import { instancedMosaicMesh, bannerTexture, maddoxRaster } from './mosaic.js';
+import { instancedMosaicMesh, bannerTexture, welcomeTexture, maddoxRaster } from './mosaic.js';
 import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
 import { sfx } from './sfx.js';
+import { Life } from './life.js';
+import { Train } from './train.js';
 import { WEATHERS, SKY, ParticleField, StarField, Funnel, WaveFront } from './weather.js';
 import { sigOf, getState, setState, clearState } from './persist.js';
+
+/* Mutually exclusive control modes; exactly one strip is ever visible. */
+export const MODES = [
+  { id: 'explore', name: 'Explore — roam free (Esc)',     icon: '🧭', key: 'ESC' },
+  { id: 'build',   name: 'Build — brick strip (B)',       icon: '🧱', key: 'B' },
+  { id: 'weapon',  name: 'Weapon — weapon strip (V)',     icon: '⚔️', key: 'V' },
+  { id: 'weather', name: 'Weather — disaster strip (C)',  icon: '🌦️', key: 'C' }
+];
+export const MODE_KEYS = { KeyB: 'build', KeyV: 'weapon', KeyC: 'weather' };
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -254,6 +265,14 @@ class World {
     this.houseRects = [];
     this.doorAnchors = [];
     this.swings = [];
+    this.villageSites = [];
+    this.townSites = [];
+    this.ruralSites = [];
+    this.farmSites = [];
+    this.roadSegs = [];
+    this.railR = 0;
+    this.station = null;
+    this.crossRoadZ = undefined;
     this._b = this.over;
     this.solids = this.over.solids;
     this.staticMeshes = this.over.staticMeshes;
@@ -271,6 +290,7 @@ class World {
       const roadZ = pad ? Math.min(r.z1 + 6, pad.z0 - 6) : r.z1 + 6;
       this.buildRoad(0.5, r.z1 + 1, 0.5, H - 3, 2.2, pad);
       if (roadZ > r.z1 + 2) {
+        this.crossRoadZ = roadZ;
         this.buildRoad(0.5, roadZ, H - 4, roadZ, 2.2, pad);
         this.buildRoad(0.5, roadZ, -H + 4, roadZ, 2.2, pad);
       }
@@ -285,6 +305,7 @@ class World {
     this.buildRuralAndFarms();
     for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
+    if (this.preset.train) this.buildRingRail();
     this.pickSpots();
     this.applyPending();
   }
@@ -432,6 +453,86 @@ class World {
     this.addObj(merged(shore, this.mat(0xe8c78a)));
   }
 
+  /* Ring railway hugging the world edge: recessed walkable ballast, twin
+     rails, sleepers, a level crossing where the avenue meets it, and a
+     platform+shelter station at the SW corner. Skips if anything generated
+     inside the outer corridor (defensive). */
+  buildRingRail() {
+    const H = this.half, r = H - 3;
+    const band0 = r - 1.7, band1 = r + 1.7;
+    for (const o of this.obstacles) {
+      if (Math.abs(o.x) + o.w > band0 - 0.5 && Math.abs(o.z) + o.d > band0 - 0.5) return;
+    }
+    const m = this.monumentRect;
+    if (m && (m.z1 > H - 6.5 || m.z0 < -H + 5.5 || m.x1 > H - 2 || m.x0 < -H + 2)) return;
+    this.railR = r;
+    const parts = [];
+    const half = 1.7;
+    const bed = [
+      [-r - half, -r - half, r + half, -r + half], [r - half, -r - half, r + half, r + half],
+      [-r - half, r - half, r + half, r + half], [-r - half, -r - half, -r + half, r + half]
+    ];
+    for (const [x0, z0, x1, z1] of bed) addBox(parts, x1 - x0, 0.1, z1 - z0, (x0 + x1) / 2, 0.05, (z0 + z1) / 2);
+    for (let a = -r; a < r; a += 1.4) {   // sleepers on all four legs
+      addBox(parts, 1.5, 0.08, 0.34, a, 0.13, -r);
+      addBox(parts, 1.5, 0.08, 0.34, a, 0.13, r);
+      addBox(parts, 0.34, 0.08, 1.5, -r, 0.13, a);
+      addBox(parts, 0.34, 0.08, 1.5, r, 0.13, a);
+    }
+    const mesh = merged(parts, this.mat(0x8b8577));
+    mesh.receiveShadow = true;
+    this.addObj(mesh);
+    const railMat = this.mat(0x8d949c);
+    for (const o of [-0.5, 0.5]) {
+      for (const horiz of [true, false]) {
+        const rm = new THREE.Mesh(BR, railMat);
+        if (horiz) {
+          rm.scale.set(2 * r + 1.4, 0.1, 0.12);
+          rm.position.set(0, 0.22, o > 0 ? -r + o : r + o);
+        } else {
+          rm.scale.set(0.12, 0.1, 2 * r + 1.4);
+          rm.position.set(o > 0 ? r + o : -r + o, 0.22, 0);
+        }
+        rm.castShadow = true;
+        this.addObj(rm);
+      }
+    }
+    for (const [x0, z0, x1, z1] of bed) {
+      this.addSolid(new THREE.Box3(new THREE.Vector3(x0, 0, z0), new THREE.Vector3(x1, 0.1, z1)), null, true, true);
+    }
+    // level crossing: the x=0.5 avenue runs into the south rail? no — it runs north.
+    // The south end of the east/west roads stops short; mark the N avenue crossing
+    // where the E-W rail meets the x=0.5 avenue on the north edge.
+    const sign = [];
+    addBox(sign, 0.12, 2.6, 0.12, 0.5, 1.3, r + 2.4);
+    const sgn = merged(sign, this.mat(0xffffff));
+    this.addObj(sgn);
+    const board = new THREE.Mesh(BR, this.mat(0xc0392b));
+    board.scale.set(1.5, 0.3, 0.1);
+    board.rotation.z = 0.7;
+    board.position.set(0.5, 2.35, r + 2.4);
+    this.addObj(board);
+    // station: platform + shelter inside the SW corner
+    const px = -r + 5.2, pz = -r + 5.2;
+    const pf = [];
+    addBox(pf, 6, 0.55, 4, px, 0.27, pz);
+    const plat = merged(pf, this.mat(0xb8b0a0));
+    plat.receiveShadow = true;
+    this.addObj(plat);
+    this.addSolid(new THREE.Box3(new THREE.Vector3(px - 3, 0, pz - 2), new THREE.Vector3(px + 3, 0.55, pz + 2)), plat);
+    const shelter = [];
+    for (const sx of [-2.4, 2.4]) for (const sz of [-1.4, 1.4]) addBox(shelter, 0.22, 1.8, 0.22, px + sx, 1.45, pz + sz);
+    addBox(shelter, 5.6, 0.22, 3.6, px, 2.45, pz);
+    const roof = merged(shelter, this.mat(0xc0392b));
+    roof.castShadow = true;
+    this.addObj(roof);
+    const bench = new THREE.Mesh(BR, this.mat(0x9a5b3f));
+    bench.scale.set(2.4, 0.3, 0.7);
+    bench.position.set(px, 0.75, pz + 0.9);
+    this.addObj(bench);
+    this.station = { x: px, z: pz };
+  }
+
   buildPaths() {
     const k = this.k;
     const parts = [];
@@ -483,6 +584,7 @@ class World {
     const mesh = merged(parts, this.mat(0xcfc4ab));
     mesh.receiveShadow = true;
     this.addObj(mesh);
+    if (Math.abs(x1 - x0) + Math.abs(z1 - z0) > 8) (this.roadSegs = this.roadSegs || []).push({ x0, z0, x1, z1 });
     for (const [a, b] of solid) {
       this.addSolid(new THREE.Box3(new THREE.Vector3(...a), new THREE.Vector3(...b)), null, true, true);
     }
@@ -540,7 +642,7 @@ class World {
       const h = { x: st.x * this.k, z: Math.min(r.z1 + st.dz, H - 4), ry: st.ry, body: st.body, roof: st.roof };
       if (Math.abs(h.x) > H - 5 || h.z < r.z1 + 4) continue;
       if (this.propBlocked(h.x, h.z) || this.siteInMonument(h.x, h.z, 5)) continue;
-      if (this.buildHouse(h)) placed++;
+      if (this.buildHouse(h)) { placed++; (this.townSites = this.townSites || []).push(h); }
     }
     for (let i = 0; i < placed; i++) {
       const rc = this.houseRects[this.houseRects.length - 1 - i];
@@ -570,6 +672,8 @@ class World {
       if (this.propBlocked(st.x, st.z) || this.siteInMonument(st.x, st.z, 5)) continue;
       if (!this.buildHouse(st)) continue;
       this.respawnAnchors.push({ x: st.x, z: st.z + 4 });
+      this.ruralSites.push(st);
+      if (st.farm) this.farmSites.push(st);
       if (st.farm) this.buildFarm(st);
     }
   }
@@ -662,12 +766,13 @@ class World {
     };
     const zm = this.zones.find((zn) => zn.id === 'monument');
     const attempts = [];
+    const outer = this.preset.train ? 7 : 1.5;   // keep the rail ring's outer corridor free
     { // north bank
-      const availZ = H - 1.5 - (r.z1 + 5);
+      const availZ = H - outer - (r.z1 + 5);
       attempts.push({ side: 1, depth: availZ, prefer: zm ? (zm.x0 + zm.x1) / 2 : (r.x1 + H) / 2 });
     }
     { // south bank (in front of the village, works on Tiny/Small)
-      const depth = (-r.z0 - 6) - (-H + 2);
+      const depth = (-r.z0 - 6) - (-H + (outer - 0.5));
       attempts.push({ side: -1, depth, prefer: -H * 0.15 });
     }
     let chosen = null;
@@ -694,7 +799,7 @@ class World {
     const wallH = 18 * sc, wallD = 2.6;
     const cx = chosen.cx;
     const side = at.side; // +1: plaza at north edge, wall facing south; -1: plaza at south edge, facing north
-    const plazaZ1 = side > 0 ? H - 2 : (-r.z0 - 6);
+    const plazaZ1 = side > 0 ? H - outer + 0.5 : (-r.z0 - 6);
     const plazaZ0 = plazaZ1 - plazaD;
     const wallZ = side > 0 ? plazaZ1 - 2 : plazaZ0 + 2;
     const pedTop = 1.2 + 4 * Math.max(0.7, sc);
@@ -963,7 +1068,7 @@ class World {
       if (placed >= n) break;
       const h = { x: s.x, z: s.z, ry: s.ry, body: s.body, roof: s.roof };
       if (Math.abs(h.x) > this.half - 5 || Math.abs(h.z) > this.half - 5) continue;
-      if (this.buildHouse(h)) placed++;
+      if (this.buildHouse(h)) { placed++; this.villageSites.push(h); }
     }
 
     if (this.count('school')) {
@@ -1600,7 +1705,17 @@ class Game {
     this.sun = sun;
 
     this.world = new World(this.scene);
-    this.world.onWorldChanged = () => { this.fitShadow(); this.applyOutdoorFog(); };
+    this.world.onWorldChanged = () => {
+      this.fitShadow();
+      this.applyOutdoorFog();
+      if (this.life) {
+        this.life.dispose();
+        this.life = new Life(this.world, this.scene, this.world.rand);
+        this.life.populate();
+      }
+      if (this.train) { this.train.dispose(); this.train = null; }
+      if (this.world.railR) this.train = new Train(this.world, this.scene, this.world.rand);
+    };
     this.player = new Player(this.world);
     this.player.fellHook = () => this.toast('You fell out of the world — respawned on solid ground!', 'bad');
     this.scene.add(this.player.root);
@@ -1612,6 +1727,7 @@ class Game {
     this.repaired = false;
     this.started = false;
     this.slot = 0;
+    this.nuke = null;
     this.removeMode = false;
     this.pick = new THREE.Raycaster();
     this.confetti = null;
@@ -1620,8 +1736,8 @@ class Game {
     this.ghost = this.makeGhost();
     this.nearDoor = null;
 
-    // build / weapon / weather modes are mutually exclusive
-    this.mode = 'build';
+    // explore / build / weapon / weather modes are mutually exclusive
+    this.mode = 'explore';
     this.weapon = 0;
     this.removeMode = false;
     this.fireCd = 0;
@@ -1632,6 +1748,9 @@ class Game {
     this.meteors = [];
     this._falling = [];
     this.fx = new Fx(this.scene);
+    this.life = new Life(this.world, this.scene, this.world.rand);
+    this.life.populate();
+    if (this.world.railR) this.train = new Train(this.world, this.scene, this.world.rand);
     this.weaponModels = buildWeaponModels();
     this.weaponRig = new THREE.Group();
     this.weaponRig.position.set(0.42, 1.02, -0.18);
@@ -1845,7 +1964,7 @@ class Game {
     this.intro = document.getElementById('intro');
     document.getElementById('btn-play').addEventListener('click', () => this.start());
     if (this.bannerImg) {
-      bannerTexture().then((b) => {
+      welcomeTexture().then((b) => {
         if (this.bannerImg) this.bannerImg.src = b.url;
         else b.dispose();
       }).catch(() => { if (this.bannerImg) this.bannerImg.style.display = 'none'; });
@@ -1860,6 +1979,19 @@ class Game {
     this.modePill.id = 'mode-pill';
     hud.appendChild(this.modePill);
 
+    this.modeBar = document.createElement('div');
+    this.modeBar.id = 'modebar';
+    hud.appendChild(this.modeBar);
+    this.modeSlots = MODES.map((m) => {
+      const el = document.createElement('button');
+      el.className = 'slot mode';
+      el.title = m.name;
+      el.innerHTML = `<span class="key">${m.key}</span><span class="wicon">${m.icon}</span>`;
+      el.addEventListener('click', (e) => { e.preventDefault(); this.setMode(m.id); });
+      this.modeBar.appendChild(el);
+      return el;
+    });
+
     this.weaponSlots = WEAPONS.map((w, i) => {
       const el = document.createElement('button');
       el.className = 'slot';
@@ -1869,45 +2001,91 @@ class Game {
       this.stripBar.appendChild(el);
       return el;
     });
+    this.exploreClear = document.createElement('button');
+    this.exploreClear.className = 'slot weather-w';
+    this.exploreClear.title = 'Clear skies · back to explore (Esc)';
+    this.exploreClear.innerHTML = '<span class="wicon">🧭</span>';
+    this.exploreClear.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.weather !== 'clear') this.activateWeather('clear');
+      else this.setMode('explore');
+    });
+    this.stripBar.appendChild(this.exploreClear);
+
     this.weatherSlots = WEATHERS.map((w) => {
       const el = document.createElement('button');
       el.className = 'slot weather-w';
       el.title = w.name;
       el.innerHTML = `<span class="wicon">${w.icon}</span>`;
-      el.addEventListener('click', (e) => { e.preventDefault(); this.activateWeather(w.id); });
+      el.addEventListener('click', (e) => { e.preventDefault(); this.onWeatherClick(w.id); });
       this.stripBar.appendChild(el);
       return el;
     });
   }
 
   setMode(mode) {
-    if (this.mode === mode) { this.refreshStrips(); return; }
+    if (mode === this.mode) { this.refreshStrips(); return; }
+    const prev = this.mode;
+    if (mode === 'weather') {
+      this.mode = 'weather';
+      sfx.swap();
+      this.toast('🌦️ Weather control — tap an icon to arm it', 'good');
+      this.refreshStrips();
+      return;
+    }
     this.mode = mode;
     if (mode !== 'weapon') sfx.setFlame(false);
+    // explore/build are neutral: leaving weather mode pacifies the sky again
+    if (prev === 'weather' && (mode === 'explore' || mode === 'build') && this.weather !== 'clear') {
+      this.activateWeather('clear');
+    }
     sfx.swap();
+    if (mode === 'explore') this.toast('Explore mode — roam free. Pick a mode anytime.', 'good');
     this.refreshStrips();
+  }
+
+
+
+  onWeatherClick(id) {
+    const enter = this.mode !== 'weather';
+    if (enter) this.setMode('weather');
+    this.activateWeather(id);
+    if (id === 'nuke') this.armNuke();
+    this.refreshStrips();
+  }
+
+  defuseNuke() {
+    const n = this.nuke;
+    if (!n) return;
+    for (const k of ['mesh', 'cloud', 'crater']) if (n[k]) this.scene.remove(n[k]);
+    this.nuke = null;
   }
 
   refreshStrips() {
     const build = this.mode === 'build';
+    const weapon = this.mode === 'weapon';
+    const weather = this.mode === 'weather';
     this.hotbar.classList.toggle('hidden', !build);
-    this.stripBar.classList.toggle('hidden', build);
-    const stripWeapons = this.mode === 'weapon';
+    this.stripBar.classList.toggle('hidden', !weapon && !weather);
+    if (this.exploreClear) this.exploreClear.style.display = weather ? '' : 'none';
     this.weaponSlots.forEach((el, i) => {
-      el.style.display = stripWeapons ? '' : 'none';
-      el.classList.toggle('active', stripWeapons && i === this.weapon);
+      el.style.display = weapon ? '' : 'none';
+      el.classList.toggle('active', weapon && i === this.weapon);
     });
     this.weatherSlots.forEach((el, i) => {
-      el.style.display = this.mode === 'weather' ? '' : 'none';
-      el.classList.toggle('active', this.mode === 'weather' && WEATHERS[i].id === this.weather);
+      const id = WEATHERS[i].id;
+      el.style.display = weather ? '' : 'none';
+      el.classList.toggle('active', weather && id === this.weather && !(id === 'nuke' && !this.nuke));
     });
-    this.weaponRig.visible = this.mode === 'weapon';
+    this.modeSlots.forEach((el, i) => el.classList.toggle('active', MODES[i].id === this.mode));
+    this.weaponRig.visible = weapon;
     this.ghost.visible = false;
-    const label = this.mode === 'build' ? '🧱 BUILD'
-      : this.mode === 'weapon' ? `⚔️ WEAPON · ${WEAPONS[this.weapon].name}`
+    const label = this.mode === 'explore' ? '🧭 EXPLORE'
+      : build ? '🧱 BUILD'
+      : weapon ? `⚔️ WEAPON · ${WEAPONS[this.weapon].name}`
       : `🌦️ WEATHER · ${this.weatherDef.name}`;
     this.modePill.textContent = label;
-    this.modePill.className = this.mode === 'weapon' ? 'weapon' : this.mode === 'weather' ? 'weather' : '';
+    this.modePill.className = weapon ? 'weapon' : weather ? 'weather' : this.mode === 'explore' ? 'explore' : '';
   }
 
   selectWeapon(i) {
@@ -1932,8 +2110,9 @@ class Game {
     this.shakeT = 0;
     this.boltT = 0;
     this.bolt.visible = false;
-    this.setMode('weather');
+    if (this.mode !== 'weather') this.setMode('weather');
     sfx.unloopAll();
+    if (def.id === 'clear') this.defuseNuke();
     this.rain.points.visible = false;
     this.snowf.points.visible = false;
     this.funnel.show(false);
@@ -1958,6 +2137,7 @@ class Game {
       case 'tsunami': sfx.wave(); this.waveId++;
         this.waveZ = -this.world.half - 14; break;
       case 'meteor': sfx.meteorWhistle(); this.spawnMeteor(); break;
+      case 'nuke': break; // armed by onWeatherClick only (one-shot air-drop)
       default: break; // clear/morning/noon/evening/night: ambience only
     }
     this.applyOutdoorFog();
@@ -2163,6 +2343,121 @@ class Game {
     }
   }
 
+  /* ------------------------------------------- 25kt nuclear air-drop */
+  armNuke() {
+    if (this.nuke && this.nuke.stage !== 'done') return;
+    const p = this.player.pos;
+    const H = this.world.half;
+    const tx = clamp(p.x + (Math.random() * 2 - 1) * 8, -H + 10, H - 10);
+    const tz = clamp(p.z + 26 + Math.random() * 18, -H + 10, H - 10);
+    const bomb = new THREE.Group();
+    const casing = new THREE.Mesh(SP, mkMat(0x3c4650, { metalness: 0.5, roughness: 0.4 }));
+    casing.scale.set(1.1, 1.6, 1.1);
+    const fin = mkMat(0xffc832);
+    const fins = new THREE.Mesh(BR, fin); fins.scale.set(1.5, 0.12, 0.6); fins.position.y = 1.25;
+    const fins2 = new THREE.Mesh(BR, fin); fins2.scale.set(0.12, 1.5, 0.6); fins2.position.y = 1.25;
+    bomb.add(casing, fins, fins2);
+    bomb.position.set(tx, 78, tz);
+    this.scene.add(bomb);
+    this.nuke = { stage: 'fall', mesh: bomb, tx, tz, t: 0, cloud: null, crater: null };
+    this.toast('☢️ 25kt device AWAY — take cover, 6 seconds!', 'bad');
+    sfx.meteorWhistle();
+  }
+
+  updateLife(dt) {
+    if (this.life) this.life.update(dt);
+    if (this.train) this.train.update(dt, this.camera);
+  }
+
+  updateNuke(dt) {
+    const n = this.nuke;
+    if (!n || n.stage === 'done') return;
+    n.t += dt;
+    if (n.stage === 'fall') {
+      n.mesh.position.y -= 13 * dt;
+      n.mesh.rotation.z = Math.sin(n.t * 7) * 0.08;
+      this.fx.spawn(n.mesh.position.x, n.mesh.position.y, n.mesh.position.z, 'smoke', 1);
+      const gy = this.world.surfaceTop(Math.floor(n.tx + 0.5), Math.floor(n.tz + 0.5), 60);
+      const gTop = gy > -Infinity ? gy : 0;
+      if (n.t > 6 || n.mesh.position.y <= gTop + 2) {
+        n.mesh.position.y = gTop + 2;
+        this._nukeBlast(n, gTop);
+        n.stage = 'cloud'; n.t = 0;
+      }
+      return;
+    }
+    if (n.stage === 'cloud') {
+      const g = Math.min(1, n.t / 5);        // mushroom blooms over 5 s
+      n.cloud.scale.setScalar(0.2 + g * 1.05);
+      n.cloud.position.y = n.gTop + g * 34 + Math.max(0, n.t - 5) * dt * 0.6;
+      n.cloud.rotation.y += dt * 0.25;
+      if (n.t > 26) {
+        this.scene.remove(n.cloud);
+        this.scene.remove(n.crater);
+        n.cloud = null; n.crater = null;
+        n.stage = 'done';
+        if (this.weather === 'nuke') this.activateWeather('clear');
+        this.toast('Mushroom cloud dissipating… skies clear again.', 'good');
+      }
+    }
+  }
+
+  _nukeBlast(n, gTop) {
+    const at = new THREE.Vector3(n.tx, gTop + 3, n.tz);
+    const def = WEATHERS.find((x) => x.id === 'nuke');
+    sfx.explode(); sfx.thunder();
+    if (navigator.vibrate) navigator.vibrate([90, 40, 260]);
+    this.flash.position.set(n.tx, gTop + 14, n.tz);
+    this.flash.intensity = 260;              // blinding flash
+    this.shakeT = 2.2;
+    this.fx.spawn(at.x, at.y, at.z, 'fire', 120);
+    this.fx.spawn(at.x, at.y + 3, at.z, 'smoke', 80);
+    this.fx.spawn(at.x, at.y, at.z, 'debris', 90);
+    for (const prop of this.world.props) {
+      if (prop.gone) continue;
+      if (Math.hypot(prop.cx - n.tx, prop.cz - n.tz) < def.radius) {
+        for (let i = 0; i < 3; i++) this.world.applyHit(prop, def.dmg, null);
+      }
+    }
+    this.bricksInRadius(at, def.radius - 2, (rec) => this.hurtBrick(rec, def.dmg));
+    this.damageSplash(def, at, null);
+    if (this.life) this.life.killNear(n.tx, n.tz, def.radius + 4);
+    const crater = new THREE.Group();
+    const char = mkMat(0x2b2320, { roughness: 1 });
+    for (let a = 0; a < 26; a++) {
+      const ang = (a / 26) * Math.PI * 2;
+      const rr = 9 + (a % 3);
+      const b = new THREE.Mesh(BR, char);
+      b.scale.set(1.6, 0.5, 1.6);
+      b.position.set(n.tx + Math.cos(ang) * rr, gTop + 0.25, n.tz + Math.sin(ang) * rr);
+      b.rotation.y = ang;
+      crater.add(b);
+    }
+    const floor = new THREE.Mesh(BR, char);
+    floor.scale.set(15, 0.3, 15);
+    floor.position.set(n.tx, gTop + 0.16, n.tz);
+    crater.add(floor);
+    this.scene.add(crater);
+    const cloud = new THREE.Group();
+    const cl = mkMat(0xd9c9a8, { emissive: 0xff7b2d, emissiveIntensity: 0.45, roughness: 1 });
+    const cl2 = mkMat(0xb9a685, { roughness: 1 });
+    const stem = new THREE.Mesh(SP, cl); stem.scale.set(4, 12, 4); stem.position.y = 6;
+    const cap = new THREE.Mesh(SP, cl); cap.scale.set(12, 7, 12); cap.position.y = 15;
+    cloud.add(stem, cap);
+    for (let i = 0; i < 5; i++) {
+      const r = new THREE.Mesh(SP, cl2);
+      const rr = 6.5 + i * 1.4;
+      r.scale.set(rr, 2.4, rr);
+      r.position.y = 11 + i * 2.2;
+      cloud.add(r);
+    }
+    cloud.position.set(n.tx, gTop, n.tz);
+    cloud.scale.setScalar(0.2);
+    this.scene.add(cloud);
+    n.cloud = cloud; n.crater = crater; n.gTop = gTop;
+    this.toast('☢️ GROUND ZERO — 25kt. The map will remember that.', 'bad');
+  }
+
   spawnMeteor() {
     if (this.mode !== 'weather' || this.weather !== 'meteor') return;
     const target = this.weatherPickProp(70);
@@ -2186,8 +2481,8 @@ class Game {
     if (this.boltT > 0) { this.boltT -= dt; this.bolt.visible = this.boltT > 0; }
     if (this.flash.intensity > 0) this.flash.intensity = Math.max(0, this.flash.intensity - dt * 40);
 
-    // damage ticks
-    if (def.dmg) {
+    // damage ticks (nuke is a one-shot air-drop event, not weather)
+    if (def.dmg && !def.nuke) {
       this.weatherDmgT += dt;
       if (this.weatherDmgT >= def.every) {
         this.weatherDmgT = 0;
@@ -2364,6 +2659,8 @@ class Game {
   }
 
   regenerateWorld() {
+    if (this.life) { this.life.dispose(); }
+    if (this.train) { this.train.dispose(); this.train = null; }
     clearState(this.world.opts.size); // mammoth reset: regenerate wipes all damage
     this.world.genSalt = (Math.floor(Math.random() * 0x7fffffff) >>> 0);
     this.sig = sigOf(this.world.opts);
@@ -2382,6 +2679,9 @@ class Game {
       this.confetti.material.dispose();
       this.confetti = null;
     }
+    this.life = new Life(this.world, this.scene, this.world.rand);
+    this.life.populate();
+    if (this.world.railR && !this.train) this.train = new Train(this.world, this.scene, this.world.rand);
     this.clearCollectibles();
     this.collected = 0;
     this.repaired = false;
@@ -2411,9 +2711,9 @@ class Game {
 
   start() {
     this.started = true;
-    this.setMode('build');
+    this.setMode('explore');
     this.intro.classList.add('hidden');
-    this.toast(`Grab loose bricks — the bridge needs ${GOAL}`, 'good');
+    this.toast('🧭 Explore mode — grab loose bricks, or switch modes (1-4).', 'good');
   }
 
   toast(msg, kind) {
@@ -2445,17 +2745,24 @@ class Game {
       }
       if (e.code === 'Space') { e.preventDefault(); this.jumpQueued = 0.16; return; }
       if (e.code === 'KeyE') { this.toggleDoor(); return; }
-      if (e.code === 'Tab' || e.code === 'KeyB') { e.preventDefault(); this.setMode(this.mode === 'build' ? 'weapon' : 'build'); return; }
-      if (e.code === 'KeyC') { e.preventDefault(); this.setMode(this.mode === 'weather' ? 'build' : 'weather'); return; }
+      if (e.code === 'Escape') { e.preventDefault(); this.setMode('explore'); return; }
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        const order = MODES.map((m) => m.id);
+        this.setMode(order[(order.indexOf(this.mode) + 1) % order.length]);
+        return;
+      }
+      const mk = MODE_KEYS[e.code];
+      if (mk !== undefined) { e.preventDefault(); this.setMode(mk); return; }
       if (map[e.code]) { this.keys.add(map[e.code]); e.preventDefault(); return; }
+      if (e.code === 'KeyX' && this.mode === 'build') { this.selectSlot(BRICKS.length); return; }
       const n = parseInt(e.key, 10);
       if (Number.isNaN(n)) return;
       if (this.mode === 'weapon') {
         if (n >= 1 && n <= WEAPONS.length) this.selectWeapon(n - 1);
       } else if (this.mode === 'weather') {
-        if (n >= 1 && n <= WEATHERS.length) this.activateWeather(WEATHERS[n - 1].id);
-      } else {
-        if (e.code === 'KeyX') this.selectSlot(BRICKS.length);
+        if (n >= 1 && n <= WEATHERS.length) this.onWeatherClick(WEATHERS[n - 1].id);
+      } else if (this.mode === 'build') {
         if (n >= 1 && n <= BRICKS.length) this.selectSlot(n - 1);
       }
     });
@@ -2677,6 +2984,7 @@ class Game {
       this.toast('Remove mode: tap one of your placed bricks', 'bad');
       return;
     }
+    if (this.mode === 'explore') return;
     const t = this.computePlacement(ndc);
     if (!t) return;
     if (!t.valid) { this.toast(`Can't place there — ${t.reason}`, 'bad'); return; }
@@ -2898,6 +3206,8 @@ class Game {
     if (this.mode === 'weapon' && this.holdNdc && this.pointers.size > 0) this.tryFire(this.holdNdc);
     this.updateRockets(dt);
     this.updateFireballs(dt);
+    this.updateNuke(dt);
+    this.updateLife(dt);
     this.updateMeteors(dt);
     this.updateFalling(dt);
     this.fx.update(dt);

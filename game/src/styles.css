@@ -135,6 +135,25 @@ body.touch #panel-hint { display: none; }
 }
 #mode-pill.weapon { background: rgba(220, 38, 38, .88); }
 #mode-pill.weather { background: rgba(14, 116, 144, .9); }
+#mode-pill.explore { background: rgba(22, 132, 84, .9); }
+#modebar {
+  position: absolute;
+  left: 50%;
+  bottom: 86px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  z-index: 5;
+}
+.slot.mode { width: 46px; height: 46px; }
+.slot.mode .wicon { font-size: 20px; line-height: 22px; }
+.slot.mode.active { outline: 3px solid #ffd23f; }
 .slot.weather-w { min-width: 52px; }
 .slot.weather-w .wicon { font-size: 20px; }
 .slot.weather-w.armed { outline: 3px solid #ffd23f; }

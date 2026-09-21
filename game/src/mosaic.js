@@ -152,6 +152,64 @@ export function maddoxRaster() {
   return _raster;
 }
 
+/* The welcome dialog portrait: a brick mosaic painted from the 8-color asset
+   assets/maddox-face-8color.png. Each source pixel becomes one flat brick cell
+   at an integer cell size (nearest-neighbour, no resampling of the art), with
+   the exact 8-color palette strip below. */
+export const FACE8_PALETTE = ['#1C1C1C', '#F0C18D', '#C5875D', '#301E14',
+  '#120E0E', '#1C1D1E', '#1C1413', '#1C1C1B'];
+
+export function welcomeTexture(src = 'assets/maddox-face-8color.png', cell = 4) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const titleH = 70, stripH = 64;
+      const W = img.width * cell, H = img.height * cell;
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = titleH + H + stripH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = '#241f1d';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffd2a3';
+      ctx.font = 'bold 30px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('M A D D O X   B L O X', W / 2, 32);
+      ctx.fillStyle = '#b9a894';
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillText('welcome, builder - 8-color brick mosaic portrait', W / 2, 56);
+      // one source pixel -> one cell x cell brick, nearest-neighbour, flat
+      ctx.drawImage(img, 0, titleH, W, H);
+      // palette strip: the exact 8 brick colors used by the mosaic
+      const sw = 34, gap = 8, n = FACE8_PALETTE.length;
+      const total = n * sw + (n - 1) * gap;
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      for (let i = 0; i < n; i++) {
+        const x = Math.round((W - total) / 2) + i * (sw + gap);
+        const y = titleH + H + 8;
+        ctx.fillStyle = FACE8_PALETTE[i];
+        ctx.fillRect(x, y, sw, sw);
+        ctx.strokeStyle = '#ffffff55';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, sw - 1);
+        ctx.fillStyle = i === 1 ? '#101014' : '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(FACE8_PALETTE[i].slice(1), x + sw / 2, y + sw + 14);
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      resolve({ tex, url: canvas.toDataURL('image/png'),
+        region: { x: 0, y: titleH, w: W, h: H, cell },
+        dispose: () => tex.dispose() });
+    };
+    img.onerror = () => reject(new Error('face asset failed: ' + src));
+    img.src = src;
+  });
+}
+
 /* Welcome-dialog portrait: literal nearest-neighbour paint of the full 64x96
    grid (integer cell size, flat palette fill per cell), framed by the title
    above and the 16-color palette strip (indices 0-F in raster order) below.

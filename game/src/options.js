@@ -15,10 +15,10 @@ export const OBJECT_TYPES = [
    capacity multipliers: towns (extra villages), rural hamlets, farms,
    collectible spots, trees. `zones` = distinct terrain zones the world carves. */
 export const SIZES = [
-  { id: 'tiny', label: 'Tiny', half: 22, towns: 0, rural: 0, farms: 0, spots: 0.7, trees: 0.5, zones: 1 },
-  { id: 'small', label: 'Small', half: 28, towns: 1, rural: 0, farms: 1, spots: 1.0, trees: 1.0, zones: 2 },
-  { id: 'large', label: 'Large', half: 42, towns: 2, rural: 1, farms: 2, spots: 1.6, trees: 1.6, zones: 3 },
-  { id: 'huge', label: 'Huge', half: 64, towns: 5, rural: 4, farms: 6, spots: 2.4, trees: 2.2, zones: 5 }
+  { id: 'tiny', label: 'Tiny', half: 22, towns: 0, rural: 0, farms: 0, spots: 0.7, trees: 0.5, zones: 1, train: 0 },
+  { id: 'small', label: 'Small', half: 30, towns: 1, rural: 1, farms: 2, spots: 1.0, trees: 1.0, zones: 2, train: 0 },
+  { id: 'large', label: 'Large', half: 48, towns: 3, rural: 2, farms: 4, spots: 1.8, trees: 1.6, zones: 4, train: 1 },
+  { id: 'huge', label: 'Huge', half: 72, towns: 6, rural: 5, farms: 8, spots: 2.6, trees: 2.2, zones: 6, train: 1 }
 ];
 const MAX_HALF = 64; // hard cap: runaway-memory guard for map size
 
