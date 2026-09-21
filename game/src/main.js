@@ -1741,7 +1741,16 @@ class Game {
     this.scene.add(this.player.root);
     this.fitShadow();
 
-    this.clock = new THREE.Clock();
+    // plain delta timer (THREE.Clock is deprecated upstream)
+    this.clock = {
+      _last: performance.now(),
+      getDelta() {
+        const now = performance.now();
+        const d = (now - this._last) / 1000;
+        this._last = now;
+        return d;
+      },
+    };
     this.time = 0;
     this.collected = 0;
     this.repaired = false;
