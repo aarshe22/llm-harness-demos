@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
-import { INTERIOR_DEF, buildInterior } from './interior.js';
+import { makeInterior } from './interior.js';
 import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
 import { instancedMosaicMesh, bannerTexture, welcomeTexture, maddoxRaster } from './mosaic.js';
 import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
@@ -82,9 +82,11 @@ class World {
     this._pending = st && Array.isArray(st.entries) ? st.entries : [];
     this.over = this.makeBucket('_over');
     this.inHouse = false;
-    this.interior = buildInterior(this.scene);
-    this.interiorSolids = this.interior.solids.map((box) => ({ box, brick: null }));
-    this.interior.group.visible = false;
+    this.activeInterior = null;
+    this.interiors = [];
+    this.interiorCache = new Map();
+    this.policeStations = [];
+    this.fireStations = [];
     this.build();
   }
 
@@ -159,11 +161,43 @@ class World {
 
   rebuild() {
     this.teardown(this.over);
+    this.disposeInteriors();
     this.clearBricks();
     this.over = this.makeBucket('_over');
     this.applyOptions();
     this.build();
     if (this.onWorldChanged) this.onWorldChanged();
+  }
+
+  /* Interiors are built per world-instance and cached by type+variant seed.
+     The cache is dropped on rebuild so geometry/materials don't leak. */
+  disposeInteriors() {
+    for (const it of this.interiorCache.values()) {
+      it.group.removeFromParent();
+      it.group.traverse((o) => {
+        if (o.isMesh) {
+          if (!o.geometry.userData.shared && o.geometry !== BR && o.geometry !== CY && o.geometry !== SP && o.geometry !== CO) o.geometry.dispose();
+          o.material.map?.dispose?.();
+          o.material.dispose?.();
+        }
+      });
+    }
+    this.interiorCache = new Map();
+    this.activeInterior = null;
+    this.interiors = [];
+    this.inHouse = false;
+    this.solids = this.over.solids;
+  }
+
+  getInterior(type, seed = 0) {
+    const key = `${type}#${seed}`;
+    let it = this.interiorCache.get(key);
+    if (!it) {
+      it = makeInterior(this.scene, type, seed);
+      it.solidRecs = it.solids.map((box) => ({ box, brick: null }));
+      this.interiorCache.set(key, it);
+    }
+    return it;
   }
 
   mat(color) {
@@ -270,6 +304,9 @@ class World {
     this.respawnAnchors = [];
     this.houseRects = [];
     this.doorAnchors = [];
+    this.interiors = [];
+    this.policeStations = [];
+    this.fireStations = [];
     this.swings = [];
     this.villageSites = [];
     this.townSites = [];
@@ -321,6 +358,7 @@ class World {
     this.buildVolcanoes();
     this.buildExtraTowns();
     this.buildRuralAndFarms();
+    this.buildCivic();
     for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
     if (this.preset.train) this.buildRingRail();
@@ -328,12 +366,35 @@ class World {
     this.applyPending();
   }
 
-  enterHouse() {
-    this.solids = this.interiorSolids;
+  /* Register a building's entrance: world-space door anchor + the cached
+     interior it opens, keyed by variant seed (stable across reloads). */
+  registerDoor(type, x, z, ry, faceDist = 1.6, seed = 0) {
+    const it = this.getInterior(type, seed);
+    const interior = {
+      type, x, z, ry,
+      world: new THREE.Vector3(x, 0, z),
+      yaw: ry,
+      ref: it
+    };
+    this.interiors.push(interior);
+    this.doorAnchors.push({
+      world: new THREE.Vector3(x + Math.sin(ry) * faceDist, 0, z + Math.cos(ry) * faceDist),
+      yaw: ry,
+      interior
+    });
+    return interior;
+  }
+
+  enterHouse(interior) {
+    this.activeInterior = interior;
+    interior.ref.group.visible = true;
+    this.solids = interior.ref.solidRecs;
     this.inHouse = true;
   }
 
   exitHouse() {
+    if (this.activeInterior) this.activeInterior.ref.group.visible = false;
+    this.activeInterior = null;
     this.solids = this.over.solids;
     this.inHouse = false;
   }
@@ -718,6 +779,156 @@ class World {
   }
 
   /* Barn + fenced crop field + pond + haystack; all colliders walkable/edge-safe. */
+  /* ---- civic buildings: one police station + one fire station on every
+     preset that has towns. Both face a road, both have unique interiors,
+     and the fire station records its bay spots so Life can park a truck. */
+  segDist(x, z, sg) {
+    const dx = sg.x1 - sg.x0, dz = sg.z1 - sg.z0;
+    const L2 = dx * dx + dz * dz || 1;
+    let t = ((x - sg.x0) * dx + (z - sg.z0) * dz) / L2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(x - (sg.x0 + dx * t), z - (sg.z0 + dz * t));
+  }
+
+  civicSite(w, d) {
+    const H = this.half, r = this.river;
+    const cands = [];
+    const tz = this.zones.find((zn) => zn.id === 'town');
+    if (tz) {
+      const cx = (tz.x0 + tz.x1) / 2, cz = (tz.z0 + tz.z1) / 2;
+      for (let i = 0; i < 14; i++) {
+        const a = i * 2.399963 + 0.9;
+        const rad = 6 + 10 * Math.sqrt(i);
+        cands.push([cx + Math.cos(a) * rad, cz + Math.sin(a) * rad]);
+      }
+    }
+    const rz = this.crossRoadZ !== undefined ? this.crossRoadZ : r.z1 + 7;
+    cands.push([-9, rz + 6], [10, rz + 6], [-12, rz - 6], [13, rz - 6]);
+    cands.push([-11, r.z1 + 9], [12, r.z1 + 9]);
+    for (const [x0, z0] of cands) {
+      const x = Math.round(Math.max(-H + 8, Math.min(H - 8, x0)));
+      const z = Math.round(Math.max(r.z1 + 5, Math.min(H - 7, z0)));
+      if (this.inRiver(x, z)) continue;
+      if (this.propBlocked(x, z) || this.siteInMonument(x, z, 7)) continue;
+      let clear = true;
+      for (const sg of this.roadSegs || []) {
+        if (this.segDist(x, z, sg) < Math.max(w, d) / 2 + 3.2) { clear = false; break; }
+      }
+      if (!clear) continue;
+      // face (+z toward the near/river side, -z toward the far side of town)
+      return { x, z, ry: z > rz ? Math.PI : 0 };
+    }
+    return null;
+  }
+
+  buildCivic() {
+    const k = this.k;
+    this.policeStations = [];
+    this.fireStations = [];
+    if (!this.preset.towns && !this.preset.zones) return;
+    const ps = this.civicSite(9 * k, 6.5 * k);
+    if (ps) {
+      const st = this.buildPoliceStation(ps.x, ps.z, ps.ry, k);
+      if (st) this.policeStations.push(st);
+    }
+    const fs = this.civicSite(9.5 * k, 7.5 * k);
+    if (fs) {
+      const st = this.buildFireStation(fs.x, fs.z, fs.ry, k);
+      if (st) this.fireStations.push(st);
+    }
+  }
+
+  buildPoliceStation(cx, cz, ry, k) {
+    const w = 9 * k, d = 6.5 * k, bh = 3.4;
+    const grp = new THREE.Group();
+    const bodyMesh = merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xeef2f7));
+    grp.add(bodyMesh);
+    const band = merged([addBox([], w + 0.1, 0.9, d + 0.1, 0, 1.1, 0)], this.mat(0x1d3557));
+    grp.add(band);
+    const gold = [];
+    addBox(gold, 1.3, 1.3, 0.12, 0, 2.5, d / 2 + 0.08);
+    grp.add(merged(gold, this.mat(0xffd23f)));
+    const win = [];
+    for (const sx of [-3.2, -1.6, 1.6, 3.2]) addBox(win, 1.0, 1.0, 0.08, sx * k, 2.3, d / 2 + 0.05);
+    grp.add(merged(win, this.mat(0x9fe0ff)));
+    grp.add(merged([addBox([], 1.4, 2.2, 0.12, 0, 1.1, d / 2 + 0.07)], this.mat(0x2f7de1)));
+    // roof light bar (red/blue) + antenna
+    const lbR = merged([addBox([], 0.6, 0.22, 0.4, -0.35, bh + 0.14, 0)], mkMat(0xff2d2d, { emissive: 0xff2d2d, emissiveIntensity: 0.8 }));
+    const lbB = merged([addBox([], 0.6, 0.22, 0.4, 0.35, bh + 0.14, 0)], mkMat(0x2f7de1, { emissive: 0x2f7de1, emissiveIntensity: 0.8 }));
+    grp.add(lbR, lbB);
+    const mast = merged([addCyl([], 0.05, 1.6, 2.6 * k, bh + 0.8, -1.4 * k)], this.mat(0x9aa5b1));
+    grp.add(mast);
+    grp.rotation.y = ry;
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    const s = new THREE.Box3(
+      new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
+      new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
+    );
+    const bodySolid = this.addSolid(s, null, true);
+    this.registerProp('police', cx, cz, 500, [
+      { mesh: bodyMesh, solid: bodySolid },
+      ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))
+    ]);
+    this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    this.registerDoor('police', cx, cz, ry, d / 2 + 1.6, 0);
+    // parking pad in front for the patrol car turnaround
+    return { x: cx, z: cz, ry, pad: { x: cx + fx * (d / 2 + 4), z: cz + fz * (d / 2 + 4) } };
+  }
+
+  buildFireStation(cx, cz, ry, k) {
+    const w = 9.5 * k, d = 7.5 * k, bh = 4.2;
+    const grp = new THREE.Group();
+    const bodyMesh = merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xd62828));
+    grp.add(bodyMesh);
+    // two appliance bay doors on the front face
+    const doors = [];
+    for (const sx of [-2.2, 2.2]) {
+      addBox(doors, 3.2, 3.0, 0.14, sx * k, 1.55, d / 2 + 0.08);
+      for (let i = 1; i <= 4; i++) addBox(doors, 3.2, 0.1, 0.05, sx * k, i * 0.62, d / 2 + 0.16);
+    }
+    grp.add(merged(doors, this.mat(0xf4e9d2)));
+    const band = merged([addBox([], w + 0.1, 0.5, d + 0.1, 0, bh - 0.5, 0)], this.mat(0xf4e9d2));
+    grp.add(band);
+    // hose-drying tower at the -x corner + bell cupola
+    const tower = merged([addBox([], 1.4, bh + 2.4, 1.4, -w / 2 + 1, (bh + 2.4) / 2, -d / 2 + 1)], this.mat(0xb0413e));
+    grp.add(tower);
+    const cup = merged([addCyl([], 0.5, 0.8, 0, bh + 0.5, 0)], this.mat(0xffd23f));
+    grp.add(cup);
+    const flagPole = merged([addCyl([], 0.06, 1.6, w / 2 - 1 * k, bh + 0.9, -d / 2 + 1 * k)], this.mat(0xf1f3f5));
+    grp.add(flagPole);
+    const flag = new THREE.Mesh(BR.clone().scale(1.0, 0.6, 0.06), this.mat(0xd62828));
+    flag.position.set(w / 2 - 0.4 * k, bh + 1.4, -d / 2 + 1 * k);
+    grp.add(flag);
+    // pedestrian door between the bays
+    grp.add(merged([addBox([], 1.0, 2.1, 0.12, 0, 1.05, d / 2 + 0.08)], this.mat(0x8b5a2b)));
+    grp.rotation.y = ry;
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    const s = new THREE.Box3(
+      new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
+      new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
+    );
+    const bodySolid = this.addSolid(s, null, true);
+    this.registerProp('fire', cx, cz, 520, [
+      { mesh: bodyMesh, solid: bodySolid },
+      ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))
+    ]);
+    this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    this.registerDoor('fire', cx, cz, ry, d / 2 + 1.6, 0);
+    // truck bay: a spot just in front of the left bay door where the truck waits
+    const px = -Math.sin(ry), pz = Math.cos(ry);
+    return {
+      x: cx, z: cz, ry,
+      pad: { x: cx + fx * (d / 2 + 3), z: cz + fz * (d / 2 + 3) },
+      bay: { x: cx + fx * (d / 2 + 1.6) + px * -2.2, z: cz + fz * (d / 2 + 1.6) + pz * -2.2, yaw: ry }
+    };
+  }
+
   buildFarm(s) {
     const grp = new THREE.Group();
     const bx = s.x + (s.ry === 0 ? 6 : -6), bz = s.z + 1;
@@ -1217,11 +1428,7 @@ class World {
       [{ mesh: bodyMesh, solid: bodySolid },
        ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))]);
     this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
-    const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, 0);
-    this.doorAnchors.push({
-      world: new THREE.Vector3(cx + dir.x * (d / 2 + 1.6), 0, cz + dir.z * (d / 2 + 1.6)),
-      yaw: 0
-    });
+    this.registerDoor('school', cx, cz, 0, d / 2 + 1.6, 0);
   }
 
   buildPlayground(cx, cz, k) {
@@ -1323,11 +1530,8 @@ class World {
     this.houseRects.push({ x: h.x, z: h.z, w: w / 2, d: d / 2 });
 
     // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along facing
-    const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, h.ry);
-    this.doorAnchors.push({
-      world: new THREE.Vector3(h.x + dir.x * 1.6, 0, h.z + dir.z * 1.6),
-      yaw: h.ry
-    });
+    this.registerDoor(h.farm ? 'farm' : 'home', h.x, h.z, h.ry, 1.6,
+      hash32(`${this.opts.size}:${Math.round(h.x)}:${Math.round(h.z)}`));
     return true;
   }
 
@@ -1530,6 +1734,16 @@ class World {
   }
 
   respawnPlayer(p) {
+    if (this.inHouse && this.activeInterior) {
+      // the room slab always covers the footprint, but never trust a single
+      // lookup: snap to the interior spawn unless a real floor was found
+      const D = this.activeInterior.ref.def;
+      let top = this.surfaceTopAny(p.pos.x, p.pos.z);
+      if (top === -Infinity) { p.pos.set(D.spawn.x, D.spawn.y, D.spawn.z); p.vel.set(0, 0, 0); return; }
+      p.pos.set(clamp(p.pos.x, D.x0 + 0.5, D.x1 - 0.5), top + 0.05, clamp(p.pos.z, D.z0 + 0.5, D.z1 - 0.5));
+      p.vel.set(0, 0, 0);
+      return;
+    }
     const H = this.half;
     let x = clamp(p.pos.x, -H + 2, H - 2);
     let z = clamp(p.pos.z, -H + 2, H - 2);
@@ -1702,7 +1916,9 @@ class Player {
     const H = this.world.half;
     this.pos.x = clamp(this.pos.x, -H + 0.5, H - 0.5);
     this.pos.z = clamp(this.pos.z, -H + 0.5, H - 0.5);
-    if (!this.world.inHouse && this.pos.y < -3.5) {
+    // below-world safety net — active outdoors AND inside interiors, whose
+    // respawn branch snaps back onto the room floor instead of the map
+    if (this.pos.y < -3.5) {
       this.world.respawnPlayer(this);
       if (this.fellHook) this.fellHook();
     }
@@ -2208,7 +2424,23 @@ class Game {
     }
     this.applyOutdoorFog();
     this.refreshStrips();
+    this.dispatchFireTruck(def);
     this.toast(`${def.icon} ${def.name} — ${def.dmg ? `${def.dmg} damage every ${def.every}s` : 'no damage, sky only'}`, 'good');
+  }
+
+  /* Damage weather flags a dispatch target; Life drives the parked fire
+     engine there, waits, then returns it to the bay. */
+  dispatchFireTruck(def) {
+    if (!def || (!def.dmg && !def.meteor && !def.nuke)) return;
+    if (!this.life || !(this.world.fireStations || []).length) return;
+    const p = this.player.pos;
+    const H = this.world.half;
+    const a = Math.random() * Math.PI * 2, rr = 5 + Math.random() * 5;
+    this.world.dispatch = {
+      x: clamp(p.x + Math.cos(a) * rr, -H + 6, H - 6),
+      z: clamp(p.z + Math.sin(a) * rr, -H + 6, H - 6),
+      left: 26
+    };
   }
 
   /* ----------------------------------------------------- combat helpers */
@@ -2738,7 +2970,6 @@ class Game {
     if (this.weather !== 'clear') this.activateWeather('clear');
     if (this.world.inHouse) {
       this.world.exitHouse();
-      this.world.interior.group.visible = false;
       this.applyOutdoorFog();
     }
     this.world.rebuild();
@@ -3031,9 +3262,11 @@ class Game {
     this.pick.setFromCamera(ndc, this.camera);
 
     if (this.world.inHouse) {
-      const hits = this.pick.intersectObjects([this.world.interior.screenMesh], false);
+      const scr = this.world.activeInterior.ref.screenMesh;
+      if (!scr) { this.toast('This building has no TV', 'bad'); return; }
+      const hits = this.pick.intersectObjects([scr], false);
       if (hits.length) {
-        this.world.interior.tv.nextChannel();
+        this.world.activeInterior.ref.tv.nextChannel();
         this.toast('BRICK TV — channel changed', 'good');
         if (navigator.vibrate) navigator.vibrate(10);
       }
@@ -3116,7 +3349,7 @@ class Game {
     if (this.world.inHouse) {
       const o = this.orbit;
       o.dist += (o.wantDist - o.dist) * Math.min(1, dt * 6);
-      const D = INTERIOR_DEF;
+      const D = this.world.activeInterior.ref.def;
       const p = this.player.pos;
       const target = new THREE.Vector3(p.x, p.y + 1.4, p.z);
       const dir = new THREE.Vector3(Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch), Math.cos(o.yaw) * Math.cos(o.pitch));
@@ -3174,7 +3407,7 @@ class Game {
     const btn = this.enterBtn;
     let action = null;
     if (this.world.inHouse) {
-      const D = INTERIOR_DEF;
+      const D = this.world.activeInterior.ref.def;
       const near = Math.hypot(p.x - D.door.x, p.z - D.door.z) < 1.35;
       action = near ? 'exit' : null;
       btn.textContent = near ? 'EXIT' : 'EXIT 🔒';
@@ -3195,14 +3428,13 @@ class Game {
   toggleDoor() {
     if (!this.started) return;
     if (this.world.inHouse) {
-      const D = INTERIOR_DEF;
+      const D = this.world.activeInterior.ref.def;
       if (Math.hypot(this.player.pos.x - D.door.x, this.player.pos.z - D.door.z) >= 1.35) {
         this.toast('Walk to the front door to leave', 'bad');
         return;
       }
       const a = this.nearDoor;
       this.world.exitHouse();
-      this.world.interior.group.visible = false;
       this.applyOutdoorFog();
       this.player.pos.set(a.world.x + Math.sin(a.yaw) * 1.0, 0.05, a.world.z + Math.cos(a.yaw) * 1.0);
       this.player.vel.set(0, 0, 0);
@@ -3212,9 +3444,10 @@ class Game {
     }
     const a = this.nearDoor;
     if (!a) { this.toast('Stand in front of a house door to enter', 'bad'); return; }
-    this.world.enterHouse();
-    const D = INTERIOR_DEF;
-    this.world.interior.group.visible = true;
+    const it = a.interior || this.world.interiors[0];
+    if (!it) return;
+    this.world.enterHouse(it);
+    const D = it.ref.def;
     this.scene.fog = null;
     this.player.pos.set(D.spawn.x, D.spawn.y, D.spawn.z);
     this.player.vel.set(0, 0, 0);
@@ -3223,7 +3456,8 @@ class Game {
     this.orbit.pitch = 0.3;
     this.orbit.wantDist = 6.5;
     this.ghost.visible = false;
-    this.toast('Welcome inside! Tap the TV to change the channel. Green pad = exit.', 'good');
+    const tip = { home: 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.' }[it.type] || '';
+    this.toast(`Inside the ${it.type}! ${tip} Green pad = exit.`, 'good');
   }
 
   riverRescue(dt) {
@@ -3287,7 +3521,7 @@ class Game {
     if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
     this.updateDoorState();
     if (this.world.inHouse) {
-      this.world.interior.tick(this.time, dt);
+      this.world.activeInterior.ref.tick(this.time, dt);
       this.updateCamera(dt);
       this.renderer.render(this.scene, this.camera);
       return;

@@ -159,7 +159,52 @@ function carMesh(rand) {
   return finish(g);
 }
 
-function boatMesh(rand) {
+export function policeCarMesh(rand) {
+  const g = new THREE.Group();
+  const col = mkMat(0xf7f3e8);
+  const black = mkMat(0x22252b);
+  const glass = mkMat(0x9fd4ff, { roughness: 0.2, metalness: 0.3 });
+  box(g, col, 0.72, 0.26, 1.4, 0, 0.28, 0);
+  box(g, black, 0.74, 0.14, 0.5, 0, 0.34, 0.42);       // rear black panel
+  box(g, glass, 0.6, 0.24, 0.55, 0, 0.52, -0.1);
+  box(g, col, 0.7, 0.1, 0.3, 0, 0.55, 0.35);
+  // light bar (materials animated via userData.lights)
+  const lr = mkMat(0xff2d2d, { emissive: 0xff2d2d, emissiveIntensity: 1 });
+  const lb = mkMat(0x2f7de1, { emissive: 0x2f7de1, emissiveIntensity: 1 });
+  box(g, lr, 0.26, 0.12, 0.2, -0.16, 0.69, -0.05);
+  box(g, lb, 0.26, 0.12, 0.2, 0.16, 0.69, -0.05);
+  g.userData.lights = [lr, lb];
+  box(g, mkMat(0xffe9a8, { emissive: 0xffd23f, emissiveIntensity: 0.9 }), 0.12, 0.1, 0.06, -0.22, 0.3, -0.7);
+  box(g, mkMat(0xffe9a8, { emissive: 0xffd23f, emissiveIntensity: 0.9 }), 0.12, 0.1, 0.06, 0.22, 0.3, -0.7);
+  for (const [wx, wz] of [[-0.36, -0.42], [0.36, -0.42], [-0.36, 0.42], [0.36, 0.42]])
+    box(g, black, 0.16, 0.24, 0.24, wx, 0.12, wz);
+  return finish(g);
+}
+
+export function fireTruckMesh(rand) {
+  const g = new THREE.Group();
+  const red = mkMat(0xd62828);
+  const cream = mkMat(0xf4e9d2);
+  const glass = mkMat(0x9fd4ff, { roughness: 0.2, metalness: 0.3 });
+  box(g, red, 1.1, 0.85, 2.6, 0, 0.62, -0.5);          // body
+  box(g, red, 1.05, 0.7, 0.9, 0, 1.15, 0.9);           // cab
+  box(g, glass, 0.9, 0.4, 0.08, 0, 1.35, 1.34);         // windshield
+  box(g, cream, 1.12, 0.16, 2.6, 0, 0.5, -0.5);         // stripe
+  const ladder = box(g, mkMat(0xc0c8cf), 0.5, 0.08, 2.2, 0, 1.12, -0.7); // roof ladder
+  ladder.rotation.x = 0.03;
+  const lr = mkMat(0xff2d2d, { emissive: 0xff2d2d, emissiveIntensity: 1 });
+  const lb = mkMat(0x2f7de1, { emissive: 0x2f7de1, emissiveIntensity: 1 });
+  box(g, lr, 0.3, 0.14, 0.2, -0.28, 1.56, 0.75);
+  box(g, lb, 0.3, 0.14, 0.2, 0.28, 1.56, 0.75);
+  g.userData.lights = [lr, lb];
+  box(g, mkMat(0xffd23f, { emissive: 0xffb703, emissiveIntensity: 0.8 }), 0.22, 0.16, 0.06, -0.4, 0.75, -1.82);
+  box(g, mkMat(0xffd23f, { emissive: 0xffb703, emissiveIntensity: 0.8 }), 0.22, 0.16, 0.06, 0.4, 0.75, -1.82);
+  for (const [wx, wz] of [[-0.52, 0.75], [0.52, 0.75], [-0.52, -0.6], [0.52, -0.6], [-0.52, -1.5], [0.52, -1.5]])
+    box(g, mkMat(0x1a1c20), 0.2, 0.34, 0.34, wx, 0.17, wz);
+  return finish(g);
+}
+
+export function boatMesh(rand) {
   const g = new THREE.Group();
   const hull = mkMat(pick(rand, [0xc0392b, 0x2f7de1, 0x2aa876, 0xf5aa0f]));
   box(g, hull, 1.2, 0.4, 2.4, 0, 0.1, 0);
@@ -179,7 +224,8 @@ function boatMesh(rand) {
 
 const MAKERS = {
   person: legoGuy, cow: cowMesh, chicken: chickenMesh, dog: dogMesh,
-  cat: catMesh, bird: birdMesh, balloon: balloonMesh, car: carMesh, boat: boatMesh
+  cat: catMesh, bird: birdMesh, balloon: balloonMesh, car: carMesh, boat: boatMesh,
+  police: policeCarMesh, fire: fireTruckMesh
 };
 
 export class Life {
@@ -286,6 +332,20 @@ export class Life {
       const c = this._spawn('boat', 0, 0, 0);
       if (c) c.phase = this.rand() * 100;
     }
+    // patrol cars: liveried cruisers that cruise the whole road ring, and
+    // fire engines that sit in the station bay until the game dispatches them
+    for (const st of w.policeStations || []) {
+      const c = this._spawn('police', st.pad.x, st.pad.z, 0);
+      if (c) {
+        c.segs = segs.length ? segs : null;
+        c.segI = Math.floor(this.rand() * Math.max(1, segs.length));
+        c.prevU = 0;
+      }
+    }
+    for (const st of w.fireStations || []) {
+      const c = this._spawn('fire', st.bay.x, st.bay.z, 0);
+      if (c) { c.bay = st.bay; c.state = 'bay'; c.hold = 0; }
+    }
     if (w.monumentRect) {
       const m = w.monumentRect;
       for (let i = 0; i < 2; i++) {
@@ -359,6 +419,67 @@ export class Life {
         m.position.z = az + (bz - az) * p + dirx * c.lane * 0.6;
         m.position.y = this.ground(m.position.x, m.position.z) + 0.02;
         m.rotation.y = Math.atan2(-dirx, -dirz);
+        continue;
+      }
+      if (c.kind === 'police' && c.segs && c.segs.length) {
+        // cruise the road ring segment by segment; light bar always blinking
+        const sg = c.segs[c.segI % c.segs.length];
+        const len = Math.hypot(sg.x1 - sg.x0, sg.z1 - sg.z0) || 1;
+        const u = mod(c.t * 4.2 + c.yaw * 6, len * 2);
+        if (u < c.prevU) c.segI = (c.segI + 1) % c.segs.length;
+        c.prevU = u;
+        const fwd = u <= len;
+        const p = (fwd ? u : u - len) / len;
+        const ax = fwd ? sg.x0 : sg.x1, bx = fwd ? sg.x1 : sg.x0;
+        const az = fwd ? sg.z0 : sg.z1, bz = fwd ? sg.z1 : sg.z0;
+        const dirx = (bx - ax) / len, dirz = (bz - az) / len;
+        m.position.x = ax + (bx - ax) * p - dirz * c.lane * 0.55;
+        m.position.z = az + (bz - az) * p + dirx * c.lane * 0.55;
+        m.position.y = this.ground(m.position.x, m.position.z) + 0.02;
+        m.rotation.y = Math.atan2(-dirx, -dirz);
+        const blink = Math.sin(c.t * 12) > 0;
+        const L = m.userData.lights;
+        if (L) { L[0].emissiveIntensity = blink ? 1.5 : 0.12; L[1].emissiveIntensity = blink ? 0.12 : 1.5; }
+        continue;
+      }
+      if (c.kind === 'fire') {
+        // bay → respond → wait → return: parked until the game flags a
+        // dispatch target, drives there, idles on scene, then drives home
+        const dp = this.world.dispatch;
+        if (dp && dp.left > 0) dp.left -= dt;
+        const tgt = dp && dp.left > 0 ? dp : null;
+        const steer = (tx, tz, sp, arrive) => {
+          const dx = tx - m.position.x, dz = tz - m.position.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist < arrive) return true;
+          const step = Math.min(dist, sp * dt);
+          m.position.x += (dx / dist) * step;
+          m.position.z += (dz / dist) * step;
+          c.yaw = Math.atan2(-dx, -dz);
+          return false;
+        };
+        if (c.state === 'bay') {
+          if (tgt) c.state = 'respond';
+          c.yaw = c.bay.yaw;
+        } else if (c.state === 'respond') {
+          if (!tgt) c.state = 'return';
+          else if (steer(tgt.x, tgt.z, 8.5, 2.6)) { c.state = 'wait'; c.hold = 4 + this.rand() * 4; }
+        } else if (c.state === 'wait') {
+          c.hold -= dt;
+          if (c.hold <= 0 || !tgt) c.state = 'return';
+          c.yaw = c.bay.yaw;
+        } else if (c.state === 'return') {
+          if (steer(c.bay.x, c.bay.z, 8.5, 0.8)) c.state = 'bay';
+        }
+        m.position.y = this.ground(m.position.x, m.position.z) + 0.02;
+        m.rotation.y += (c.yaw - m.rotation.y) * Math.min(1, dt * 5);
+        const rolling = c.state === 'respond' || c.state === 'return';
+        const L = m.userData.lights;
+        if (L) {
+          const blink = Math.sin(c.t * 14) > 0;
+          L[0].emissiveIntensity = rolling ? (blink ? 1.5 : 0.15) : 0.08;
+          L[1].emissiveIntensity = rolling ? (blink ? 0.15 : 1.5) : 0.08;
+        }
         continue;
       }
       // ground walkers

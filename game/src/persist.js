@@ -1,7 +1,7 @@
 /* Persistent world damage log, keyed by preset + options signature.
    A world regenerates by bumping its salt (fresh sig-independent state), so
    reload replays damage onto the deterministic layout; regenerate resets it. */
-const KEY = 'maddox-blox-world-v2';
+const KEY = 'maddox-blox-world-v3';
 
 export function sigOf(opts) {
   const c = opts.counts, e = opts.enabled;
