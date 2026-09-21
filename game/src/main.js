@@ -282,8 +282,10 @@ class World {
     this.buildPaths();
     // Village stays anchored on the near (z<0) side between the hero spawn and
     // the river; everything past the bridge is scaled-up exploration space.
-    this.buildVillage();
+    // Monument reserves its strip first so village/town houses can never
+    // fill the candidate row and strand the generator without a site.
     this.buildMonumentSite();
+    this.buildVillage();
     // Far-side roads are placed after the monument so they route around it.
     if (H - r.z1 > 8) {
       const pad = this.monumentRect;
@@ -663,9 +665,20 @@ class World {
     }
     for (let i = 0; i < p.farms; i++) {
       if (i < Math.min(p.rural, 2)) continue; // rural homesteads double as the first farms
-      const c = this.zoneCenter('farm', i) || { x: (r.x1 + H) / 2, z: (r.z1 + H) / 2 };
-      const x = Math.max(r.x1 + 4, Math.min(H - 8, c.x));
-      const z = Math.max(r.z1 + 4, Math.min(H - 8, c.z));
+      const fz = this.zones.find((zn) => zn.id === 'farm');
+      let x, z;
+      if (fz) {
+        // sunflower scatter filling the whole farm zone, not clustered at its center
+        const a = i * 2.399963 + 1.7;
+        const rad = 0.35 + 0.55 * Math.sqrt((i + 0.6) / Math.max(1, p.farms));
+        x = (fz.x0 + fz.x1) / 2 + Math.cos(a) * rad * (fz.x1 - fz.x0) * 0.42;
+        z = (fz.z0 + fz.z1) / 2 + Math.sin(a) * rad * (fz.z1 - fz.z0) * 0.42;
+      } else {
+        const c = { x: (r.x1 + H) / 2, z: (r.z1 + H) / 2 };
+        x = c.x; z = c.z;
+      }
+      x = Math.max(r.x1 + 4, Math.min(H - 8, x));
+      z = Math.max(r.z1 + 4, Math.min(H - 8, z));
       sites.push({ x, z, ry: 0, body: 0xc0392b, roof: 0xf1f3f5, farm: true });
     }
     for (const st of sites) {
@@ -790,6 +803,13 @@ class World {
         const z1 = z0 + plazaD;
         if (Math.abs(c - at.prefer) < bd && !hitProp(c - plazaW / 2 - 2, c + plazaW / 2 + 2, z0 - 3, z1 + 3)) {
           bd = Math.abs(c - at.prefer); cx = c;
+        }
+      }
+      if (cx === null) {
+        // last resort: nearest candidate ignoring props (site row is already
+        // reserved before houses are placed, so this rarely fires)
+        for (let c = cxLo; c <= cxHi; c += 2) {
+          if (Math.abs(c - at.prefer) < bd) { bd = Math.abs(c - at.prefer); cx = c; }
         }
       }
       if (cx !== null) { chosen = { at, sc, wallW, plazaW, plazaD, cx: Math.round(cx) }; break; }
