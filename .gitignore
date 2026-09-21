@@ -18,3 +18,4 @@ yarn-error.log*
 # vendored three runtime for the game demo (served as-is, no install step)
 !game/node_modules/
 !game/node_modules/**
+.openhands/
