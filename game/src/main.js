@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged } from './brickkit.js';
+import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged, colorOfMat, brickCensus, brickPile, BRICK_PILE_CAP } from './brickkit.js';
 import { makeInterior } from './interior.js';
 import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
-import { instancedMosaicMesh, bannerTexture, welcomeTexture, maddoxRaster } from './mosaic.js';
+import { instancedMosaicMesh, monumentMosaic, plaqueTexture, welcomeTexture } from './mosaic.js';
 import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
 import { sfx } from './sfx.js';
 import { Life } from './life.js';
@@ -126,15 +126,16 @@ class World {
   addObj(obj) { this._b.group.add(obj); return obj; }
 
   teardown(b) {
-    // shared geometries reused across builds: primitives + cached stud meshes
+    // shared geometries reused across builds: primitives + cached stud meshes;
+    // materials cached in _mat (including worn variants) survive too
     const sharedGeo = new Set([BR, CY, SP, CO]);
     for (const m of this._studs.values()) sharedGeo.add(m.geometry);
+    const sharedMat = new Set(this._mat.values());
     b.group.removeFromParent();
     b.group.traverse((o) => {
       if (o.isMesh) {
-        if (!sharedGeo.has(o.geometry)) o.geometry.dispose();
-        const shared = this._mat.has(o.material?.color?.getHex?.());
-        if (!shared) {
+        if (!sharedGeo.has(o.geometry) && !o.geometry.userData.shared) o.geometry.dispose();
+        if (!sharedMat.has(o.material)) {
           o.material.map?.dispose();
           o.material.dispose();
         }
@@ -145,12 +146,13 @@ class World {
   clearBricks() {
     const sharedGeo = new Set([BR, CY, SP, CO]);
     for (const m of this._studs.values()) sharedGeo.add(m.geometry);
+    const sharedMat = new Set(this._mat.values());
     for (const rec of [...this.brickMap.values()]) {
       this.scene.remove(rec.group);
       rec.group.traverse((o) => {
         if (o.isMesh) {
-          if (!sharedGeo.has(o.geometry)) o.geometry.dispose();
-          if (!this._mat.has(o.material?.color?.getHex?.())) o.material.dispose();
+          if (!sharedGeo.has(o.geometry) && !o.geometry.userData.shared) o.geometry.dispose();
+          if (!sharedMat.has(o.material)) o.material.dispose();
         }
       });
     }
@@ -231,15 +233,23 @@ class World {
     return rec;
   }
 
-  /* ---- destructible props: registry + damage ---- */
+  /* ---- destructible props: registry + staged damage + rubble ---- */
   registerProp(kind, cx, cz, max, parts, scale = 1) {
-    const p = { id: ++this._propId, key: kind + '#' + this._propId, kind, cx, cz, max, dmg: 0, gone: false, parts, scale, extra: [] };
+    const p = {
+      id: ++this._propId, key: kind + '#' + this._propId, kind, cx, cz, max, dmg: 0, gone: false,
+      parts, scale, extra: [], stage: 0, census: null, rubble: null
+    };
     for (const pt of parts) {
       pt.base = pt.mesh.position.clone();
       pt.baseQ = pt.mesh.quaternion.clone();
       pt.hidden = false;
       if (pt.solid) pt.baseBox = pt.solid.box.clone();
     }
+    // How many 1x1x1 bricks this object is made of, per color. Measured once,
+    // right here, so the rubble pile later can hold the same amount of brick
+    // material in the same color mix.
+    p.census = brickCensus(parts.map((pt) => pt.mesh));
+    p.brickCount = clamp(Math.round(p.census.total), 1, BRICK_PILE_CAP);
     this.props.push(p);
     return p;
   }
@@ -251,20 +261,105 @@ class World {
     if (pt.solid) pt.solid.disabled = true;
   }
 
+  /* Damage stage: 0 intact -> 4 destroyed. Each stage is a visibly worse
+     object, not just a number. */
+  static stageOf(dmg, max) {
+    const f = dmg / Math.max(max, 1);
+    return f >= 1 ? 4 : f >= 0.75 ? 3 : f >= 0.5 ? 2 : f >= 0.25 ? 1 : 0;
+  }
+
+  /* Weathered/soot version of a brick color, so damaged parts darken instead of
+     vanishing all at once. Cached per color+stage; the clean color is untouched. */
+  wornMat(color, stage) {
+    if (stage <= 0) return this.mat(color);
+    const key = `worn:${color}:${stage}`;
+    let m = this._mat.get(key);
+    if (!m) {
+      const c = new THREE.Color(color);
+      c.lerp(new THREE.Color(0x2a2622), 0.16 * stage);        // grime
+      const hsl = {};
+      c.getHSL(hsl);
+      c.setHSL(hsl.x, hsl.s * (1 - 0.12 * stage), hsl.l * (1 - 0.1 * stage));
+      m = mkMat(c.getHex(), { roughness: 0.55 + 0.1 * stage });
+      this._mat.set(key, m);
+    }
+    return m;
+  }
+
+  /* Deterministic rand for this prop's rubble, so the same destruction replays
+     identically after a reload. */
+  rubbleRand(p) {
+    return rndFrom(hash32(`${this.opts.size}:${this.genSalt}:${p.id}:${p.kind}:${Math.round(p.cx)}:${Math.round(p.cz)}`));
+  }
+
+  propBaseY(p) {
+    const box = this.propBox(p);
+    return Number.isFinite(box?.min.y) ? Math.max(0, box.min.y) : 0;
+  }
+
+  /* Replace the prop's rubble pile with one of `count` bricks (colors from the
+     census). brickPile() quantizes anything over BRICK_PILE_CAP down to 256. */
+  setRubble(p, count) {
+    count = Math.min(count, BRICK_PILE_CAP);
+    if (p.rubbleCount === count) return p.rubble;
+    p.rubbleCount = count;
+    if (p.rubble) {
+      p.rubble.userData.dispose?.();
+      p.rubble.removeFromParent();
+      p.rubble = null;
+    }
+    if (count <= 0 || !(p.census?.total > 0)) return null;
+    const box = this.propBox(p);
+    const baseY = Number.isFinite(box?.min.y) ? Math.max(0, box.min.y) : 0;
+    const span = Number.isFinite(box?.max.x) ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) : 4;
+    // bricks land in world space around the prop's own footprint
+    const pile = brickPile(count, p.census, this.rubbleRand(p), {
+      baseY, cx: p.cx, cz: p.cz, spread: clamp(span * 0.3, 1.1, 9)
+    });
+    pile.name = 'rubble';
+    p.rubble = this.addObj(pile);
+    p.extra.push(pile);
+    return p.rubble;
+  }
+
+  /* Apply the visual state for a damage stage: darken what is left, shed whole
+     parts from the top down, and grow the loose-brick pile as it degrades. */
+  setStage(p, stage) {
+    if (p.stage === stage) return;
+    p.stage = stage;
+    const parts = p.parts;
+    const lost = Math.min(Math.max(0, parts.length - 1), Math.round((stage / 4) * parts.length));
+    for (let j = 0; j < parts.length; j++) {
+      const pt = parts[parts.length - 1 - j];
+      if (j < lost) {
+        this.hidePart(pt);
+      } else if (pt.mesh.material && pt.mesh.material.color && !pt.mesh.userData.keepMat) {
+        if (pt.hex === undefined) pt.hex = colorOfMat(pt.mesh.material);
+        pt.mesh.material = this.wornMat(pt.hex, stage);
+      }
+    }
+    // partial pile: same colors, a growing share of the final brick count
+    const frac = stage >= 4 ? 1 : [0, 0.12, 0.28, 0.55][stage];
+    // brickCount can move after staging (the monument's mosaic attaches async),
+    // so re-derive the pile whenever the target count changed, not just stage
+    this.setRubble(p, Math.round(p.brickCount * frac));
+    if (p.kind === 'tree' && stage >= 4) {
+      const stump = merged([addCyl([], 0.3, 0.4, p.cx, 0.2, p.cz)], this.mat(0x8b5a2b));
+      this.addObj(stump);
+      p.extra.push(stump);
+    }
+  }
+
   applyHit(p, amount, pt) {
     if (p.gone) return;
     p.dmg += amount;
-    if (p.dmg >= p.max) {
+    const stage = World.stageOf(p.dmg, p.max);
+    if (stage >= 4) {
       p.gone = true;
       for (const q of p.parts) this.hidePart(q);
-      if (p.kind === 'tree') {
-        const stump = merged([addCyl([], 0.3, 0.4, p.cx, 0.2, p.cz)], this.mat(0x8b5a2b));
-        this.addObj(stump);
-        p.extra.push(stump);
-      }
+      this.setStage(p, 4);   // full rubble pile, same brick amount + colors
     } else {
-      const hide = Math.floor((p.dmg / p.max) * p.parts.length);
-      for (let j = 0; j < hide; j++) this.hidePart(p.parts[p.parts.length - 1 - j]);
+      this.setStage(p, stage);
     }
     if (this.onDamage) this.onDamage(p, amount, pt);
   }
@@ -281,6 +376,16 @@ class World {
       this.applyHit(p, d, null);
       this.onDamage = save;
     }
+  }
+
+  propBox(p) {
+    for (const pt of p.parts) if (pt.baseBox) return pt.baseBox;
+    const s = 2 * p.scale;
+    return new THREE.Box3(new THREE.Vector3(p.cx - s, 0, p.cz - s), new THREE.Vector3(p.cx + s, 3, p.cz + s));
+  }
+
+  hitPoint(p, from) {
+    return nearestPointOnBox(this.propBox(p), from, new THREE.Vector3());
   }
 
   propAt(x, z, r) {
@@ -1025,13 +1130,21 @@ class World {
       const depth = (-r.z0 - 6) - (-H + (outer - 0.5));
       attempts.push({ side: -1, depth, prefer: -H * 0.15 });
     }
+    // The mosaic IS the monument: 1x1x1 brick per pixel of the live welcome
+    // image, so the grid (and the wall that carries it) is fixed by the asset
+    // and known before any geometry is built. `sc` is the brick edge in world
+    // units; bigger presets buy stand-off distance, never stretched bricks.
+    const mos = monumentMosaic();
     let chosen = null;
     for (const at of attempts) {
       if (at.depth < 10) continue;
-      const sc = at.depth >= 22 ? 1 : 0.8;
-      const wallW = 22 * sc, plazaW = wallW + 10;
-      const plazaD = Math.min(16 * sc + 6, at.depth);
-      if (plazaD < 9 || H * 2 - 4 < plazaW + 4) continue;
+      const room = Math.min(at.depth, H * 2 - 8);
+      const sc = clamp(room / (mos.h + 22), 0.12, 0.5);
+      const gridH = mos.h * sc, gridW = mos.w * sc;
+      const plazaD = Math.min(Math.max(gridH * 0.55 + 11, 12), at.depth);
+      const plazaW = Math.min(H * 2 - 6, gridW + 18);
+      if (plazaD < 12 || plazaW < 26) continue;
+      const wallW = gridW + 2.4 * sc;
       const cxLo = -H + plazaW / 2 + 1.5, cxHi = H - plazaW / 2 - 1.5;
       let bd = Infinity, cx = null;
       for (let c = cxLo; c <= cxHi; c += 2) {
@@ -1053,7 +1166,9 @@ class World {
     }
     if (!chosen) return;
     const { at, sc, wallW, plazaW, plazaD } = chosen;
-    const wallH = 18 * sc, wallD = 2.6;
+    const gridH = mos.h * sc, gridW = mos.w * sc; // mosaic extent in world units
+    const wallH = gridH + 2.4 * sc;     // mosaic grid + header/footer courses
+    const wallD = 2.6;
     const cx = chosen.cx;
     const side = at.side; // +1: plaza at north edge, wall facing south; -1: plaza at south edge, facing north
     const plazaZ1 = side > 0 ? H - outer + 0.5 : (-r.z0 - 6);
@@ -1112,16 +1227,20 @@ class World {
       grp.add(light);
     }
 
-    // plaque on the wall's public face (same 16-color mosaic, via the banner)
-    const faceSign = stSign; // mosaic/plaque on the plaza/approach side
-    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(8 * sc, 2.4 * sc),
+    // ground-mounted plaque on the approach side: same portrait the mosaic is
+    // built from, at a fixed readable size (the mosaic itself scales with sc)
+    const faceSign = stSign; // mosaic/plaque face the plaza/approach side
+    const signW = Math.min(9, plazaW * 0.3);
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(signW, signW * (225 / 202)),
       new THREE.MeshBasicMaterial({ color: 0x8f9aa8 }));
-    plaque.position.set(cx, pedTop - 1.4 * Math.max(0.7, sc), wallZ + faceSign * (pedD / 2 + 0.06));
+    const signZ = (side > 0 ? plazaZ0 : plazaZ1) + stSign * 2.6;
+    plaque.position.set(cx, 1.2 + signW * (225 / 202) / 2 + 1.1, signZ);
     plaque.rotation.y = faceSign > 0 ? 0 : Math.PI;
     grp.add(plaque);
+    grp.add(merged([addBox([], signW * 1.15, 1.1, 0.5, cx, 1.75, signZ - stSign * 0.15)], this.mat(0x6b7280)));
     const mprop = this.props[this.props.length - 1];
     if (mprop && mprop.kind === 'monument') mprop.parts.push({ mesh: plaque });
-    bannerTexture().then((b) => {
+    plaqueTexture().then((b) => {
       if (grp.parent) {
         plaque.material.map = b.tex;
         plaque.material.color.setHex(0xffffff);
@@ -1138,26 +1257,41 @@ class World {
     this._attachMonumentMosaic(this.monument);
   }
 
-  async _attachMonumentMosaic(mon) {
+  /* The mosaic is the monument: one 1x1x1 brick per pixel of the live welcome
+     image (mosaicMosaic() is that exact pixel map), hung on the wall as one
+     course-deep relief. Attached synchronously so prop ids and the brick census
+     stay identical across reloads — destruction replays need both. */
+  _attachMonumentMosaic(mon) {
     try {
-      const m = maddoxRaster();
+      const m = monumentMosaic();
       if (this.monument !== mon) return;
-      // literal grid: cell size = wallH/96 so all 96 rows stack to the wall
-      // top; 64 cols (64*cell wide) sit centered on the wall backing, which
-      // is wider than the grid, so the full 64x96 grid is backed.
-      const s = mon.wallH / m.h;
-      const mesh = instancedMosaicMesh(m, s, false);
-      // PI-y for a -Z-facing plaza keeps the art un-mirrored and the blocks
+      const mesh = instancedMosaicMesh(m, mon.sc, false);
+      // PI-y for a -Z-facing plaza keeps the art un-mirrored and the bricks
       // protruding toward the viewer
       mesh.rotation.y = mon.faceSign < 0 ? Math.PI : 0;
+      // group origin = grid center at the wall's front face: brick backs sit
+      // flush on the wall, grid centered between header/footer courses
       mesh.position.set(mon.cx, mon.pedTop + mon.wallH / 2,
-        mon.wallZ + mon.faceSign * 1.3);
+        mon.wallZ + mon.faceSign * 1.301);
       mon.group.add(mesh);
       mon.group.userData.dispose = () => mesh.userData.dispose();
       mon.attached = true;
       mon.mosaicMesh = mesh;
       const mp = this.props.find((p) => p.kind === 'monument');
-      if (mp) { mp.parts.push({ mesh }); if (mp.gone) mesh.visible = false; }
+      if (mp) {
+        mp.parts.push({ mesh });
+        if (mp.gone) mesh.visible = false;
+        // the mosaic bricks are part of the object now: re-census so its rubble
+        // pile carries the monument's own 57,600 brick colors, and rebuild a
+        // pile that staged damage replayed earlier from the wall-only census
+        mp.census = brickCensus(mp.parts.map((pt) => pt.mesh));
+        mp.brickCount = clamp(Math.round(mp.census.total), 1, BRICK_PILE_CAP);
+        if (mp.rubble) {
+          const want = mp.rubbleCount;
+          mp.rubbleCount = -1;
+          this.setRubble(mp, want);
+        }
+      }
       mon.mesh = mesh;
     } catch (e) {
       console.warn('mosaic asset unavailable:', e && e.message);
@@ -2444,16 +2578,6 @@ class Game {
   }
 
   /* ----------------------------------------------------- combat helpers */
-  propBox(p) {
-    for (const pt of p.parts) if (pt.baseBox) return pt.baseBox;
-    const s = 2 * p.scale;
-    return new THREE.Box3(new THREE.Vector3(p.cx - s, 0, p.cz - s), new THREE.Vector3(p.cx + s, 3, p.cz + s));
-  }
-
-  hitPoint(p, from) {
-    return nearestPointOnBox(this.propBox(p), from, new THREE.Vector3());
-  }
-
   bricksInRadius(center, r, cb) {
     for (const rec of [...this.world.brickMap.values()]) {
       const c = new THREE.Vector3();
@@ -2558,7 +2682,7 @@ class Game {
     let hits = 0;
     for (const prop of this.world.props) {
       if (prop.gone || hits >= def.maxBreak) continue;
-      const pt = this.hitPoint(prop, chest);
+      const pt = this.world.hitPoint(prop, chest);
       const dxz = new THREE.Vector2(pt.x - p.x, pt.z - p.z);
       if (dxz.length() > def.range) continue;
       const dxzN = dxz.clone().normalize();
@@ -2586,7 +2710,7 @@ class Game {
     let n = 0;
     for (const prop of this.world.props) {
       if (prop.gone) continue;
-      const pt = this.hitPoint(prop, at);
+      const pt = this.world.hitPoint(prop, at);
       if (pt.distanceTo(at) > def.radius + 2) continue;
       if (n >= def.maxBreak) break;
       const falloff = 1 - clamp(pt.distanceTo(at) / (def.radius + 2), 0, 0.85);
@@ -2624,7 +2748,7 @@ class Game {
 
   strikeLightning() {
     const target = this.weatherPickProp() || null;
-    const at = target ? this.hitPoint(target, new THREE.Vector3(target.cx, 20, target.cz))
+    const at = target ? this.world.hitPoint(target, new THREE.Vector3(target.cx, 20, target.cz))
       : new THREE.Vector3(this.player.pos.x + (Math.random() * 2 - 1) * 30, 0, this.player.pos.z + (Math.random() * 2 - 1) * 30);
     const H = 34;
     this.bolt.visible = true;
@@ -2793,7 +2917,7 @@ class Game {
         } else if (def.shake) { // earthquake: cracks everything near the player
           for (const pr of this.world.props) {
             if (pr.gone || Math.hypot(pr.cx - p.x, pr.cz - p.z) > 42) continue;
-            const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 1, pr.cz));
+            const pt = this.world.hitPoint(pr, new THREE.Vector3(pr.cx, 1, pr.cz));
             this.world.applyHit(pr, def.dmg, pt);
             this.fx.spawn(pt.x, pt.y, pt.z, 'debris', 3);
           }
@@ -2803,7 +2927,7 @@ class Game {
         } else { // rain/snow steady wear near the player
           const pr = this.weatherPickProp();
           if (pr) {
-            const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 1.5, pr.cz));
+            const pt = this.world.hitPoint(pr, new THREE.Vector3(pr.cx, 1.5, pr.cz));
             this.world.applyHit(pr, def.dmg, pt);
           }
         }
@@ -2836,7 +2960,7 @@ class Game {
         for (const pr of this.world.props) {
           if (pr.gone) continue;
           if (Math.hypot(pr.cx - this.tornadoPos.x, pr.cz - this.tornadoPos.z) > def.radius + 2) continue;
-          const pt = this.hitPoint(pr, this.tornadoPos.clone().setY(2));
+          const pt = this.world.hitPoint(pr, this.tornadoPos.clone().setY(2));
           this.world.applyHit(pr, def.dmg, pt);
         }
       }
@@ -2852,7 +2976,7 @@ class Game {
         if (pr.gone || pr._ts === this.waveId + ':' + Math.floor(this.waveZ / 6)) continue;
         if (Math.abs(pr.cz - this.waveZ) > 5) continue;
         pr._ts = this.waveId + ':' + Math.floor(this.waveZ / 6);
-        const pt = this.hitPoint(pr, new THREE.Vector3(pr.cx, 2, this.waveZ));
+        const pt = this.world.hitPoint(pr, new THREE.Vector3(pr.cx, 2, this.waveZ));
         this.world.applyHit(pr, def.dmg, pt);
         this.fx.spawn(pr.cx, 2, pr.cz, 'fire', 6);
       }

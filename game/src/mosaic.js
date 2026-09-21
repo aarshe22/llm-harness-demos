@@ -1,279 +1,140 @@
-/* MADDOX LEGO MONUMENT — literal 64x96 stud raster.
-   One character = one 1x1 brick cell. Row 0 = TOP, column 0 = LEFT.
-   No resizing, interpolation, dithering, or reinterpretation: the splash
-   banner paints each cell as one flat square at an integer block size
-   (nearest-neighbour only, plus image-rendering: pixelated in CSS) and the
-   3D monument extrudes EVERY cell — white background included — as one
-   identical cell-sized cube on the backing wall (>= 64 x 96 cell area).
-   Note: 16 rows of the source table carried trailing white-background '0'
-   overflow (65-66 chars); they are right-trimmed to the mandated 64 columns.
-   Only whitespace pixels were dropped — no drawn cell was altered. */
+/* MADDOX BLOX mosaics. The welcome banner and the giant monument render the
+   SAME picture: the 8-color face portrait at assets/maddox-face-8color.png.
+   The banner paints one flat square per source pixel; the monument raises one
+   1x1x1 brick per source pixel, so the 3D mosaic is a direct pixel -> colored
+   block translation of the live banner image. The pixel map lives in
+   src/face8.js, generated 1:1 from the PNG by tools/gen-face8.js — browsers
+   color-manage indexed PNGs on canvas readback, so palette indices are decoded
+   offline instead of sampled back out of a canvas. No resizing, interpolation,
+   dithering, or reinterpretation in either path. */
 import * as THREE from 'three';
+import { FACE8_PALETTE, face8Raster } from './face8.js';
 
-export const MADDOX_PALETTE = {
-  '0': '#F5F5F0', // White
-  '1': '#080A0A', // Black
-  '2': '#FFDC2D', // Yellow
-  '3': '#F5AA0F', // Dark Yellow / Orange
-  '4': '#FFB789', // Light Flesh
-  '5': '#EC7E4E', // Flesh / Peach
-  '6': '#B44D19', // Brown
-  '7': '#673010', // Dark Brown
-  '8': '#DC1414', // Red
-  '9': '#9B0508', // Dark Red
-  'A': '#BCC2C6', // Light Gray
-  'B': '#67717C', // Gray
-  'C': '#363F49', // Dark Gray
-  'D': '#1050B4', // Blue
-  'E': '#053067', // Dark Blue
-  'F': '#4682D2'  // Light Blue
-};
-export const PALETTE16 = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
-  .map((k) => MADDOX_PALETTE[k]);
+export { FACE8_PALETTE, face8Raster };
 
-export const MADDOX_RASTER = [
-  '0000000000000000000000000000000000000000000000000000000000000000',
-  '0000000000000000000000000001000000000000000000000000000000000000',
-  '0000A00000A0000AA000AB000C6B0000A000000000A0000A000A000A000A0000',
-  'A0000A000AA0000A1000110001210000000000A000A000A0000A000A000A0000',
-  '0000000000000000111122111132100000000000000000000000000000000000',
-  '0000000000000000112222222222210000000000000000000000000000000000',
-  '0000000000000001122333663222221000000000000000000000000000000000',
-  '0000000000000012223336666322222100000000000000000000000000000000',
-  '0000000000000122233366666632222210000000000000000000000000000000',
-  '0000000000001223336666666663222221000000000000000000000000000000',
-  '0000000000012233366666666666322222100000000000000000000000000000',
-  '0000000000122333666666666666632222210000000000000000000000000000',
-  '0000000001223336666666666666663222221000000000000000000000000000',
-  '0000000012233366666666666666666322222100000000000000000000000000',
-  '0000000122333666666666666666666632222210000000000000000000000000',
-  '0000001223336666666666666666666663222221000000000000000000000000',
-  '0000012233366666666666666666666666322222100000000000000000000000',
-  '0000122333666666666666666666666666632222210000000000000000000000',
-  '0001223336666666666666666666666666663222221000000000000000000000',
-  '0012233366666666666666666666666666666322222100000000000000000000',
-  '0122333666666666666666666666666666666632222210000000000000000000',
-  '1223336666666666666666666666666666666663222221000000000000000000',
-  '1233366666666666664444444444666666666666322221000000000000000000',
-  '1233666666666666444444444444446666666666632221000000000000000000',
-  '1236666666666644444444444444444466666666663221000000000000000000',
-  '1266666666666444444444444444444446666666666321000000000000000000',
-  '1266666666664444444444444444444444666666666321000000000000000000',
-  '1266666666644444444444444444444444466666666321000000000000000000',
-  '1266666666444444444444444444444444446666666321000000000000000000',
-  '1266666664444444444444444444444444444666666321000000000000000000',
-  '1266666644444444444444444444444444444466666321000000000000000000',
-  '1266666444444444444444444444444444444446666321000000000000000000',
-  '1266664444444444444444444444444444444444666321000000000000000000',
-  '1266644444444444444444444444444444444444466321000000000000000000',
-  '12664444444444EE1444444444444441EE444444444663210000000000000000',
-  '1264444444444EDD11444444444444411DE44444444466321000000000000000',
-  '1244444444444EFD11444444444444411DF44444444446632100000000000000',
-  '14444444444441D1144444444444444441D14444444444632100000000000000',
-  '1444444444444444444444444444444444444444444444463210000000000000',
-  '1444444444444444444444444444444444444444444444443210000000000000',
-  '1444444444444444444444444444444444444444444444443210000000000000',
-  '1444444444444444444444411444444444444444444444443210000000000000',
-  '1444444444444444444441111444444444444444444444443210000000000000',
-  '1444444444444444444418888144444444444444444444443210000000000000',
-  '1444444444444444444188888814444444444444444444443210000000000000',
-  '1444444444444444441880000881444444444444444444443210000000000000',
-  '1444444444444444441880000881444444444444444444443210000000000000',
-  '1444444444444444444188888814444444444444444444443210000000000000',
-  '1444444444444444444418888144444444444444444444443210000000000000',
-  '1444444444444444444441111444444444444444444444443210000000000000',
-  '1444444444444444444444444444444444444444444444443210000000000000',
-  '1444444444444444444444444444444444444444444444443210000000000000',
-  '0144444444444444444444444444444444444444444444432100000000000000',
-  '0014444444444444444444444444444444444444444444321000000000000000',
-  '0001444444444444444444444444444444444444444443210000000000000000',
-  '0000144444444444444444444444444444444444444432100000000000000000',
-  '0000014444444444444444444444444444444444444321000000000000000000',
-  '0000001444444444444444444444444444444444443210000000000000000000',
-  '0000000122222114444444444444444444411222221000000000000000000000',
-  '0000001222222211444444444444444444112222222100000000000000000000',
-  '0000012222222221144444444444444411222222222210000000000000000000',
-  '0000122222222222114444444444444112222222222221000000000000000000',
-  '0001222222222222211444444444411222222222222222100000000000000000',
-  '0012222222222222222111111111122222222222222222210000000000000000',
-  '0122222222222222222222222222222222222222222222221000000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '1222222222222222222222222222222222222222222222222100000000000000',
-  '0122222222222222222222222222222222222222222222221000000000000000',
-  '0012222222222222222222222222222222222222222222210000000000000000',
-  '0001222222222222222222222222222222222222222222100000000000000000',
-  '0000122222222222222222222222222222222222222221000000000000000000',
-  '000001CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC100000000000000000',
-  '00000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000',
-  '00000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000',
-  '00000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000',
-  '00000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000',
-  '000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC000000000000000000',
-  '0000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC0000000000000000000',
-  '00000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000000',
-  '000000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC000000000000000000000',
-  '0000000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC0000000000000000000000',
-  '00000000000CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC00000000000000000000000',
-  '000000000000CCCCCCCCCCCCCCCCCCCCCCCCCCCC000000000000000000000000',
-  '0000000000000CCCCCCCCCCCCCCCCCCCCCCCCCC0000000000000000000000000'
-];
+const BG_INDEX = 4; // the portrait's background palette entry (#1C1C1C)
 
-const HEX = '0123456789ABCDEF';
-
-/* Validate once, then reuse. Throws loudly if the raster drifts from 64x96
-   so silent corruption can never ship. */
-let _raster = null;
-export function maddoxRaster() {
-  if (_raster) return _raster;
-  if (MADDOX_RASTER.length !== 96) throw new Error('MADDOX raster must be 96 rows, got ' + MADDOX_RASTER.length);
-  const cells = new Uint8Array(64 * 96);
-  for (let y = 0; y < 96; y++) {
-    const row = MADDOX_RASTER[y];
-    if (row.length !== 64) throw new Error(`MADDOX row ${y}: expected 64 cols, got ${row.length}`);
-    for (let x = 0; x < 64; x++) {
-      const ci = HEX.indexOf(row[x].toUpperCase());
-      if (ci < 0) throw new Error(`MADDOX row ${y} col ${x}: invalid cell '${row[x]}'`);
-      cells[y * 64 + x] = ci;
+function paintPortrait(ctx, ox, oy, cell) {
+  const m = face8Raster();
+  for (let y = 0; y < m.h; y++) {
+    for (let x = 0; x < m.w; x++) {
+      ctx.fillStyle = FACE8_PALETTE[m.cells[y * m.w + x]];
+      ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
     }
   }
-  _raster = { w: 64, h: 96, cells };
-  return _raster;
 }
 
-/* The welcome dialog portrait: a brick mosaic painted from the 8-color asset
-   assets/maddox-face-8color.png. Each source pixel becomes one flat brick cell
-   at an integer cell size (nearest-neighbour, no resampling of the art), with
-   the exact 8-color palette strip below. */
-export const FACE8_PALETTE = ['#1C1C1C', '#F0C18D', '#C5875D', '#301E14',
-  '#120E0E', '#1C1D1E', '#1C1413', '#1C1C1B'];
-
-export function welcomeTexture(src = 'assets/maddox-face-8color.png', cell = 4) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const titleH = 70, stripH = 64;
-      const W = img.width * cell, H = img.height * cell;
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = titleH + H + stripH;
-      const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      ctx.fillStyle = '#241f1d';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffd2a3';
-      ctx.font = 'bold 30px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('M A D D O X   B L O X', W / 2, 32);
-      ctx.fillStyle = '#b9a894';
-      ctx.font = '14px system-ui, sans-serif';
-      ctx.fillText('welcome, builder - 8-color brick mosaic portrait', W / 2, 56);
-      // one source pixel -> one cell x cell brick, nearest-neighbour, flat
-      ctx.drawImage(img, 0, titleH, W, H);
-      // palette strip: the exact 8 brick colors used by the mosaic
-      const sw = 34, gap = 8, n = FACE8_PALETTE.length;
-      const total = n * sw + (n - 1) * gap;
-      ctx.font = 'bold 11px ui-monospace, monospace';
-      for (let i = 0; i < n; i++) {
-        const x = Math.round((W - total) / 2) + i * (sw + gap);
-        const y = titleH + H + 8;
-        ctx.fillStyle = FACE8_PALETTE[i];
-        ctx.fillRect(x, y, sw, sw);
-        ctx.strokeStyle = '#ffffff55';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, sw - 1);
-        ctx.fillStyle = i === 1 ? '#101014' : '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.fillText(FACE8_PALETTE[i].slice(1), x + sw / 2, y + sw + 14);
-      }
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      resolve({ tex, url: canvas.toDataURL('image/png'),
-        region: { x: 0, y: titleH, w: W, h: H, cell },
-        dispose: () => tex.dispose() });
-    };
-    img.onerror = () => reject(new Error('face asset failed: ' + src));
-    img.src = src;
-  });
-}
-
-/* Welcome-dialog portrait: literal nearest-neighbour paint of the full 64x96
-   grid (integer cell size, flat palette fill per cell), framed by the title
-   above and the 16-color palette strip (indices 0-F in raster order) below.
-   Kept promise-shaped so existing await/.then callers need no change. */
-export function bannerTexture() {
-  const m = maddoxRaster();
-  const BR = 10; // one cell -> exactly 10x10 canvas px, no scaling of the art
-  const titleH = 66;
-  const stripH = 58;
-  const W = BR * m.w;
-  const H = titleH + BR * m.h + stripH;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#241f1d';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#ffd2a3';
-  ctx.font = 'bold 24px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('M A D D O X   B L O X', W / 2, 30);
-  ctx.fillStyle = '#b9a894';
-  ctx.font = '13px system-ui, sans-serif';
-  ctx.fillText('welcome, builder — literal 64×96 stud mosaic, 16 brick colors', W / 2, 52);
-
-  const oy = titleH;
-  for (let gy = 0; gy < m.h; gy++) {
-    for (let gx = 0; gx < m.w; gx++) {
-      ctx.fillStyle = PALETTE16[m.cells[gy * m.w + gx]];
-      ctx.fillRect(gx * BR, oy + gy * BR, BR, BR);
-    }
-  }
-
-  // palette strip: swatch + hex index, so the mapping is legible
-  const sw = 22, gap = 6, perRow = 8;
-  const total = perRow * sw + (perRow - 1) * gap;
-  ctx.font = 'bold 10px ui-monospace, monospace';
-  ctx.textAlign = 'center';
-  for (let i = 0; i < 16; i++) {
-    const row = (i / perRow) | 0, col = i % perRow;
-    const x = Math.round((W - total) / 2) + col * (sw + gap);
-    const y = oy + m.h * BR + 6 + row * (sw + 6);
-    ctx.fillStyle = PALETTE16[i];
+function paletteStrip(ctx, y, W) {
+  const sw = 34, gap = 8, n = FACE8_PALETTE.length;
+  const total = n * sw + (n - 1) * gap;
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  for (let i = 0; i < n; i++) {
+    const x = Math.round((W - total) / 2) + i * (sw + gap);
+    ctx.fillStyle = FACE8_PALETTE[i];
     ctx.fillRect(x, y, sw, sw);
-    ctx.strokeStyle = '#00000088';
+    ctx.strokeStyle = '#ffffff55';
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, sw - 1, sw - 1);
-    ctx.fillStyle = i === 0 || i === 10 || i === 15 ? '#101014' : '#ffffff';
-    ctx.fillText(HEX[i], x + sw / 2, y + sw - 6);
+    ctx.fillStyle = i === 0 ? '#101014' : '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(FACE8_PALETTE[i].slice(1), x + sw / 2, y + sw + 14);
   }
+}
 
+function canvasTexture(canvas) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  return Promise.resolve({ tex, url: canvas.toDataURL('image/png'), dispose: () => tex.dispose(), mosaic: m });
+  return tex;
 }
 
-/* 3D literal monument: all 6144 cells (white included) as identical
-   size-cubed blocks; backs flush at local z=0, protruding exactly one cell
-   toward the viewer. Grid spans the full 64x96 backing area. */
-export function instancedMosaicMesh(m, size, flipX = false) {
-  const perColor = Array.from({ length: 16 }, () => []);
+function wrapCanvas(canvas) {
+  const tex = canvasTexture(canvas);
+  return { tex, url: canvas.toDataURL('image/png'), dispose: () => tex.dispose() };
+}
+
+function bannerCanvas(cell, paint) {
+  const titleH = 70, stripH = 64;
+  const m = face8Raster();
+  const W = m.w * cell, H = m.h * cell;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = titleH + H + stripH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#241f1d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffd2a3';
+  ctx.font = 'bold 30px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('M A D D O X   B L O X', W / 2, 32);
+  ctx.fillStyle = '#b9a894';
+  ctx.font = '14px system-ui, sans-serif';
+  ctx.fillText('welcome, builder - 8-color brick mosaic portrait', W / 2, 56);
+  paint(ctx, W, H, titleH);
+  paletteStrip(ctx, titleH + H + 8, W);
+  return canvas;
+}
+
+/* The welcome dialog portrait: one source pixel -> one flat cell x cell brick,
+   nearest-neighbour, plus the exact 8-color palette strip the mosaic uses.
+   The pixels come from face8.js — the PNG's indices + PLTE decoded 1:1 by
+   tools/gen-face8.js — instead of drawImage-ing the PNG into a canvas, because
+   Chromium color-manages indexed PNGs on canvas readback and shifts the 8 brick
+   colors away from the exact palette values. Painting from the decoded raster
+   keeps banner and monument pixel-identical AND color-identical to the asset. */
+export function welcomeTexture(src = 'assets/maddox-face-8color.png', cell = 4) {
+  return Promise.resolve(wrapCanvas(
+    bannerCanvas(cell, (ctx, W, H, titleH) => paintPortrait(ctx, 0, titleH, cell))
+  )).then((b) => {
+    const m = face8Raster();
+    b.region = { x: 0, y: 70, w: m.w * cell, h: m.h * cell, cell };
+    return b;
+  });
+}
+
+/* Monument plaque: the same portrait, framed and captioned. Promise-shaped so
+   callers can await it like the welcome texture. */
+export function plaqueTexture() {
+  return Promise.resolve().then(() => {
+  const cell = 3, pad = 9, capH = 34;
+  const m = face8Raster();
+  const W = m.w * cell + pad * 2, H = m.h * cell + pad * 2 + capH;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#8f9aa8';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#2b3038';
+  ctx.fillRect(pad - 3, pad - 3, m.w * cell + 6, m.h * cell + 6);
+  paintPortrait(ctx, pad, pad, cell);
+  ctx.fillStyle = '#f2f5f8';
+  ctx.font = `bold ${capH - 12}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('M A D D O X   B L O X   ·   1 BRICK PER PIXEL', W / 2, H - 12);
+  return wrapCanvas(canvas);
+  });
+}
+
+/* The monument's pixel map IS the live banner image: one brick per pixel,
+   background included, no cropping, no resampling. Cached. */
+let _monumentMosaic = null;
+export function monumentMosaic() {
+  if (!_monumentMosaic) {
+    const m = face8Raster();
+    _monumentMosaic = { w: m.w, h: m.h, cells: m.cells, srcX: 0, srcY: 0 };
+  }
+  return _monumentMosaic;
+}
+
+/* One 1x1x1 brick per source pixel, every brick the same size, backs flush at
+   local z=0 and protruding exactly one block toward the viewer. Bricks group
+   per palette color, so the mosaic is a handful of InstancedMeshes rather than
+   one Object3D per pixel. */
+export function instancedMosaicMesh(m, size, flipX = false, palette = FACE8_PALETTE) {
+  const perColor = Array.from({ length: palette.length }, () => []);
   for (let gy = 0; gy < m.h; gy++) {
     for (let gx = 0; gx < m.w; gx++) {
       perColor[m.cells[gy * m.w + gx]].push(flipX ? m.w - 1 - gx : gx, gy);
@@ -282,14 +143,16 @@ export function instancedMosaicMesh(m, size, flipX = false) {
   const box = new THREE.BoxGeometry(size, size, size);
   const group = new THREE.Group();
   const mtx = new THREE.Matrix4();
-  const geos = [];
-  for (let ci = 0; ci < 16; ci++) {
+  const meshes = [];
+  for (let ci = 0; ci < palette.length; ci++) {
     const list = perColor[ci];
     if (!list.length) continue;
     const inst = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({
-      color: parseInt(PALETTE16[ci].slice(1), 16), roughness: 0.45, metalness: 0.02
+      color: parseInt(palette[ci].slice(1), 16), roughness: 0.45, metalness: 0.02
     }), list.length / 2);
-    inst.castShadow = true;
+    // 57,600 bricks as a shallow wall relief: receive shadows yes, cast no —
+    // the 0.26-unit protrusion casts nothing worth a doubled shadow pass
+    inst.castShadow = false;
     inst.receiveShadow = true;
     for (let i = 0, n = 0; i < list.length; i += 2, n++) {
       mtx.identity();
@@ -302,11 +165,13 @@ export function instancedMosaicMesh(m, size, flipX = false) {
     }
     inst.instanceMatrix.needsUpdate = true;
     group.add(inst);
-    geos.push(inst);
+    meshes.push(inst);
   }
+  group.userData.mosaic = m;
+  group.userData.cell = size;
   group.userData.dispose = () => {
     box.dispose();
-    for (const g of geos) g.dispose();
+    for (const g of meshes) g.dispose();
     group.traverse((o) => { if (o.isMesh && o.material) o.material.dispose(); });
   };
   return group;
