@@ -63,7 +63,7 @@ body.touch #panel-hint { display: none; }
 #hotbar {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  bottom: 84px;
   transform: translateX(-50%);
   display: flex;
   gap: 8px;
@@ -100,7 +100,7 @@ body.touch #panel-hint { display: none; }
 #stripbar {
   position: absolute;
   left: 50%;
-  bottom: 86px;
+  bottom: 84px;
   transform: translateX(-50%);
   display: flex;
   gap: 6px;
@@ -109,6 +109,7 @@ body.touch #panel-hint { display: none; }
   border: 2px solid rgba(255, 255, 255, .35);
   border-radius: 16px;
   backdrop-filter: blur(6px);
+  pointer-events: auto;
   z-index: 4;
   max-width: 96vw;
   flex-wrap: wrap;
@@ -139,7 +140,7 @@ body.touch #panel-hint { display: none; }
 #modebar {
   position: absolute;
   left: 50%;
-  bottom: 86px;
+  bottom: 16px;
   transform: translateX(-50%);
   display: flex;
   gap: 6px;
