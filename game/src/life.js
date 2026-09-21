@@ -268,7 +268,8 @@ export class Life {
     }
     const segs = (w.roadSegs || []).filter((sg) => sg && sg.x0 !== undefined
       && Math.hypot(sg.x1 - sg.x0, sg.z1 - sg.z0) > 8);
-    const nCars = segs.length ? Math.min(10, Math.max(3, Math.round(2 + segs.length * 0.6) * (cap.id === 'tiny' ? 0 : 1))) : 0;
+    // traffic scales with the road network, so big worlds get fuller streets
+    const nCars = segs.length ? Math.min(24, Math.max(3, Math.round(3 + segs.length * 0.9) * (cap.id === 'tiny' ? 0 : 1))) : 0;
     for (let i = 0; nCars && i < nCars; i++) {
       const sg = segs[i % segs.length];
       const c = this._spawn('car', sg.x0, sg.z0, 0);

@@ -96,6 +96,11 @@ class World {
     // maps never shrink props: map size buys extent + generation capacity
     // (towns/rural/farms/zones/trees), not object scale.
     this.k = clamp(this.half / 28, 1, 1.3);
+    // Site-distribution scale: hand-authored placement tables were written
+    // for the classic ~±30 world. Props stay classic size (k), but the
+    // village/town/mountain/playground anchor tables spread with sqrt of the
+    // extra land so buildings distribute over the whole map, not one corner.
+    this.spread = clamp(Math.sqrt(this.half / 30), 1, 2.2);
     this.waterTop = 0.4 * this.k;
     const rz = 1; // river keeps its classic spot; size buys far-bank space, not a wider river
     this.river = { x0: -7 * this.k, x1: 7 * this.k, z0: 9 * rz, z1: 19 * rz };
@@ -111,8 +116,9 @@ class World {
   count(id) {
     const o = this.opts;
     if (!o.enabled[id]) return 0;
-    const mult = id === 'tree' ? this.preset.trees : id === 'flower' ? this.preset.zones * 0.6 : 1;
-    return Math.max(0, Math.min(Math.round((o.counts[id] || 0) * mult), 200));
+    const mult = id === 'tree' ? this.preset.trees
+      : id === 'flower' ? (this.preset.flowers ?? this.preset.zones * 0.6) : 1;
+    return Math.max(0, Math.min(Math.round((o.counts[id] || 0) * mult), 900));
   }
 
   addObj(obj) { this._b.group.add(obj); return obj; }
@@ -300,6 +306,16 @@ class World {
         this.buildRoad(0.5, r.z1 + 1, pad.cx, r.z1 + 1, 2, pad);
         this.buildRoad(pad.cx, r.z1 + 1, pad.cx, pad.z0 - 7, 2, pad);
       }
+      // Deep-far grid: on big presets the extra land gets its own avenues so
+      // towns/farms sit on road frontage instead of trackless green.
+      if (H >= 55) {
+        const z2 = Math.round(r.z1 + (H - r.z1) * (pad ? 0.72 : 0.6));
+        if (!pad || z2 > pad.z1 + 5 || z2 < pad.z0 - 5) {
+          this.buildRoad(-H + 5, z2, H - 5, z2, 2.2, pad);
+          this.buildRoad(-H * 0.55, r.z1 + 2, -H * 0.55, z2, 2.2, pad);
+          this.buildRoad(H * 0.52, r.z1 + 2, H * 0.52, z2, 2.2, pad);
+        }
+      }
     }
     this.buildMountains();
     this.buildVolcanoes();
@@ -403,11 +419,15 @@ class World {
     const zoneTint = { village: 0x7cc850, town: 0x86cf5e, rural: 0x97c85e, farm: 0xa9c05c, wild: 0x67b93c, monument: 0x8ad06a };
     const zonePatches = Object.fromEntries(Object.keys(zoneTint).map((z) => [z, []]));
     const zoneAt = (x, z) => (this.zones.find((zn) => x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) || {}).id;
-    for (let x = Math.ceil(-H); x <= H; x += 2) {
-      for (let z = Math.ceil(-H); z <= H; z += 2) {
+    // tint-tile pitch scales with half-extent so patch count stays what the
+    // classic world had (~2.3k) at any map size, not 20k at Huge
+    const st = Math.max(2, Math.round(this.half / 22));
+    const ss = st * 0.85;
+    for (let x = Math.ceil(-H / st) * st; x <= H; x += st) {
+      for (let z = Math.ceil(-H / st) * st; z <= H; z += st) {
         const zn = zoneAt(x, z);
         if (!zn || zn === 'village' || this.propBlocked(x, z)) continue;
-        addBox(zonePatches[zn], 1.7, 0.1, 1.7, x + 0.5, 0.05, z + 0.5);
+        addBox(zonePatches[zn], ss, 0.1, ss, x + 0.5, 0.05, z + 0.5);
       }
     }
     for (let i = 0; i < this.count('flower'); i++) {
@@ -475,7 +495,7 @@ class World {
       [-r - half, r - half, r + half, r + half], [-r - half, -r - half, -r + half, r + half]
     ];
     for (const [x0, z0, x1, z1] of bed) addBox(parts, x1 - x0, 0.1, z1 - z0, (x0 + x1) / 2, 0.05, (z0 + z1) / 2);
-    for (let a = -r; a < r; a += 1.4) {   // sleepers on all four legs
+    for (let a = -r; a < r; a += 1.4 * this.k) {   // sleepers on all four legs
       addBox(parts, 1.5, 0.08, 0.34, a, 0.13, -r);
       addBox(parts, 1.5, 0.08, 0.34, a, 0.13, r);
       addBox(parts, 0.34, 0.08, 1.5, -r, 0.13, a);
@@ -627,21 +647,27 @@ class World {
     return { x: cx + Math.cos(a) * spread, z: cz + Math.sin(a) * spread };
   }
 
-  /* Extra towns on the far (north) bank — presets carry the capacity. */
+  /* Extra towns spread through the town zone (far bank, west quadrant) with a
+     sunflower scatter so capacity scales with preset.towns on any map size. */
   buildExtraTowns() {
     const n = this.preset.towns;
     if (!n) return;
     const r = this.river, H = this.half;
-    const sites = [
-      { x: -16, dz: 5, ry: 0, body: 0xff7f50, roof: 0x2f7de1 },
-      { x: -24, dz: 8, ry: Math.PI / 2, body: 0x35a7ff, roof: 0xffd23f },
-      { x: -13, dz: 14, ry: -Math.PI / 2, body: 0xffd23f, roof: 0x9b5de5 },
-      { x: -21, dz: 18, ry: Math.PI, body: 0x35b56a, roof: 0xe8402a }
-    ];
+    const z0 = r.z1 + 4, z1 = H - (this.preset.train ? 10 : 5);
+    const x0 = -H + (this.preset.train ? 10 : 4), x1 = -Math.max(10, H * 0.28);
+    if (z1 - z0 < 8 || x1 - x0 < 8) return;
+    const bodies = [0xff7f50, 0x35a7ff, 0x35b56a, 0xffd23f, 0x9b5de5, 0xe8402a];
+    const roofs = [0x2f7de1, 0xffd23f, 0x9b5de5, 0xe8402a, 0x35b56a, 0xffc42e];
+    const tries = n * 3;
     let placed = 0;
-    for (const st of sites) {
-      if (placed >= n) break;
-      const h = { x: st.x * this.k, z: Math.min(r.z1 + st.dz, H - 4), ry: st.ry, body: st.body, roof: st.roof };
+    for (let i = 0; i < tries && placed < n; i++) {
+      const a = i * 2.399963 + 0.7, rad = 0.15 + 0.8 * Math.sqrt((i + 0.5) / tries);
+      const h = {
+        x: (x0 + x1) / 2 + Math.cos(a) * rad * (x1 - x0) * 0.46,
+        z: (z0 + z1) / 2 + Math.sin(a) * rad * (z1 - z0) * 0.46,
+        ry: [0, Math.PI / 2, -Math.PI / 2, Math.PI][i % 4],
+        body: bodies[i % bodies.length], roof: roofs[i % roofs.length]
+      };
       if (Math.abs(h.x) > H - 5 || h.z < r.z1 + 4) continue;
       if (this.propBlocked(h.x, h.z) || this.siteInMonument(h.x, h.z, 5)) continue;
       if (this.buildHouse(h)) { placed++; (this.townSites = this.townSites || []).push(h); }
@@ -930,11 +956,12 @@ class World {
   buildMountains() {
     this.mountCenters = [];
     const n = this.count('mountain');
-    const cands = [[-19, -13], [20, -18], [-21, 15], [21, 12], [-24, -2], [24, -8], [-8, -24], [13, -23]];
-    const k = this.k;
+    const cands = [[-19, -13], [20, -18], [-21, 15], [21, 12], [-24, -2], [24, -8], [-8, -24], [13, -23],
+      [-30, 24], [30, 26], [-33, -27], [33, -24]];
+    const k = this.k, sp = this.spread;
     for (const [bx, bz] of this.shuffle(cands)) {
       if (this.mountCenters.length >= n) break;
-      const cx = bx * k, cz = bz * k;
+      const cx = bx * sp, cz = bz * sp;
       if (Math.abs(cx) > this.half - 6 || Math.abs(cz) > this.half - 6) continue;
       if (this.propBlocked(cx, cz)) continue;
       if (this.mountCenters.some((m) => Math.hypot(cx - m[0], cz - m[1]) < 9 * k)) continue;
@@ -969,11 +996,11 @@ class World {
   buildVolcanoes() {
     this.volcanoCenters = [];
     const n = this.count('volcano');
-    const cands = [[12, 21], [-13, 20], [22, -15], [-17, -22]];
-    const k = this.k;
+    const cands = [[12, 21], [-13, 20], [22, -15], [-17, -22], [28, 30], [-27, 29]];
+    const k = this.k, sp = this.spread;
     for (const [bx, bz] of this.shuffle(cands)) {
       if (this.volcanoCenters.length >= n) break;
-      const cx = bx * k, cz = bz * k;
+      const cx = bx * sp, cz = bz * sp;
       if (Math.abs(cx) > this.half - 7 || Math.abs(cz) > this.half - 6) continue;
       if (this.propBlocked(cx, cz)) continue;
       if ([...this.mountCenters, ...this.volcanoCenters].some((m) => Math.hypot(cx - m[0], cz - m[1]) < 8 * k)) continue;
@@ -1068,10 +1095,10 @@ class World {
   }
 
   buildVillage() {
-    const k = this.k;
+    const k = this.k, sp = this.spread;
     this.swings = [];
     this.houseRects = [];
-    const sites = [
+    const base = [
       { x: -11, z: -7, ry: 0, body: 0xe8402a, roof: 0x2f7de1 },
       { x: 9, z: -12, ry: Math.PI / 2, body: 0xffc42e, roof: 0x35b56a },
       { x: -16, z: 4, ry: -Math.PI / 2, body: 0x35a7ff, roof: 0xff7f50 },
@@ -1080,8 +1107,18 @@ class World {
       { x: 21, z: -3, ry: -Math.PI / 2, body: 0x9b5de5, roof: 0xe8402a },
       { x: -6, z: 22, ry: Math.PI, body: 0x2f7de1, roof: 0xffc42e },
       { x: 17, z: 18, ry: Math.PI / 2, body: 0xffd23f, roof: 0x35a7ff },
-      { x: -24, z: 20, ry: 0, body: 0x35b56a, roof: 0xff8a3d }
+      { x: -24, z: 20, ry: 0, body: 0x35b56a, roof: 0xff8a3d },
+      { x: -27, z: -4, ry: Math.PI / 2, body: 0xff7f50, roof: 0x2f7de1 },
+      { x: 27, z: 10, ry: -Math.PI / 2, body: 0x35b56a, roof: 0xffc42e },
+      { x: 3, z: -24, ry: Math.PI, body: 0x9b5de5, roof: 0x35a7ff },
+      { x: -15, z: -25, ry: 0, body: 0xffd23f, roof: 0xe8402a },
+      { x: 25, z: -20, ry: Math.PI / 2, body: 0x2f7de1, roof: 0xff8a3d },
+      { x: -28, z: 14, ry: -Math.PI / 2, body: 0xffc42e, roof: 0x35b56a },
+      { x: 8, z: 26, ry: Math.PI, body: 0xe8402a, roof: 0xffd23f },
+      { x: -4, z: 12, ry: 0, body: 0x35a7ff, roof: 0x9b5de5 },
+      { x: 5, z: 6, ry: Math.PI / 2, body: 0xff8a3d, roof: 0x2f7de1 }
     ];
+    const sites = base.map((s) => ({ ...s, x: s.x * sp, z: s.z * sp }));
     const n = this.count('house');
     let placed = 0;
     for (const s of sites) {
@@ -1092,7 +1129,7 @@ class World {
     }
 
     if (this.count('school')) {
-      const sx = -14, sz = -18;
+      const sx = -14 * sp, sz = -18 * sp;
       if (!(Math.abs(sx) > this.half - 7 || Math.abs(sz) > this.half - 6) && !this.propBlocked(sx, sz)) {
         this.buildSchool(sx, sz, k);
       }
@@ -1100,9 +1137,9 @@ class World {
 
     const pgN = this.count('playground');
     let pg = 0;
-    for (const [bx, bz] of [[17, -19], [-20, 8], [20, 8], [-20, -6], [8, 15], [-9, -23]]) {
+    for (const [bx, bz] of [[17, -19], [-20, 8], [20, 8], [-20, -6], [8, 15], [-9, -23], [28, 22], [-30, -14]]) {
       if (pg >= pgN) break;
-      const px = bx, pz = bz;
+      const px = bx * sp, pz = bz * sp;
       if (Math.abs(px) > this.half - 4.5 || Math.abs(pz) > this.half - 4.5) continue;
       if (this.propBlocked(px, pz)) continue;
       this.buildPlayground(px, pz, k);
@@ -1709,7 +1746,7 @@ class Game {
 
     this.scene = new THREE.Scene();
     this.scene.background = this.makeSky();
-    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 900);
+    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1800);
     this.orbit = { yaw: Math.PI, pitch: 0.42, dist: 11, wantDist: 11 };
 
     this.hemi = new THREE.HemisphereLight(0xd8f0ff, 0x5f8f3f, 1.0);
@@ -1863,7 +1900,7 @@ class Game {
   applyOutdoorFog() {
     const H = this.world.half;
     const r = SKY[this.weather] || SKY.clear;
-    this.scene.fog = new THREE.Fog(r.fog, H * (this.weather === 'clear' || this.weather === 'noon' ? 1.8 : 1.1), H * 4.5);
+    this.scene.fog = new THREE.Fog(r.fog, Math.max(80, H * (this.weather === 'clear' || this.weather === 'noon' ? 1.8 : 1.1)), Math.max(180, H * 4.5));
     this.scene.background = this.skyTexFor(r);
     this.sun.intensity = r.sun;
     this.sun.color.setHex(r.sunCol);
@@ -2680,7 +2717,10 @@ class Game {
   bindStripsDone() {}
 
   fitShadow() {
-    const span = Math.max(this.world.half, 40) * 1.6;
+    // Sun rig tracks the player, so the shadow box stays near them: cap the
+    // span instead of growing it with the map, keeping 2048px shadows crisp
+    // on Huge rather than a blurry 460-unit footprint.
+    const span = Math.min(1.6 * Math.max(this.world.half, 40), 110);
     const s = this.sun.shadow.camera;
     s.left = -span; s.right = span; s.top = span; s.bottom = -span;
     s.near = 1; s.far = 60 + span * 2;

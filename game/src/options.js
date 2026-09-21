@@ -13,14 +13,19 @@ export const OBJECT_TYPES = [
 
 /* Each preset changes the real playable half-extent (half) AND the generation
    capacity multipliers: towns (extra villages), rural hamlets, farms,
-   collectible spots, trees. `zones` = distinct terrain zones the world carves. */
+   collectible spots, trees. `zones` = distinct terrain zones the world carves.
+   The 400% expansion: every step of the ladder doubled its linear extent
+   (4x the classic playable area), applied evenly across Tiny..Huge. Capacity
+   fields scale with the new land so distribution improves, not dilutes:
+   trees/flowers are absolute count multipliers, spots scale the collectible
+   budget (40 * spots). */
 export const SIZES = [
-  { id: 'tiny', label: 'Tiny', half: 22, towns: 0, rural: 0, farms: 0, spots: 0.7, trees: 0.5, zones: 1, train: 0 },
-  { id: 'small', label: 'Small', half: 30, towns: 1, rural: 1, farms: 2, spots: 1.0, trees: 1.0, zones: 2, train: 0 },
-  { id: 'large', label: 'Large', half: 48, towns: 3, rural: 2, farms: 4, spots: 1.8, trees: 1.6, zones: 4, train: 1 },
-  { id: 'huge', label: 'Huge', half: 72, towns: 6, rural: 5, farms: 8, spots: 2.6, trees: 2.2, zones: 6, train: 1 }
+  { id: 'tiny', label: 'Tiny', half: 44, towns: 0, rural: 0, farms: 0, spots: 0.9, trees: 0.6, flowers: 1.2, zones: 1, train: 0 },
+  { id: 'small', label: 'Small', half: 60, towns: 2, rural: 2, farms: 3, spots: 1.8, trees: 2.0, flowers: 2.5, zones: 3, train: 0 },
+  { id: 'large', label: 'Large', half: 96, towns: 5, rural: 5, farms: 7, spots: 3.0, trees: 4.0, flowers: 4.2, zones: 5, train: 1 },
+  { id: 'huge', label: 'Huge', half: 144, towns: 10, rural: 8, farms: 12, spots: 4.4, trees: 7.0, flowers: 6.5, zones: 6, train: 1 }
 ];
-const MAX_HALF = 64; // hard cap: runaway-memory guard for map size
+const MAX_HALF = 160; // hard cap: runaway-memory guard for map size
 
 const LS_KEY = 'maddox-blox-options-v1';
 

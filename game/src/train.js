@@ -13,7 +13,8 @@ export class Train {
     this.R = world.railR;
     this.loop = 8 * this.R;
     this.u = this.loop * 0.12;
-    this.speed = 8;
+    // keep the full circuit at ~1 minute regardless of world size
+    this.speed = Math.max(8, this.loop / 60);
     this.pos = new THREE.Vector3();
     this.group = new THREE.Group();
     scene.add(this.group);
