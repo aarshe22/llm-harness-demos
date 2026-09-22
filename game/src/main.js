@@ -312,9 +312,10 @@ class World {
     const box = this.propBox(p);
     const baseY = Number.isFinite(box?.min.y) ? Math.max(0, box.min.y) : 0;
     const span = Number.isFinite(box?.max.x) ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) : 4;
-    // bricks land in world space around the prop's own footprint
+    // bricks land in world space around the prop's own footprint; big objects
+    // scatter wide so the capped pile reads as a field, not a heap
     const pile = brickPile(count, p.census, this.rubbleRand(p), {
-      baseY, cx: p.cx, cz: p.cz, spread: clamp(span * 0.3, 1.1, 9)
+      baseY, cx: p.cx, cz: p.cz, spread: clamp(span * 0.35, 2.2, 12)
     });
     pile.name = 'rubble';
     p.rubble = this.addObj(pile);

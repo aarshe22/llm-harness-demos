@@ -169,12 +169,16 @@ function colorCounts(census, count) {
 
 export const BRICK_PILE_CAP = 256;
 
+/* Loose rubble is always real 1x1x1 brick geometry, unscaled — degrading a big
+   object must never spawn giant bricks. Count is capped, so rubble reads as a
+   debris field of ordinary bricks. Bricks settle onto a brick-sized lattice and
+   fill the emptiest spot first, so the pile spreads outward flat instead of
+   growing a tower; stacks are hard-capped at STACK_CAP courses. */
 export function brickPile(count, census, rnd, opt = {}) {
   const group = new THREE.Group();
   const wants = count ?? Math.round(census.total);
   const n = Math.max(1, Math.min(wants, BRICK_PILE_CAP));
-  const size = clamp(Math.cbrt(Math.max(census.total, 0.001) / n), 0.08, 1.0);
-  const spread = opt.spread ?? clamp(Math.cbrt(Math.max(census.total, 1)) * 1.15, 1.2, 12);
+  const spread = opt.spread ?? clamp(Math.cbrt(Math.max(census.total, 1)) * 1.6, 2.2, 14);
   const baseY = opt.baseY ?? 0;
   const cx = opt.cx ?? 0, cz = opt.cz ?? 0;
   const counts = colorCounts(census, n);
@@ -182,39 +186,64 @@ export function brickPile(count, census, rnd, opt = {}) {
   const q = new THREE.Quaternion();
   const eul = new THREE.Euler();
   const pos = new THREE.Vector3();
-  const scale = new THREE.Vector3();
+  const one = new THREE.Vector3(1, 1, 1);
+  // round-robin the palette so the pile mixes colors like a real debris field
+  const left = [...counts.entries()].filter(([, c]) => c > 0);
+  const order = [];
+  while (left.length) {
+    for (let j = left.length - 1; j >= 0; j--) {
+      order.push(left[j][0]);
+      if (--left[j][1] <= 0) left.splice(j, 1);
+    }
+  }
+  const cell = 1.35;          // lattice pitch: one brick per cell, loose fit
+  const STACK_CAP = 2;        // never more than 2 courses anywhere
+  const stack = new Map();    // lattice cell -> settled course count
+  const byHex = new Map();    // hex -> Matrix4 list
+  for (let i = 0; i < order.length; i++) {
+    let bx = 0, bz = 0, bScore = Infinity;
+    for (let t = 0; t < 10; t++) {
+      const a = rnd() * Math.PI * 2;
+      const rr = spread * Math.sqrt(rnd());
+      const gx = Math.round(Math.cos(a) * rr / cell);
+      const gz = Math.round(Math.sin(a) * rr / cell);
+      let load = 0;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) load += stack.get(`${gx + dx}|${gz + dz}`) || 0;
+      }
+      if (load >= STACK_CAP * 9) continue;   // neighborhood saturated
+      const score = load * 10 + Math.hypot(gx, gz);
+      if (score < bScore) { bScore = score; bx = gx; bz = gz; }
+      if (load === 0) break;
+    }
+    const gy = Math.min(stack.get(`${bx}|${bz}`) || 0, STACK_CAP);
+    stack.set(`${bx}|${bz}`, gy + 1);
+    pos.set(
+      cx + bx * cell + (rnd() - 0.5) * 0.25,
+      baseY + gy + 0.5,
+      cz + bz * cell + (rnd() - 0.5) * 0.25
+    );
+    eul.set(0, (Math.floor(rnd() * 4) * Math.PI) / 2 + (rnd() - 0.5) * 0.14, 0);
+    q.setFromEuler(eul);
+    mtx.compose(pos, q, one);   // scale 1: rubble == the same 1x1x1 bricks
+    const hex = order[i];
+    if (!byHex.has(hex)) byHex.set(hex, []);
+    byHex.get(hex).push(mtx.clone());
+  }
   let k = 0;
-  for (const [hex, take] of counts) {
-    if (take <= 0) continue;
+  for (const [hex, list] of byHex) {
     const geo = brickGeometry(hex, studCount(hex, k++));
-    const inst = new THREE.InstancedMesh(geo, mkMat(hex, { roughness: 0.62 }), take);
+    const inst = new THREE.InstancedMesh(geo, mkMat(hex, { roughness: 0.62 }), list.length);
     inst.castShadow = true;
     inst.receiveShadow = true;
-    const stack = new Map(); // (gx,gz) -> stacked courses, so bricks settle in place
-    for (let i = 0; i < take; i++) {
-      const a = rnd() * Math.PI * 2;
-      const rr = spread * (0.12 + 0.88 * Math.sqrt(rnd()));
-      const gx = Math.round(Math.cos(a) * rr / size);
-      const gz = Math.round(Math.sin(a) * rr / size);
-      const gy = stack.get(`${gx}|${gz}`) || 0;
-      stack.set(`${gx}|${gz}`, gy + 1);
-      pos.set(
-        cx + gx * size + (rnd() - 0.5) * size * 0.18,
-        baseY + (gy + 0.5) * size,
-        cz + gz * size + (rnd() - 0.5) * size * 0.18
-      );
-      eul.set((rnd() - 0.5) * 0.45, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.45);
-      q.setFromEuler(eul);
-      scale.set(size, size, size);
-      mtx.compose(pos, q, scale);
-      inst.setMatrixAt(i, mtx);
-    }
+    list.forEach((m, i) => inst.setMatrixAt(i, m));
     inst.instanceMatrix.needsUpdate = true;
     group.add(inst);
   }
   group.userData.count = n;
-  group.userData.brickSize = size;
+  group.userData.brickSize = 1;
   group.userData.volume = census.total;
   group.userData.dispose = () => group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
   return group;
 }
+
