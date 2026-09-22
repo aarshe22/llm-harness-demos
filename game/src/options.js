@@ -41,7 +41,7 @@ export function sizePreset(id) {
 export function defaultOptions() {
   const counts = {}, enabled = {};
   for (const t of OBJECT_TYPES) { counts[t.id] = t.def; enabled[t.id] = true; }
-  return { size: 'large', counts, enabled };
+  return { size: 'large', counts, enabled, sound: true, debug: false };
 }
 
 export function loadOptions() {
@@ -50,6 +50,8 @@ export function loadOptions() {
     const raw = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (!raw || !raw.counts) return o;
     if (SIZES.some((s) => s.id === raw.size)) o.size = raw.size;
+    if (typeof raw.sound === 'boolean') o.sound = raw.sound;
+    if (typeof raw.debug === 'boolean') o.debug = raw.debug;
     for (const t of OBJECT_TYPES) {
       const c = raw.counts[t.id];
       if (typeof c === 'number' && isFinite(c)) o.counts[t.id] = Math.max(0, Math.min(t.max, Math.round(c)));
@@ -74,6 +76,15 @@ export function buildOptionsPanel(opts, hooks = {}) {
       <div class="o-seg">${SIZES.map((s) => `<button data-size="${s.id}">${s.label}</button>`).join('')}</div>
       <label class="o-sec">Objects — count &amp; on/off</label>
       <div class="o-rows"></div>
+      <label class="o-sec">Sound &amp; voice</label>
+      <div class="o-row o-toggles">
+        <button class="o-toggle o-snd" title="Read aloud weapon, block and weather selections; click to mute everything"></button>
+      </div>
+      <label class="o-sec">Developer</label>
+      <div class="o-row o-toggles">
+        <button class="o-toggle o-dbg" title="Logs player physics frames to find fall-through bugs"></button>
+        <button class="o-copy" title="Copy all captured debug rows to the clipboard">📋 Copy debug log</button>
+      </div>
       <div class="o-note">Changes apply when you regenerate the world.</div>
       <div class="o-actions"><button class="o-regen">♻️ Regenerate world</button></div>
     </div>`;
@@ -117,6 +128,40 @@ export function buildOptionsPanel(opts, hooks = {}) {
   const syncSegs = () => segs.forEach((b) => b.classList.toggle('active', b.dataset.size === opts.size));
   for (const b of segs) b.addEventListener('click', () => { opts.size = b.dataset.size; syncSegs(); });
 
+  /* Sound/voice + fall-debug toggles take effect immediately (no regen), and
+     persist with the rest of the options. */
+  const sndBtn = el.querySelector('.o-snd');
+  const dbgBtn = el.querySelector('.o-dbg');
+  const copyBtn = el.querySelector('.o-copy');
+  const syncSound = () => {
+    sndBtn.classList.toggle('on', !!opts.sound);
+    sndBtn.textContent = opts.sound ? '🔊 Sound & voice: on' : '🔇 Sound & voice: muted';
+  };
+  const syncDebug = () => {
+    dbgBtn.classList.toggle('on', !!opts.debug);
+    dbgBtn.textContent = opts.debug ? '🐞 Fall-debug logging: ON' : '🐞 Fall-debug logging: off';
+  };
+  sndBtn.addEventListener('click', () => {
+    opts.sound = !opts.sound;
+    syncSound();
+    saveOptions(opts);
+    if (hooks.onSound) hooks.onSound(opts.sound);
+  });
+  dbgBtn.addEventListener('click', () => {
+    opts.debug = !opts.debug;
+    syncDebug();
+    saveOptions(opts);
+    if (hooks.onDebug) hooks.onDebug(opts.debug);
+  });
+  copyBtn.addEventListener('click', () => {
+    const msg = window.DBG ? window.DBG.dump() : 'no logger';
+    copyBtn.textContent = '✅ copied!';
+    setTimeout(() => { copyBtn.textContent = '📋 Copy debug log'; }, 2000);
+    if (console && console.log) console.log(`[dbg] ${msg}`);
+  });
+  syncSound();
+  syncDebug();
+
   const api = {
     el,
     isOpen: false,
@@ -132,7 +177,8 @@ export function buildOptionsPanel(opts, hooks = {}) {
       saveOptions(opts);
     },
     toggle() { if (api.isOpen) api.close(); else api.open(); },
-    refresh() { syncSegs(); for (const s of syncers) s(); }
+    refresh() { syncSegs(); for (const s of syncers) s(); syncSound(); syncDebug(); },
+    syncDebug() { syncDebug(); }
   };
 
   el.querySelector('.o-x').addEventListener('click', () => api.close());

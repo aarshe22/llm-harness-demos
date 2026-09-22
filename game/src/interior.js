@@ -59,9 +59,13 @@ function buildShell(D, pal, group) {
     for (let j = 0; j < fz; j++)
       addBox(floor, 1, 0.1, 1, D.x0 + i + 0.5, 0.05, D.z0 + j + 0.5);
   group.add(merged(floor, mkMat(pal.floor)));
-  // Slab + collider deliberately overrun the room footprint (incl. 1.0 past
-  // the front-door gap): no walkable tile inside a building may lack floor.
-  solid(D.x0 - 0.3, -1, D.z0 - 0.3, D.x1 + 0.3, 0.1, D.z1 + 1.0);
+  // Slab + collider deliberately overrun the room footprint: no walkable tile
+  // inside a building may lack floor. Forward reach (z1 + 1.6) must cover the
+  // whole EXIT-trigger circle (door ±1.35 m) plus the player's body radius —
+  // the DBG log proved the fall: player inside a home walked to z=5.85 while
+  // the old slab ended at z=5.5, ground/surf went null, and they fell out of
+  // the world without ever "exiting".
+  solid(D.x0 - 0.55, -1, D.z0 - 0.55, D.x1 + 0.55, 0.1, D.z1 + 1.6);
 
   const ceil = [];
   addBox(ceil, W, 0.16, DP, 0, D.h + 0.08, 0);
@@ -84,6 +88,12 @@ function buildShell(D, pal, group) {
   wallSolid(fr, ff + t, D.z1, D.z1 + t);
   addBox(wallPieces, D.doorHalf * 2, D.h - 2.15, t, 0, 2.15 + (D.h - 2.15) / 2, D.z1 + t / 2);
   solid(-D.doorHalf, 2.15, D.z1, D.doorHalf, D.h, D.z1 + t);
+  // Invisible threshold in the open doorway. Indoors, world.solids is just the
+  // room's own colliders, so ground ends at the slab; walking out the door gap
+  // used to mean stepping off the world (confirmed by DBG log). Jump apex
+  // (~1.77) can't clear the 2.15 height, so EXIT is the only way out — and the
+  // EXIT trigger (door ±1.35) fires long before the player reaches this.
+  solid(-D.doorHalf, 0, D.z1, D.doorHalf, 2.15, D.z1 + t);
   group.add(merged(wallPieces, mkMat(pal.wall)));
 
   const skirt = [];

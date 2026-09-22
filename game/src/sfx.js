@@ -2,13 +2,17 @@
 
 class Sfx {
   constructor() { this.ac = null; this.master = null; this._loops = new Map(); this._flame = null; }
+  setMuted(m) {
+    this.muted = !!m;
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+  }
   ensure() {
     if (!this.ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return false;
       this.ac = new AC();
       this.master = this.ac.createGain();
-      this.master.gain.value = 0.5;
+      this.master.gain.value = this.muted ? 0 : 0.5;
       this.master.connect(this.ac.destination);
     }
     if (this.ac.state === 'suspended') this.ac.resume();

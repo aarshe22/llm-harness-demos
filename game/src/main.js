@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BR, CY, SP, CO, RAINBOW, GOAL, mkMat, clamp, part, addBox, addCyl, bake, merged, colorOfMat, brickCensus, brickPile, BRICK_PILE_CAP } from './brickkit.js';
 import { makeInterior } from './interior.js';
-import { buildOptionsPanel, loadOptions, sizePreset } from './options.js';
+import { buildOptionsPanel, loadOptions, saveOptions, sizePreset } from './options.js';
 import { instancedMosaicMesh, monumentMosaic, plaqueTexture, welcomeTexture } from './mosaic.js';
 import { WEAPONS, Fx, buildWeaponModels, makeRocketMesh, rayAabb, nearestPointOnBox } from './weaponry.js';
 import { sfx } from './sfx.js';
+import { voice } from './voice.js';
 import { Life } from './life.js';
 import { Train } from './train.js';
 import { WEATHERS, SKY, ParticleField, StarField, Funnel, WaveFront } from './weather.js';
@@ -32,10 +33,8 @@ const BRICKS = [
 ];
 const BED_TOP = -2.2;
 
-/* ---- temporary fall-debug module: toggled with the 🐞 button, F9, or
-   window.DBG.toggle(). Ring buffer on window.DBG.buf; export with
-   window.DBG.dump() (copy to clipboard) — send the text back for analysis.
-   Only samples while on; costs one Date.now() per frame when off. ---- */
+/* Debug-mode toggle lives in the options panel (Developer section).
+   window.DBG.dump() copies captured rows to the clipboard for analysis. */
 const DBG = {
   on: false,
   buf: [],
@@ -92,16 +91,16 @@ const DBG = {
     window.__dbgTxt = txt;
     return 'window.__dbgTxt set (open devtools and run copy(window.__dbgTxt))';
   },
-  toggle() {
-    this.on = !this.on;
+  set(v) {
+    const want = !!v;
+    if (want === this.on) return this.on;
+    this.on = want;
     if (this.on) { this.buf = []; this.evts = []; this.t0 = performance.now(); }
-    const b = document.getElementById('dbg-toggle');
-    if (b) { b.classList.toggle('on', this.on); b.textContent = this.on ? '🐞 ON' : '🐞'; }
-    const c = document.getElementById('dbg-copy');
-    if (c) c.style.display = this.on ? 'block' : 'none';
     console.log(`[dbg] logging ${this.on ? 'ON' : 'OFF'}`);
+    if (this.onChange) this.onChange(this.on);
     return this.on;
   },
+  toggle() { return this.set(!this.on); },
 };
 window.DBG = DBG;
 
@@ -381,6 +380,8 @@ class World {
       p.rubble.removeFromParent();
       p.rubble = null;
     }
+    for (const r of p.rubbleSolids || []) r.disabled = true;
+    p.rubbleSolids = [];
     if (count <= 0 || !(p.census?.total > 0)) return null;
     const box = this.propBox(p);
     const baseY = Number.isFinite(box?.min.y) ? Math.max(0, box.min.y) : 0;
@@ -393,6 +394,30 @@ class World {
     pile.name = 'rubble';
     p.rubble = this.addObj(pile);
     p.extra.push(pile);
+    // Rubble is climbable/debris-solid: one collider per occupied lattice
+    // cell (instanced bricks + per-cell merge keeps count bounded). noRay so
+    // the pick tools ignore it, noSupport so players can't build on debris.
+    const cells = new Map();
+    pile.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m);
+        const x = m.elements[12], y = m.elements[13], z = m.elements[14];
+        const key = `${Math.round(x)}|${Math.round(z)}`;
+        const top = y + 0.5;
+        const c = cells.get(key);
+        if (c) c.top = Math.max(c.top, top);
+        else cells.set(key, { x, z, top });
+      }
+    });
+    for (const c of cells.values()) {
+      const h = Math.max(0.3, c.top - baseY);
+      p.rubbleSolids.push(this.addSolid(new THREE.Box3(
+        new THREE.Vector3(c.x - 0.65, baseY, c.z - 0.65),
+        new THREE.Vector3(c.x + 0.65, baseY + h, c.z + 0.65)
+      ), null, true, true));
+    }
     return p.rubble;
   }
 
@@ -2312,8 +2337,14 @@ class Game {
     this.optionsEl.setAttribute('aria-label', 'World options');
     this.panel = buildOptionsPanel(this.world.opts, {
       onOpen: () => { this.keys.clear(); this.pointers.clear(); },
-      onRegen: () => this.regenerateWorld()
+      onRegen: () => this.regenerateWorld(),
+      onSound: (v) => { sfx.setMuted(!v); voice.setEnabled(v); },
+      onDebug: (v) => DBG.set(v)
     });
+    DBG.onChange = (on) => { this.world.opts.debug = on; this.panel.syncDebug(); saveOptions(this.world.opts); };
+    sfx.setMuted(!this.world.opts.sound);
+    voice.setEnabled(this.world.opts.sound);
+    if (this.world.opts.debug) DBG.set(true);
     document.getElementById('hud').appendChild(this.optionsEl);
     document.body.appendChild(this.panel.el);
     this.optionsEl.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -2612,6 +2643,7 @@ class Game {
     this.weapon = clamp(i, 0, WEAPONS.length - 1);
     this.showWeaponModel();
     this.refreshStrips();
+    voice.speak(WEAPONS[this.weapon].name);
   }
 
   showWeaponModel() {
@@ -2623,6 +2655,7 @@ class Game {
   /* ------------------------------------------------ weather activation */
   activateWeather(id) {
     const def = WEATHERS.find((w) => w.id === id) || WEATHERS[0];
+    voice.speak(def.name);
     this.weather = def.id;
     this.weatherDef = def;
     this.weatherT = 0;
@@ -3075,7 +3108,8 @@ class Game {
       const H = this.world.half;
       this.waveZ += dt * 17;
       if (this.waveZ > H + 16) { this.waveZ = -H - 16; this.waveId++; sfx.wave(); }
-      this.wave.place(this.player.pos.x * 0.3, this.waveZ, H * 2.4, 9);
+      const hW = 9 + 2 * Math.sin(this.time * 0.7); // breathing swell height
+      this.wave.place(this.player.pos.x * 0.3, this.waveZ, H * 2.4, hW, this.time);
       for (const pr of this.world.props) {
         if (pr.gone || pr._ts === this.waveId + ':' + Math.floor(this.waveZ / 6)) continue;
         if (Math.abs(pr.cz - this.waveZ) > 5) continue;
@@ -3234,7 +3268,9 @@ class Game {
     this.removeMode = i >= BRICKS.length;
     this.slots.forEach((s, j) => s.classList.toggle('active', j === i));
     if (!this.removeMode) this.setGhostDef(BRICKS[i]);
+    else voice.speak('Remove bricks');
     if (this.ghost) this.ghost.visible = false;
+    if (!this.removeMode) voice.speak(BRICKS[i].name);
   }
 
   start() {
@@ -3271,6 +3307,7 @@ class Game {
         if (e.code === 'Escape') this.panel.close();
         return;
       }
+      if (e.code === 'F9') { e.preventDefault(); DBG.toggle(); return; }
       if (e.code === 'Space') { e.preventDefault(); this.jumpQueued = 0.16; return; }
       if (e.code === 'KeyE') { this.toggleDoor(); return; }
       if (e.code === 'Escape') { e.preventDefault(); this.setMode('explore'); return; }
@@ -3840,44 +3877,3 @@ const game = new Game();
 window.GAME = game;
 game.debugBricks = BRICKS; // exposed for smoke tests
 
-/* Debug-mode toggle button (temporary fall-investigation tool).
-   Click 🐞 or press F9 to start/stop logging; call window.DBG.dump() in the
-   console to copy the captured rows to the clipboard. */
-(function mountDebugButton() {
-  const style = document.createElement('style');
-  style.textContent = `
-    #dbg-toggle { position: fixed; top: 10px; right: 10px; z-index: 9999;
-      font: 14px/1 system-ui, sans-serif; padding: 8px 10px; border-radius: 8px;
-      border: 1px solid rgba(0,0,0,.35); background: rgba(255,255,255,.85);
-      color: #222; cursor: pointer; opacity: .55; }
-    #dbg-toggle:hover { opacity: 1; }
-    #dbg-toggle.on { background: #ffd23f; opacity: 1; font-weight: 700; }
-    #dbg-copy { position: fixed; top: 44px; right: 10px; z-index: 9999;
-      font: 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 8px;
-      border: 1px solid rgba(0,0,0,.35); background: rgba(255,255,255,.85);
-      cursor: pointer; display: none; }
-    #dbg-toggle.on + #dbg-copy { display: block; }`;
-  document.head.appendChild(style);
-  const btn = document.createElement('button');
-  btn.id = 'dbg-toggle';
-  btn.type = 'button';
-  btn.title = 'Toggle fall-debug logging (F9)';
-  btn.textContent = '🐞';
-  const copyBtn = document.createElement('button');
-  copyBtn.id = 'dbg-copy';
-  copyBtn.type = 'button';
-  copyBtn.title = 'Copy the captured debug rows to the clipboard';
-  copyBtn.textContent = '📋 copy log';
-  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); DBG.toggle(); });
-  copyBtn.addEventListener('click', (e) => {
-    e.preventDefault(); e.stopPropagation();
-    const msg = DBG.dump();
-    copyBtn.textContent = typeof msg === 'string' ? msg.slice(0, 24) : 'copied';
-    setTimeout(() => { copyBtn.textContent = '📋 copy log'; }, 2500);
-  });
-  document.body.appendChild(btn);
-  document.body.appendChild(copyBtn);
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'F9') { e.preventDefault(); DBG.toggle(); }
-  }, true);
-})();

@@ -150,25 +150,103 @@ export class Funnel {
 }
 
 /* Tsunami wavefront: a broad translucent wall that sweeps across the map. */
+/* Giant moving brick wave: a wall of translucent water-bricks whose crest
+   rolls and curls as it travels, plus a white foam cap. Instanced bricks are
+   recomposed every frame from a cheap column/row profile, so it reads as a
+   wall of blocks — MADDOX BLOX style — not a stretched box. */
 export class WaveFront {
   constructor(scene) {
-    this.mesh = new THREE.Mesh(BR, mkMat(0x2f9bea, { transparent: true, opacity: 0.8, depthWrite: false }));
-    this.mesh.castShadow = false;
-    this.mesh.visible = false;
-    scene.add(this.mesh);
-    this.foam = new THREE.Mesh(BR, mkMat(0xeaf8ff, { transparent: true, opacity: 0.9 }));
-    this.foam.visible = false;
-    scene.add(this.foam);
+    this.geo = new THREE.BoxGeometry(1, 1, 1);
+    this.waterMat = mkMat(0x2f9bea, {
+      transparent: true, opacity: 0.66, roughness: 0.12, metalness: 0.05,
+      emissive: 0x0b3f77, emissiveIntensity: 0.45, depthWrite: false
+    });
+    this.foamMat = mkMat(0xeaf8ff, {
+      transparent: true, opacity: 0.92, roughness: 0.4,
+      emissive: 0xbfe8ff, emissiveIntensity: 0.35
+    });
+    this.group = new THREE.Group();
+    this.group.visible = false;
+    scene.add(this.group);
+    this.water = null;
+    this.foam = null;
+    this._m = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
+    this._p = new THREE.Vector3();
+    this._s = new THREE.Vector3(1, 1, 1);
+    this.COLS = 0; this.ROWS = 0; this.FOAMN = 0;
   }
-  place(x, z, span, height) {
-    this.mesh.visible = this.foam.visible = true;
-    this.mesh.scale.set(span, height, 3.2);
-    this.mesh.position.set(x, height / 2 - 0.4, z);
-    this.foam.scale.set(span, 1.1, 3.6);
-    this.foam.position.set(x, height - 0.2, z);
+  _alloc(cols, rows) {
+    if (this.water) { this.water.removeFromParent(); this.water.dispose(); }
+    if (this.foam) { this.foam.removeFromParent(); this.foam.dispose(); }
+    const foamMax = cols * 3;
+    this.water = new THREE.InstancedMesh(this.geo, this.waterMat, cols * rows);
+    this.foam = new THREE.InstancedMesh(this.geo, this.foamMat, foamMax);
+    for (const m of [this.water, this.foam]) {
+      m.frustumCulled = false;
+      m.castShadow = false;
+      m.receiveShadow = false;
+      this.group.add(m);
+    }
+    this.COLS = cols; this.ROWS = rows; this.FOAMN = foamMax;
   }
-  hide() { this.mesh.visible = this.foam.visible = false; }
-  dispose() { this.mesh.removeFromParent(); this.foam.removeFromParent(); this.mesh.geometry === BR || this.mesh.geometry.dispose(); }
+  /* Center the wall at (x, z) spanning `span` units wide, `height` tall.
+     `t` drives the roll; wave travel direction is +z. */
+  place(x, z, span, height, t = 0) {
+    this.group.visible = true;
+    const cols = Math.min(Math.max(Math.round(span), 24), 460);
+    const rows = Math.max(3, Math.round(height));
+    if (!this.water || cols !== this.COLS || rows !== this.ROWS) this._alloc(cols, rows);
+    const cellW = span / cols;
+    const m = this._m, q = this._q, p = this._p, s = this._s;
+    q.identity();
+    let wi = 0, fi = 0;
+    const put = (mesh, i, px, py, pz, sx, sy, sz) => {
+      p.set(px, py, pz); s.set(sx, sy, sz);
+      m.compose(p, q, s);
+      mesh.setMatrixAt(i, m);
+    };
+    for (let c = 0; c < cols; c++) {
+      const u = (c / (cols - 1)) * 2 - 1;                 // -1..1 across face
+      const cx = x + u * span / 2;
+      // crest profile: taller midspan, rolling swell travelling along face
+      const swell = Math.sin(u * 9 + t * 2.4) * 0.55 + Math.sin(u * 23 - t * 3.7) * 0.3;
+      const colH = height * (0.86 + 0.16 * Math.cos(u * 1.35)) + swell;
+      const nRow = Math.max(2, Math.min(rows, Math.round(colH)));
+      for (let r = 0; r < nRow; r++) {
+        const frac = (r + 0.5) / nRow;                    // 0 bottom → 1 crest
+        // breaker curl: the crest leans back (-z) and wobbles as it rolls
+        const curl = -frac * frac * (1.1 + 0.5 * Math.sin(t * 2.0 + u * 6));
+        const jit = Math.sin(c * 12.9898 + r * 4.1414 + t * 5) * 0.12;
+        put(this.water, wi++, cx, r + 0.5 - 0.35, z + curl + jit,
+          cellW * 1.06, 1, 1.05 + frac * 0.9);
+      }
+      // foam: white caps riding the crest + occasional streaks down the face
+      put(this.foam, fi++, cx, nRow - 0.15, z - 1.1 + Math.sin(t * 3 + u * 8) * 0.3,
+        cellW * 1.1, 0.9, 1.6);
+      if ((c % 5) === (Math.floor(t * 7) % 5)) {
+        put(this.foam, fi++, cx, nRow * 0.45 + Math.sin(t * 4 + c) * 0.6,
+          z + 0.85, cellW * 1.05, 0.5, 0.6);
+      }
+    }
+    // churning base skirt a little ahead of the wall
+    for (let c = 0; c < cols && fi < this.FOAMN - 1; c += 2) {
+      const u = (c / (cols - 1)) * 2 - 1;
+      put(this.foam, fi++, x + u * span / 2, 0.28, z + 2.2 + Math.sin(t * 5 + c) * 0.4,
+        cellW * 1.2, 0.5, 1.4);
+    }
+    this.water.count = wi;
+    this.foam.count = Math.min(fi, this.FOAMN);
+    this.water.instanceMatrix.needsUpdate = true;
+    this.foam.instanceMatrix.needsUpdate = true;
+  }
+  hide() { this.group.visible = false; }
+  dispose() {
+    if (this.water) { this.water.dispose(); this.water = null; }
+    if (this.foam) { this.foam.dispose(); this.foam = null; }
+    this.group.removeFromParent();
+    this.geo.dispose();
+  }
 }
 
 export const clampN = clamp;
