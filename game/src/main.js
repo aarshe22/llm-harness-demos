@@ -2068,6 +2068,17 @@ class Player {
     const H = this.world.half;
     this.pos.x = clamp(this.pos.x, -H + 0.5, H - 0.5);
     this.pos.z = clamp(this.pos.z, -H + 0.5, H - 0.5);
+    // Anti-submersion ejector: no matter how the player got here (teleport into
+    // geometry, a missed landing, a cache-stale solid set), if we finish the
+    // frame just *under* the surface that covers this column, eject on top of
+    // it instead of letting the fall continue to the respawn plane. Window is
+    // <1.35 so legitimately standing under bridge decks (top ~1.93) is unaffected.
+    const surf = this.world.surfaceTopAny(this.pos.x, this.pos.z);
+    if (surf > this.pos.y + 0.06 && surf - this.pos.y < 1.35) {
+      this.pos.y = surf;
+      this.vel.y = 0;
+      this.grounded = true;
+    }
     // below-world safety net — active outdoors AND inside interiors, whose
     // respawn branch snaps back onto the room floor instead of the map
     if (this.pos.y < -3.5) {
