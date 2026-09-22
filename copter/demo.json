@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "gpt-6-sol",
+  "harness": "Codex",
+  "maxContextWindow": null,
+  "updated": "2026-09-22",
+  "notes": "Flight physics and low-altitude controls updated with medium reasoning effort; token usage was not exposed."
+}

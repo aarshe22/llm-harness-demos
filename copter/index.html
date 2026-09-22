@@ -96,7 +96,7 @@
 <div id="flash"></div>
 
 <div class="joy" id="joyL" style="left:14px"><div class="knob"></div><div class="cap" style="top:-16px">PITCH / ROLL</div></div>
-<div class="joy" id="joyR" style="right:14px"><div class="knob"></div><div class="cap" style="top:-16px">THRUST / YAW</div></div>
+<div class="joy" id="joyR" style="right:14px"><div class="knob"></div><div class="cap" style="top:-16px">CLIMB / YAW</div></div>
 
 <div id="bar">
   <div class="grp">
@@ -148,7 +148,7 @@
     <h2>VOXEL COPTER — MANUAL</h2>
     <div>
       <kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> pitch &nbsp; <kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> roll<br>
-      <kbd>Q</kbd>/<kbd>E</kbd> thrust up/down &nbsp; <kbd>,</kbd>/<kbd>.</kbd> or <kbd>J</kbd>/<kbd>L</kbd> yaw &nbsp; <kbd>Space</kbd> hover-assist<br>
+      <kbd>Q</kbd>/<kbd>E</kbd> climb/descend (also in hover assist) &nbsp; <kbd>,</kbd>/<kbd>.</kbd> or <kbd>J</kbd>/<kbd>L</kbd> yaw &nbsp; <kbd>Space</kbd> hover-assist<br>
       <kbd>1 2 3</kbd> weapon select &nbsp; <kbd>F</kbd> fire / hold for beam &nbsp; <kbd>V</kbd> camera &nbsp; <kbd>T</kbd> FLIR &nbsp; <kbd>R</kbd> reset heli<br>
       <kbd>mouse wheel</kbd> zoom &nbsp; <kbd>right-drag</kbd> look around &nbsp; <kbd>Esc</kbd> close this<br><br>
       <b style="color:var(--acc)">WEAPONS</b><br>
@@ -1279,9 +1279,10 @@ document.addEventListener('pointerdown',()=>{ if(actx&&actx.state==='suspended')
 
 /* ============== HELI PHYSICS ============== */
 function respawn(){
-  heliState.pos.set(40, 130, 40);
+  heliState.pos.set(40, groundY(40,40)+35, 40);
   heliState.vel.set(0,0,0); heliState.heading=0; heliState.pitch=0; heliState.roll=0; heliState.yawRate=0;
-  heliState.throttle=0.62; heliState.alive=true; heliState.hover=false; heliState.hoverAlt=130;
+  heliState.throttle=22/38; heliState.alive=true; heliState.hover=false; heliState.hoverAlt=heliState.pos.y; heliState.onGround=false;
+  $('bHover').classList.remove('on');
   heli.visible=true;
   $('respawn').classList.remove('show');
 }
@@ -1311,12 +1312,17 @@ function updateHeli(dt){
   else if(joyInput.L.x||joyInput.L.y||joyInput.R.x||joyInput.R.y){ pitchIn+=-joyInput.L.y; rollIn+=joyInput.L.x; thrIn+=-joyInput.R.y; yawIn+=joyInput.R.x; }
   if(s.hover){
     pitchIn*=0.25; rollIn*=0.25;
-    s.throttle += ((s.hoverAlt-s.pos.y)*0.012 - s.vel.y*0.045)*dt*6;
+    const minAlt=groundY(s.pos.x,s.pos.z)+4;
+    s.hoverAlt=clamp(s.hoverAlt+thrIn*12*dt,minAlt,270);
     s.vel.x*=Math.pow(0.25,dt); s.vel.z*=Math.pow(0.25,dt);
     const hv=Math.hypot(s.vel.x,s.vel.z);
     if(hv>0.4){ const hd=Math.atan2(s.vel.x,s.vel.z); let dy=hd-s.heading; while(dy>Math.PI)dy-=6.283; while(dy<-Math.PI)dy+=6.283; s.heading+=dy*Math.min(1,dt*1.5); }
   }
-  s.throttle=clamp(s.throttle+thrIn*dt*0.5, 0, 1);
+  const targetVy=s.hover ? clamp((s.hoverAlt-s.pos.y)*0.9,-6,6) : thrIn*8;
+  const targetAcc=clamp((targetVy-s.vel.y)*1.8,-10,10);
+  const liftFactor=Math.max(0.7,Math.cos(s.pitch)*Math.cos(s.roll));
+  const targetThrottle=clamp((22+targetAcc)/(38*liftFactor),0,1);
+  s.throttle=lerp(s.throttle,targetThrottle,Math.min(1,dt*3));
   const tPitch=clamp(pitchIn,-1,1)*0.4, tRoll=clamp(rollIn,-1,1)*0.45;
   s.pitch=lerp(s.pitch,tPitch,Math.min(1,dt*2.2)); s.roll=lerp(s.roll,tRoll,Math.min(1,dt*2.2));
   s.yawRate=lerp(s.yawRate, clamp(yawIn,-1,1)*1.5 + (-s.roll*0.5), Math.min(1,dt*2.5));
@@ -1324,7 +1330,8 @@ function updateHeli(dt){
 
   body.rotation.y=s.heading; body.rotation.x=-s.pitch; body.rotation.z=s.roll;
   const thrust=s.throttle*38;
-  const acc=new THREE.Vector3(0,thrust-22,0).applyQuaternion(body.quaternion);
+  const acc=new THREE.Vector3(0,thrust,0).applyQuaternion(body.quaternion);
+  acc.y-=22;
   s.vel.addScaledVector(acc,dt);
   const spd=Math.hypot(s.vel.x,s.vel.z);
   const dragK=Math.pow(0.72,dt)*(1+spd*0.004);
