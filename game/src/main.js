@@ -1676,11 +1676,22 @@ class World {
     this.bridgePieces = [];
     const k = this.k;
 
-    const deckW = 3, deckT = 0.5, deckL = 1.06;
+    const deckW = 3, deckT = 0.5;
     const r = this.river;
     const zA = r.z0 + 0.1, zB = r.z1 - 0.1, lift = 1.7, yA = 1.35;
     const N = 26;
     const isBroken = (i) => i >= 8 && i <= 17;
+
+    /* Anchor points on the arch; each slat spans two consecutive anchors along
+       their chord. Previously slats were tangent boxes a fixed 1.06 deep at
+       ~0.39 spacing, so ~2.7 slats overlapped on the convex arch and their
+       near-coplanar top faces z-fought (the shimmer), and two rail walls per
+       seam sat ~0.09 apart (more fighting). Chord slats butt-join exactly. */
+    const A = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      A.push({ z: zA + (zB - zA) * t, y: yA + lift * 4 * t * (1 - t) });
+    }
 
     for (const z of [r.z0 - 0.5, r.z1 + 0.5]) {
       const ab = [];
@@ -1693,29 +1704,31 @@ class World {
     }
 
     for (let i = 0; i < N; i++) {
-      const t = i / (N - 1);
-      const z = zA + (zB - zA) * t;
-      const slope = lift * 4 * (1 - 2 * t) / (zB - zA);
-      const y = yA + lift * 4 * t * (1 - t);
-      const piece = new THREE.Group();
+      const p0 = A[i], p1 = A[i + 1];
+      const dz = p1.z - p0.z, dy = p1.y - p0.y;
+      const len = Math.hypot(dz, dy);
       const mat = this.mat(RAINBOW[i % RAINBOW.length]);
+      const piece = new THREE.Group();
       const deck = new THREE.Mesh(BR, mat);
-      deck.scale.set(deckW, deckT, deckL);
+      deck.scale.set(deckW, deckT, len);
       deck.castShadow = true;
       deck.receiveShadow = true;
       piece.add(deck);
       const studs = [];
-      for (const sx of [-1, 0, 1]) addCyl(studs, 0.17, 0.16, sx, deckT / 2 + 0.08, 0);
+      // sunk 0.02 into the deck so the stud caps never sit coplanar with it
+      for (const sx of [-1, 0, 1]) addCyl(studs, 0.17, 0.16, sx, deckT / 2 + 0.06, 0);
       piece.add(merged(studs, mat));
-      for (const sz of [-0.44, 0.44]) {
+      // side handrails along the walking direction (the old per-seam full-width
+      // walls intersected each other on the arch and flickered)
+      for (const sx of [-1, 1]) {
         const rail = new THREE.Mesh(BR, this.mat(0xf8f9fa));
-        rail.scale.set(deckW, 0.66, 0.14);
-        rail.position.set(0, deckT / 2 + 0.33, sz);
+        rail.scale.set(0.14, 0.66, len * 0.92);
+        rail.position.set(sx * (deckW / 2 - 0.07), deckT / 2 + 0.33, 0);
         rail.castShadow = true;
         piece.add(rail);
       }
-      piece.position.set(0.5, y + deckT / 2, z);
-      piece.rotation.x = -Math.atan(slope);
+      piece.position.set(0.5, (p0.y + p1.y) / 2 + deckT / 2, (p0.z + p1.z) / 2);
+      piece.rotation.x = -Math.atan2(dy, dz);
       g.add(piece);
       this.bridgePieces.push({ piece, broken: isBroken(i) });
       if (isBroken(i)) piece.visible = false;
