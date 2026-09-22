@@ -8,7 +8,7 @@ Brick-toy inspired Three.js sandbox game. No build step: static files + one npm 
 
 ## Structure
 - `src/main.js` — the whole game: World (terrain, river, bridge, village, trees, hills), Player (AABB + step-up collision), Game (input, build/remove, collectibles, HUD, camera).
-- `src/options.js` — ⚙️ world options: map-size presets Tiny/Small/Large/Huge (real half-extents 22/28/42/60, cap 60; each preset also scales generation capacity: towns/rural/farms/spots/trees/terrain zones), and `OBJECT_TYPES` (house/school/playground/mountain/volcano/tree/flower/deco) each with a count slider + on/off toggle. Persisted in `localStorage` (`maddox-blox-options-v1`); applied on "Regenerate world", no page reload.
+- `src/options.js` — ⚙️ world options: map-size presets Tiny/Small/Large/Huge (real half-extents 44/60/96/144, cap 160; each preset also scales generation capacity: towns/rural/farms/spots/trees/terrain zones/train ring), and `OBJECT_TYPES` (house/school/playground/mountain/volcano/tree/flower/deco) each with a count slider + on/off toggle. Persisted in `localStorage` (`maddox-blox-options-v1`); applied on "Regenerate world", no page reload. Options panel also carries Sound & Fall-debug toggles (persisted too).
 - `src/mosaic.js` — the single source-image asset (`assets/maddox-face-8color.png`, 8-color indexed PNG, decoded by hand so palette indices stay exact). Drives the welcome-dialog brick mosaic, the giant monument wall mosaic (instanced 3-brick-deep cells, flood-filled background removed) and the portal plaque.
 - The one giant monument (`World.buildMonumentSite`) needs far-bank room (Large+); plaza/steps/pedestal are walkable solids. `World.surfaceTopAny` + `respawnPlayer` handle below-world fall recovery via respawn anchors.
 - Bricks snap to a 1-unit XZ grid. `World.solids` is the single AABB collider list; `World.surfaceTop()` backs both player gravity and build snapping.
@@ -37,7 +37,9 @@ Brick-toy inspired Three.js sandbox game. No build step: static files + one npm 
 ## Gotchas
 - `mergeGeometries` needs non-indexed geometry with normals deleted before merging (see `bake()`); empty part lists must short-circuit.
 - Raycast face normals need `applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(...))` — `Vector3` has no `transformNormal`.
-- Colliders that must never act as build supports (trees, bridge pieces, ground) are flagged `noSupport`.
+- Colliders that must never act as build supports (trees, bridge pieces, ground) are flagged `noSupport`. Rubble piles from destroyed props DO get solids (walkable on top); road slabs have tops at y≈0.14 with min.y −0.1.
+- `src/voice.js` (Web Speech TTS) + Sound & Fall-debug toggles live in the ⚙️ options panel (persisted with the other options); the old floating debug button is gone, F9 remains a hidden DBG toggle. Exit-through-doorway fall is prevented by a door-threshold collider + floor overrun in `src/interior.js` — walking out is blocked; exiting requires E/EXIT, which uses the exterior spot finder.
+- Testing: no browser JS harness in-repo; drive headless chromium via CDP (websocket-client installed), `node --check` per ES module, and headless `import('/src/...')` smoke tests. CDP eval gotchas: no top-level await in `Runtime.evaluate`, `window.THREE` must be set from inside an async IIFE, `speechSynthesis` is non-writable (stub with defineProperty), singleton module methods replaced via `obj.m = fn` need `delete obj.m` to restore.
 - Bridge decks are walkable because their collider tops equal deck-surface height within the step tolerance (1.05).
 - three r186: `PCFSoftShadowMap` was removed (use `PCFShadowMap`); `THREE.Clock` is deprecated but works.
 - Renderer uses `preserveDrawingBuffer: true` so canvas pixel checks work in headless verification.
