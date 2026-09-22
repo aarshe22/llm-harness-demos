@@ -4,5 +4,5 @@
   "harness": "Codex",
   "maxContextWindow": null,
   "updated": "2026-09-22",
-  "notes": "Flight physics and low-altitude controls updated with medium reasoning effort; token usage was not exposed."
+  "notes": "Flight controls, H-key help, prominent FIRE button, and shoreline flicker updated with medium reasoning effort; token usage was not exposed."
 }

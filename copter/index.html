@@ -25,8 +25,12 @@
   #bar .sep{width:1px;height:26px;background:#22403a}
   #bar input[type=range]{width:110px;accent-color:var(--acc)}
   #bar .lab{font-size:9px;color:#6f9a8e;letter-spacing:1px}
-  #fire{background:#5a1616!important;border-color:#a33!important;color:#ffd7c0!important;font-size:13px!important;padding:8px 16px!important}
-  #fire.on{background:#e33!important;color:#fff!important}
+  #fire{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:12;
+        min-width:120px;min-height:54px;border:2px solid #f47762;border-radius:12px;background:#8e2424;color:#fff;
+        box-shadow:0 0 0 4px #18090999,0 8px 25px #0009;font:700 17px 'Courier New',monospace;letter-spacing:2px;cursor:pointer}
+  #fire small{display:block;font-size:10px;letter-spacing:1px;color:#ffcdc3}
+  #fire.on,#fire:active{background:#e33;transform:translateX(-50%) scale(.97)}
+  body.touch #fire{bottom:calc(190px + env(safe-area-inset-bottom))}
   #cross{position:fixed;left:50%;top:46%;z-index:4;pointer-events:none;transform:translate(-50%,-50%);opacity:.85}
   #toast{position:fixed;left:50%;top:14%;transform:translateX(-50%);z-index:9;background:rgba(5,12,10,.75);border:1px solid #2c5148;
         padding:8px 16px;border-radius:8px;font-size:13px;letter-spacing:1px;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
@@ -39,8 +43,15 @@
   #respawn,#helpov{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(4,8,10,.78)}
   #respawn.show,#helpov.show{display:flex}
   #respawn button,#helpov button{margin-top:14px;background:var(--acc);color:#04211a;border:0;border-radius:8px;font:700 15px monospace;padding:12px 26px;cursor:pointer}
-  #helpov .box{max-width:640px;max-height:80vh;overflow:auto;background:#0d151b;border:1px solid #2c5148;border-radius:10px;padding:18px 22px;font-size:13px;line-height:1.75}
-  #helpov h2{color:var(--acc);font-size:16px;margin-bottom:8px}
+  #helpov{padding:12px}
+  #helpov .box{width:min(760px,100%);max-height:88vh;overflow:auto;touch-action:pan-y;overscroll-behavior:contain;background:#0d151b;border:1px solid #2c5148;border-radius:10px;padding:18px 22px;font-size:13px;line-height:1.55;box-shadow:0 20px 60px #0009}
+  #helpov .help-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  #helpov .help-head button{margin:0;padding:5px 10px;min-width:36px}
+  #helpov h2{color:var(--acc);font-size:16px}
+  #helpov h3{color:var(--acc);font-size:12px;letter-spacing:1px;margin:14px 0 6px}
+  #helpov .help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:6px 18px}
+  #helpov .help-item{padding:5px 0;border-bottom:1px solid #20342f}
+  #helpov .hint{color:#91b6aa;margin-top:14px}
   #helpov kbd{background:#1c2c33;border:1px solid #3a5a52;border-radius:4px;padding:1px 6px;font-size:11px}
   .joy{position:fixed;bottom:calc(58px + env(safe-area-inset-bottom));width:120px;height:120px;border-radius:50%;z-index:7;
        background:rgba(20,40,36,.25);border:1px solid rgba(80,180,160,.35);display:none}
@@ -103,7 +114,6 @@
     <button id="w0" class="on">JDAM</button>
     <button id="w1">15KT</button>
     <button id="w2">BEAM</button>
-    <button id="fire">FIRE</button>
   </div>
   <div class="sep"></div>
   <div class="grp">
@@ -136,6 +146,7 @@
     <button id="bHelp">?</button>
   </div>
 </div>
+<button id="fire" type="button" aria-label="Fire selected weapon; hold for beam">FIRE<small>HOLD FOR BEAM · F</small></button>
 
 <div id="respawn">
   <div style="font-size:26px;color:#f66;letter-spacing:3px">CREW LOST</div>
@@ -143,23 +154,35 @@
   <button id="btnRespawn">RESPAWN</button>
 </div>
 
-<div id="helpov">
+<div id="helpov" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-hidden="true">
   <div class="box">
-    <h2>VOXEL COPTER — MANUAL</h2>
-    <div>
-      <kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> pitch &nbsp; <kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> roll<br>
-      <kbd>Q</kbd>/<kbd>E</kbd> climb/descend (also in hover assist) &nbsp; <kbd>,</kbd>/<kbd>.</kbd> or <kbd>J</kbd>/<kbd>L</kbd> yaw &nbsp; <kbd>Space</kbd> hover-assist<br>
-      <kbd>1 2 3</kbd> weapon select &nbsp; <kbd>F</kbd> fire / hold for beam &nbsp; <kbd>V</kbd> camera &nbsp; <kbd>T</kbd> FLIR &nbsp; <kbd>R</kbd> reset heli<br>
-      <kbd>mouse wheel</kbd> zoom &nbsp; <kbd>right-drag</kbd> look around &nbsp; <kbd>Esc</kbd> close this<br><br>
-      <b style="color:var(--acc)">WEAPONS</b><br>
-      · <b>JDAM</b> — GPS-guided 500lb bomb. Gravity-fed, big crater.<br>
-      · <b>15KT</b> — tactical nuclear weapon. Fireball, mushroom cloud, shockwave, glassed crater. Do not stand close.<br>
-      · <b>BEAM</b> — nose particle beam. Cuts terrain, vaporizes anything on the line. Watch the heat bar.<br><br>
-      <b style="color:var(--acc)">WORLD</b><br>
-      · Bottom strip: weapon / FLIR / camera / hover / weather / time-of-day / sound / new world.<br>
-      · Time auto-cycles day→night unless paused; drag the slider to scrub.<br>
-      · Touch devices: left stick = pitch/roll, right stick = thrust/yaw, FIRE in the strip.
+    <div class="help-head"><h2 id="helpTitle">VOXEL COPTER — CONTROLS</h2><button id="btnHelpClose" type="button" aria-label="Close controls">×</button></div>
+    <h3>FLIGHT</h3>
+    <div class="help-grid">
+      <div class="help-item"><kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> — pitch forward/back</div>
+      <div class="help-item"><kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> — roll left/right</div>
+      <div class="help-item"><kbd>Q</kbd>/<kbd>E</kbd> — climb/descend, including in hover assist</div>
+      <div class="help-item"><kbd>J</kbd>/<kbd>L</kbd> or <kbd>,</kbd>/<kbd>.</kbd> — yaw</div>
+      <div class="help-item"><kbd>Space</kbd> — toggle hover assist</div>
+      <div class="help-item"><kbd>R</kbd> — reset helicopter</div>
     </div>
+    <h3>WEAPONS &amp; CAMERA</h3>
+    <div class="help-grid">
+      <div class="help-item"><kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> — JDAM / 15KT / BEAM</div>
+      <div class="help-item"><kbd>F</kbd> — drop selected bomb; hold for beam</div>
+      <div class="help-item"><kbd>V</kbd> — chase/cockpit camera</div>
+      <div class="help-item"><kbd>T</kbd> — toggle FLIR thermal view</div>
+      <div class="help-item"><kbd>mouse wheel</kbd> — zoom chase camera</div>
+      <div class="help-item"><kbd>right-drag</kbd> — orbit chase camera</div>
+    </div>
+    <h3>WORLD &amp; TOUCH</h3>
+    <div class="help-grid">
+      <div class="help-item">Large FIRE button — drop a bomb; hold for beam. Bottom strip — weapons, FLIR, camera, hover, sound, reset, and new world</div>
+      <div class="help-item">Weather menu — clear, fog, rain, snow, or storm</div>
+      <div class="help-item">Time slider — choose time of day; <b>▶/⏸</b> toggles the day/night cycle</div>
+      <div class="help-item">Touch: left stick — pitch/roll; right stick — climb/yaw; FIRE button — shoot</div>
+    </div>
+    <div class="hint"><kbd>H</kbd> toggles this help. <kbd>Esc</kbd>, ×, or a tap outside closes it. Flight pauses while help is open.</div>
   </div>
 </div>
 <div id="err"></div>
@@ -305,7 +328,8 @@ const waterTex = (function(){
 })();
 const waterMat = new THREE.MeshLambertMaterial({map:waterTex,transparent:true,opacity:.82,color:0x9fd0e8});
 const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(W*2,W*2), waterMat);
-waterMesh.rotation.x=-Math.PI/2; scene.add(waterMesh);
+// Keep the water above zero-height terrain tiles so their coplanar faces cannot flicker.
+waterMesh.rotation.x=-Math.PI/2; waterMesh.position.y=0.35; scene.add(waterMesh);
 const waterHeat = new THREE.Mesh(new THREE.PlaneGeometry(W*2,W*2), new THREE.MeshBasicMaterial({color:0x0d0d0d}));
 waterHeat.rotation.x=-Math.PI/2; waterHeat.position.y=0.05; heatScene.add(waterHeat);
 
@@ -1205,18 +1229,34 @@ function sndBoom(vol){
 
 /* ============== INPUT ============== */
 const keys={};
+const helpOverlay=document.getElementById('helpov');
+function showHelp(open){
+  helpOverlay.classList.toggle('show',open);
+  helpOverlay.setAttribute('aria-hidden',String(!open));
+  if(open){
+    Object.keys(keys).forEach(code=>keys[code]=false);
+    firing=false;
+    document.getElementById('btnHelpClose').focus();
+  } else if(helpOverlay.contains(document.activeElement)) document.activeElement.blur();
+}
 addEventListener('keydown',e=>{
+  if(e.code==='KeyH'){
+    e.preventDefault();
+    if(!e.repeat) showHelp(!helpOverlay.classList.contains('show'));
+    return;
+  }
+  if(e.code==='Escape' && helpOverlay.classList.contains('show')){ e.preventDefault(); showHelp(false); return; }
+  if(helpOverlay.classList.contains('show')){ e.preventDefault(); return; }
   keys[e.code]=true;
+  if(e.repeat && ['Space','KeyV','KeyT','KeyR'].includes(e.code)) return;
   if(e.code==='Space'){ setHover(!heliState.hover); e.preventDefault(); }
   if(e.code==='Digit1') setWeapon(0);
   if(e.code==='Digit2') setWeapon(1);
   if(e.code==='Digit3') setWeapon(2);
-  if(e.code==='KeyF') firing=true;
+  if(e.code==='KeyF'){ firing=true; if(!e.repeat && weapon!==2) fireWeapon(); }
   if(e.code==='KeyV') cycleView();
   if(e.code==='KeyT') setFlir(!flirOn);
   if(e.code==='KeyR') respawn();
-  if(e.code==='KeyH') document.getElementById('helpov').classList.toggle('show');
-  if(e.code==='Escape') document.getElementById('helpov').classList.remove('show');
   if(e.code.indexOf('Arrow')===0) e.preventDefault();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; if(e.code==='KeyF') firing=false; });
@@ -1272,8 +1312,9 @@ $('bCycle').onclick=()=>{ autoCycle=!autoCycle; $('bCycle').textContent=autoCycl
 $('bSnd').onclick=()=>{ audioOn=!audioOn; $('bSnd').classList.toggle('on',audioOn); if(audioOn){ initAudio(); if(actx&&actx.state==='suspended')actx.resume(); } if(master) master.gain.value=audioOn?0.5:0; };
 $('bNew').onclick=()=>{ seed=(Math.random()*1e9)|0; regen(); toast('NEW WORLD #'+seed); };
 $('bHeli').onclick=()=>respawn();
-$('bHelp').onclick=()=>$('helpov').classList.add('show');
-$('helpov').onclick=e=>{ if(e.target.id==='helpov') $('helpov').classList.remove('show'); };
+$('bHelp').onclick=()=>showHelp(true);
+$('btnHelpClose').onclick=()=>showHelp(false);
+$('helpov').onclick=e=>{ if(e.target.id==='helpov') showHelp(false); };
 $('btnRespawn').onclick=()=>respawn();
 document.addEventListener('pointerdown',()=>{ if(actx&&actx.state==='suspended') actx.resume(); });
 
@@ -1568,7 +1609,7 @@ function loop(){
   const t=performance.now()/1000;
   const dt=Math.min(0.05, t-last); last=t;
   now=t;
-  if(document.hidden) return;
+  if(document.hidden || helpOverlay.classList.contains('show')) return;
 
   updateHeli(dt);
   dropCd=Math.max(0,dropCd-dt);
