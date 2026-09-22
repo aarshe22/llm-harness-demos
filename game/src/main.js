@@ -32,6 +32,79 @@ const BRICKS = [
 ];
 const BED_TOP = -2.2;
 
+/* ---- temporary fall-debug module: toggled with the 🐞 button, F9, or
+   window.DBG.toggle(). Ring buffer on window.DBG.buf; export with
+   window.DBG.dump() (copy to clipboard) — send the text back for analysis.
+   Only samples while on; costs one Date.now() per frame when off. ---- */
+const DBG = {
+  on: false,
+  buf: [],
+  cap: 4000,
+  evts: [],
+  t0: typeof performance !== 'undefined' ? performance.now() : 0,
+  _s: 0,
+  log(tag, d) {
+    if (!this.on) return;
+    const t = Math.round(performance.now() - this.t0);
+    this.evts.push(`${t}ms ${tag}`);
+    if (this.evts.length > 400) this.evts.shift();
+    this.sample(tag, d);
+  },
+  sample(force, extra) {
+    if (!this.on) return;
+    const g = window.GAME;
+    if (!g || !g.player) return;
+    if (!force && this._s++ % 2) return; // ~30 Hz when on
+    const p = g.player, W = g.world;
+    const gy = p.groundTopAt(p.pos.x, p.pos.z, p.pos.y - 0.12);
+    const surf = W.surfaceTopAny(p.pos.x, p.pos.z);
+    const ev = this.evts.length ? this.evts[this.evts.length - 1] : '-';
+    this.buf.push([
+      Math.round(performance.now() - this.t0),
+      +p.pos.x.toFixed(2), +p.pos.y.toFixed(3), +p.pos.z.toFixed(2),
+      +p.vel.y.toFixed(1),
+      W.inHouse ? 1 : 0,
+      p.grounded ? 1 : 0,
+      gy === -Infinity ? null : +gy.toFixed(2),
+      surf === -Infinity ? null : +surf.toFixed(2),
+      +p.pos.y.toFixed(2) < -0.55 ? 'LOW' : '',
+      extra || '',
+      ev,
+    ].join(' '));
+    if (this.buf.length > this.cap) this.buf.shift();
+    if (this.buf.length % 300 === 0 && typeof console !== 'undefined') {
+      console.warn(`[dbg] ${this.buf.length} rows; last: ${this.buf[this.buf.length - 1]}`);
+    }
+  },
+  dump() {
+    const txt = 't x y z vgy inH gr ground surf flag extra evt\n' + this.buf.join('\n');
+    console.log(`[dbg] ${this.buf.length} rows`);
+    if (typeof copy === 'function') {
+      try { copy(txt); return `copied ${this.buf.length} rows to clipboard`; } catch (e) { /* fall through */ }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(
+        () => console.log('[dbg] copied to clipboard'),
+        () => { window.__dbgTxt = txt; console.warn('[dbg] clipboard blocked — window.__dbgTxt set instead'); }
+      );
+      return `copying ${this.buf.length} rows…`;
+    }
+    window.__dbgTxt = txt;
+    return 'window.__dbgTxt set (open devtools and run copy(window.__dbgTxt))';
+  },
+  toggle() {
+    this.on = !this.on;
+    if (this.on) { this.buf = []; this.evts = []; this.t0 = performance.now(); }
+    const b = document.getElementById('dbg-toggle');
+    if (b) { b.classList.toggle('on', this.on); b.textContent = this.on ? '🐞 ON' : '🐞'; }
+    const c = document.getElementById('dbg-copy');
+    if (c) c.style.display = this.on ? 'block' : 'none';
+    console.log(`[dbg] logging ${this.on ? 'ON' : 'OFF'}`);
+    return this.on;
+  },
+};
+window.DBG = DBG;
+
 function hash(x, z) {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
   return s - Math.floor(s);
@@ -2075,6 +2148,7 @@ class Player {
     // <1.35 so legitimately standing under bridge decks (top ~1.93) is unaffected.
     const surf = this.world.surfaceTopAny(this.pos.x, this.pos.z);
     if (surf > this.pos.y + 0.06 && surf - this.pos.y < 1.35) {
+      if (DBG.on) DBG.log('EJECT', `was_y=${this.pos.y.toFixed(2)} surf=${surf.toFixed(2)}`);
       this.pos.y = surf;
       this.vel.y = 0;
       this.grounded = true;
@@ -2082,6 +2156,7 @@ class Player {
     // below-world safety net — active outdoors AND inside interiors, whose
     // respawn branch snaps back onto the room floor instead of the map
     if (this.pos.y < -3.5) {
+      if (DBG.on) DBG.log('FELL', 'below -3.5');
       this.world.respawnPlayer(this);
       if (this.fellHook) this.fellHook();
     }
@@ -3620,6 +3695,7 @@ class Game {
       );
       this.player.vel.set(0, 0, 0);
       this.player.grounded = true;
+      DBG.log('EXIT', `spot=${spot.x.toFixed(1)},${spot.y.toFixed(2)},${spot.z.toFixed(1)}`);
       this.orbit.wantDist = 11;
       this.toast('Back outside', 'good');
       return;
@@ -3639,6 +3715,7 @@ class Game {
     this.orbit.wantDist = 6.5;
     this.ghost.visible = false;
     const tip = { home: 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.' }[it.type] || '';
+    DBG.log('ENTER', it.type);
     this.toast(`Inside the ${it.type}! ${tip} Green pad = exit.`, 'good');
   }
 
@@ -3686,6 +3763,7 @@ class Game {
     const move = { x: fwd.x * -mz + right.x * mx, z: fwd.z * -mz + right.z * mx };
 
     this.player.update(dt, move, this.jumpQueued > 0);
+    DBG.sample();
     this.fireCd = Math.max(0, this.fireCd - dt);
     this.tickWeaponRig(dt);
     if (this.mode === 'weapon' && this.holdNdc && this.pointers.size > 0) this.tryFire(this.holdNdc);
@@ -3761,3 +3839,45 @@ window.addEventListener('error', (e) => {
 const game = new Game();
 window.GAME = game;
 game.debugBricks = BRICKS; // exposed for smoke tests
+
+/* Debug-mode toggle button (temporary fall-investigation tool).
+   Click 🐞 or press F9 to start/stop logging; call window.DBG.dump() in the
+   console to copy the captured rows to the clipboard. */
+(function mountDebugButton() {
+  const style = document.createElement('style');
+  style.textContent = `
+    #dbg-toggle { position: fixed; top: 10px; right: 10px; z-index: 9999;
+      font: 14px/1 system-ui, sans-serif; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid rgba(0,0,0,.35); background: rgba(255,255,255,.85);
+      color: #222; cursor: pointer; opacity: .55; }
+    #dbg-toggle:hover { opacity: 1; }
+    #dbg-toggle.on { background: #ffd23f; opacity: 1; font-weight: 700; }
+    #dbg-copy { position: fixed; top: 44px; right: 10px; z-index: 9999;
+      font: 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 8px;
+      border: 1px solid rgba(0,0,0,.35); background: rgba(255,255,255,.85);
+      cursor: pointer; display: none; }
+    #dbg-toggle.on + #dbg-copy { display: block; }`;
+  document.head.appendChild(style);
+  const btn = document.createElement('button');
+  btn.id = 'dbg-toggle';
+  btn.type = 'button';
+  btn.title = 'Toggle fall-debug logging (F9)';
+  btn.textContent = '🐞';
+  const copyBtn = document.createElement('button');
+  copyBtn.id = 'dbg-copy';
+  copyBtn.type = 'button';
+  copyBtn.title = 'Copy the captured debug rows to the clipboard';
+  copyBtn.textContent = '📋 copy log';
+  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); DBG.toggle(); });
+  copyBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const msg = DBG.dump();
+    copyBtn.textContent = typeof msg === 'string' ? msg.slice(0, 24) : 'copied';
+    setTimeout(() => { copyBtn.textContent = '📋 copy log'; }, 2500);
+  });
+  document.body.appendChild(btn);
+  document.body.appendChild(copyBtn);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'F9') { e.preventDefault(); DBG.toggle(); }
+  }, true);
+})();
