@@ -2034,6 +2034,10 @@ class Player {
     this.vel.x += (move.x * speed - this.vel.x) * Math.min(1, dt * 12);
     this.vel.z += (move.z * speed - this.vel.z) * Math.min(1, dt * 12);
     this.vel.y -= 26 * dt;
+    // Terminal velocity must stay under one slab-thickness per frame (~ -19 m/s
+    // at the 0.05s dt cap) or fast frames tunnel straight through thin solids
+    // like road slabs and interior floors — the classic "fall through the floor".
+    this.vel.y = Math.max(this.vel.y, -18);
 
     const ground = this.groundTopAt(this.pos.x, this.pos.z, this.pos.y - 0.12);
     if (ground > -Infinity && this.vel.y <= 0 && this.pos.y <= ground + 1e-3) {
@@ -3574,8 +3578,37 @@ class Game {
       const a = this.nearDoor;
       this.world.exitHouse();
       this.applyOutdoorFog();
-      this.player.pos.set(a.world.x + Math.sin(a.yaw) * 1.0, 0.05, a.world.z + Math.cos(a.yaw) * 1.0);
+      // Place outside with guaranteed solid support: probe straight down at
+      // the ideal pad spot; if it's enclosed (inside wall volume, no floor)
+      // spiral outward until open-air above ground. Teleporting into terrain
+      // or into a building's wall previously trapped the player under slabs,
+      // where a jump then fell them clean through the world.
+      const px = a.world.x + Math.sin(a.yaw) * 1.0;
+      const pz = a.world.z + Math.cos(a.yaw) * 1.0;
+      let spot = null;
+      for (let ring = 0; ring <= 6 && !spot; ring++) {
+        const rr = ring * 0.85;
+        const steps = ring === 0 ? 1 : 6 * ring;
+        for (let q = 0; q < steps && !spot; q++) {
+          const ang = (q / steps) * Math.PI * 2;
+          const cx = px + Math.cos(ang) * rr;
+          const cz = pz + Math.sin(ang) * rr;
+          // feet just above 0: ground slab (top y=0) then counts, roofs above don't
+          const gY = this.player.groundTopAt(cx, cz, 0.2);
+          if (!Number.isFinite(gY) || gY <= -0.5) continue;
+          if (this.player.blocked(cx, cz, gY + 0.02, gY + this.player.height, 0)) continue;
+          spot = { x: cx, z: cz, y: gY };
+        }
+      }
+      if (!spot) spot = { x: px, z: pz, y: 0 };
+      const Hw = this.world.half;
+      this.player.pos.set(
+        clamp(spot.x, -Hw + 1, Hw - 1),
+        spot.y + 0.02,
+        clamp(spot.z, -Hw + 1, Hw - 1)
+      );
       this.player.vel.set(0, 0, 0);
+      this.player.grounded = true;
       this.orbit.wantDist = 11;
       this.toast('Back outside', 'good');
       return;
