@@ -394,7 +394,7 @@ function setupInput(canvas) {
   function meterLoop(t) {
     if (!meterOn) return;
     const el = (t - meterT0) / 1000;
-    const v = (Math.sin(el * 2 * Math.PI * 1.3 - Math.PI / 2) + 1) / 2 * 100;
+    const v = (Math.sin(el * 2 * Math.PI * 0.65 - Math.PI / 2) + 1) / 2 * 100;
     GAME.state.power = v;
     $('power-mark').style.left = v + '%';
     $('power-fill').style.width = v + '%';

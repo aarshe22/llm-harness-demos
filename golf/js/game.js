@@ -983,6 +983,13 @@ function clsAt(x, z) {
   const i = model.cellOf(x, z);
   return i == null ? CLS.OUT : model.cls[i];
 }
+// The rendered course is smaller than the data grid. Treat its edge as out of
+// bounds so a misdirected shot cannot continue through invisible terrain.
+function onRenderedCourse(x, z) {
+  if (!model) return false;
+  const i = model.cellOf(x, z);
+  return i != null && model.play[i] === 1;
+}
 function yardsToPin(x, z) {
   return Math.max(1, Math.round(Math.hypot(x - model.pinX, z - model.pinZ)));
 }
@@ -1215,6 +1222,7 @@ function stepPhysics(dt) {
       b.vx += px * curve; b.vz += pz * curve;
     }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+    if (!onRenderedCourse(b.x, b.z)) return outOfBounds();
     const gh = hAt(b.x, b.z);
     if (b.y - BALL_R <= gh && b.vy < 0) {
       const c = clsAt(b.x, b.z);
@@ -1239,8 +1247,8 @@ function stepPhysics(dt) {
       if (b.vy < 2.6 || state.bounces > 4) { b.vy = 0; state.phase = 'roll'; }
       return;
     }
-    if (clsAt(b.x, b.z) === CLS.OUT) return outOfBounds();
   } else if (state.phase === 'roll') {
+    if (!onRenderedCourse(b.x, b.z)) return outOfBounds();
     const c = clsAt(b.x, b.z);
     if (c === CLS.OUT) return outOfBounds();
     if (c === CLS.WTR) return splash(b.x, b.z);
@@ -1259,6 +1267,7 @@ function stepPhysics(dt) {
       b.vx *= ns / sp; b.vz *= ns / sp;
     }
     b.x += b.vx * dt; b.z += b.vz * dt;
+    if (!onRenderedCourse(b.x, b.z)) return outOfBounds();
     const gh = hAt(b.x, b.z);
     if (gh + BALL_R > b.y + 0.6 && Math.hypot(b.vx, b.vz) > 6) {
       state.phase = 'flight'; b.y = gh + BALL_R + 0.05; return;
