@@ -8,10 +8,17 @@
    - police: booking desk, barred holding cell, evidence wall, mug-shot chart
    - fire:   apparatus bay with a parked brick fire engine, kit lockers,
              sliding pole + mezzanine, alarm bell
+   - church: nave of pews facing a raised chancel: lectern with an open book,
+             LEGO pastor behind it, LEGO Jesus on a big cross on the wall
+             behind, candles, font, bell, stained-glass windows
+   - store:  convenience store — two grocery rows, cash-register counter,
+             slushie machine at the back (tap flavours, press the button to
+             pour from the spigot), fridge, chips, snacks, magazines, bins
    A scene is built lazily on first entry and kept in a cache; the game shows
    exactly one at a time near the origin. */
 import * as THREE from 'three';
 import { BR, CY, SP, CO, mkMat, merged, addBox, addCyl, part } from './brickkit.js';
+import { sfx } from './sfx.js';
 
 /* Per-type room footprint (door always centered on the +z wall). */
 export const INTERIOR_DEFS = {
@@ -24,7 +31,9 @@ export const INTERIOR_DEFS = {
   farm: { x0: -5.5, x1: 5.5, z0: -4.5, z1: 4.5, h: 3.6, doorHalf: 0.72, doorZ: 1.05, spawn: { x: 0, y: 0.02, z: 2.9 }, door: { x: 0, z: 4.4 } },
   school: { x0: -7.5, x1: 7.5, z0: -5.5, z1: 5.5, h: 4.0, doorHalf: 0.75, doorZ: 1.05, spawn: { x: 0, y: 0.02, z: 3.9 }, door: { x: 0, z: 5.4 } },
   police: { x0: -6, x1: 6, z0: -5, z1: 5, h: 3.5, doorHalf: 0.68, doorZ: 1.0, spawn: { x: 0, y: 0.02, z: 3.4 }, door: { x: 0, z: 4.9 } },
-  fire: { x0: -6, x1: 6, z0: -5.5, z1: 5.5, h: 4.2, doorHalf: 0.72, doorZ: 1.05, spawn: { x: 0, y: 0.02, z: 3.9 }, door: { x: 0, z: 5.4 } }
+  fire: { x0: -6, x1: 6, z0: -5.5, z1: 5.5, h: 4.2, doorHalf: 0.72, doorZ: 1.05, spawn: { x: 0, y: 0.02, z: 3.9 }, door: { x: 0, z: 5.4 } },
+  church: { x0: -6.5, x1: 6.5, z0: -8, z1: 6, h: 5.2, doorHalf: 0.8, doorZ: 1.1, spawn: { x: 0, y: 0.02, z: 4.4 }, door: { x: 0, z: 5.9 } },
+  store: { x0: -5.5, x1: 5.5, z0: -7, z1: 5, h: 3.6, doorHalf: 0.9, doorZ: 1.05, spawn: { x: 0, y: 0.02, z: 3.4 }, door: { x: 0, z: 4.9 } }
 };
 
 const C = {
@@ -859,13 +868,582 @@ function sceneFire(group, D, ctx) {
 }
 
 /* ------------------------------------------------------------ entrypoint */
-const SCENES = { home: sceneHome, farm: sceneFarm, school: sceneSchool, police: scenePolice, fire: sceneFire };
+/* ----------------------------------------------------------- CHURCH type */
+function legoFig(mat, cloth, skin, opts = {}) {
+  // Minifig-scale person: legs, torso, arms, head — same proportions as life.js
+  const g = new THREE.Group();
+  const skinM = mat(skin), clothM = mat(cloth);
+  const dark = mat(0x22252b);
+  g.add(merged([addBox([], 0.17, 0.2, 0.19, -0.085, 0.1, 0)], clothM));
+  const legR = merged([addBox([], 0.17, 0.2, 0.19, 0.085, 0.1, 0)], clothM);
+  g.add(legR);
+  const torso = merged([addBox([], 0.34, 0.26, 0.2, 0, 0.33, 0)], opts.robe ? clothM : clothM);
+  g.add(torso);
+  // arms pivot at the shoulder: offset geometry inside a group at the shoulder
+  const armL = new THREE.Group();
+  armL.position.set(-0.225, 0.44, 0);
+  armL.add(merged([addBox([], 0.11, 0.22, 0.13, 0, -0.11, 0)], skinM));
+  const armR = new THREE.Group();
+  armR.position.set(0.225, 0.44, 0);
+  armR.add(merged([addBox([], 0.11, 0.22, 0.13, 0, -0.11, 0)], skinM));
+  g.add(armL, armR);
+  const head = merged([addBox([], 0.24, 0.2, 0.21, 0, 0.57, 0)], skinM);
+  g.add(head);
+  const eyes = merged([
+    addBox([], 0.045, 0.045, 0.03, -0.06, 0.59, -0.106),
+    addBox([], 0.045, 0.045, 0.03, 0.06, 0.59, -0.106)
+  ], dark);
+  g.add(eyes);
+  if (opts.hair) g.add(merged([addBox([], 0.26, 0.07, 0.23, 0, 0.7, 0)], mat(opts.hair)));
+  if (opts.beard) g.add(merged([addBox([], 0.2, 0.09, 0.06, 0, 0.5, -0.11)], mat(opts.beard)));
+  if (opts.collar) g.add(merged([addBox([], 0.28, 0.06, 0.22, 0, 0.47, 0)], mat(0xffffff)));
+  g.userData.parts = { armL, armR, legL: g.children[0], legR, torso, head };
+  return g;
+}
+
+function sceneChurch(group, D, ctx) {
+  const { solid, mat } = ctx;
+  const wood = 0x6b4025, woodDark = 0x4e2e1a, stone = 0xe4dccb, gold = 0xffd23f;
+
+  // carpeted nave runner up the center aisle (mesh only, no collider)
+  const runner = merged([addBox([], 1.5, 0.05, D.z1 - D.z0 - 3.2, 0, 0.125, -1)], mat(0x8d2f3f));
+  runner.position.z = 0.2;
+  group.add(runner);
+
+  // ---- raised chancel platform at the -z end (walkable: 0.3 step-up) ----
+  const chancel = merged([addBox([], D.x1 - D.x0 - 1.2, 0.3, 3.6, 0, 0.15, 0)], mat(stone));
+  chancel.position.set(0, 0, D.z0 + 1.9);
+  group.add(chancel);
+  solid(D.x0 + 0.6, 0, D.z0 + 0.1, D.x1 - 0.6, 0.3, D.z0 + 3.7);
+  const step = merged([addBox([], 3.2, 0.15, 0.6, 0, 0.075, 0)], mat(stone));
+  step.position.set(0, 0, D.z0 + 4.0);
+  group.add(step);
+  solid(-1.6, 0, D.z0 + 3.7, 1.6, 0.15, D.z0 + 4.3);
+
+  // ---- altar + cloth + candles ----
+  const altar = merged([addBox([], 1.9, 0.9, 0.9, 0, 0.45, 0), addBox([], 2.0, 0.12, 1.0, 0, 0.96, 0)], mat(stone));
+  altar.position.set(0, 0.3, D.z0 + 1.3);
+  group.add(altar);
+  solid(-0.95, 0.3, D.z0 + 0.8, 0.95, 1.26, D.z0 + 1.8);
+  const cloth = merged([addBox([], 1.95, 0.05, 0.95, 0, 1.03, 0), addBox([], 1.95, 0.34, 0.04, 0, 0.83, -0.48)], mat(0xffffff));
+  cloth.position.set(0, 0.3, D.z0 + 1.3);
+  group.add(cloth);
+
+  const flameMat = mkMat(0xffb347, { emissive: 0xff9f1c, emissiveIntensity: 1.4, transparent: true, opacity: 0.95 });
+  const flames = [];
+  for (const sx of [-0.62, 0.62]) {
+    const cndl = merged([addCyl([], 0.045, 0.3, 0, 0.15, 0), addCyl([], 0.08, 0.05, 0, 0.025, 0)], mat(0xfff6e8));
+    cndl.position.set(sx, 1.28, D.z0 + 1.3);
+    group.add(cndl);
+    const fl = new THREE.Mesh(SP.clone(), flameMat);
+    fl.scale.set(0.04, 0.075, 0.04);
+    fl.position.set(sx, 1.62, D.z0 + 1.3);
+    group.add(fl);
+    flames.push(fl);
+  }
+
+  // ---- big cross + LEGO Jesus on the back wall behind the pastor ----
+  const cross = new THREE.Group();
+  cross.add(merged([addBox([], 0.24, 3.7, 0.2, 0, 0, 0)], mat(woodDark)));
+  cross.add(merged([addBox([], 2.5, 0.24, 0.2, 0, 0.75, 0)], mat(woodDark)));
+  cross.add(merged([addBox([], 0.6, 0.24, 0.06, 0, 1.6, -0.02)], mat(0xf6efe3)));   // INRI plaque
+  const jesus = new THREE.Group();
+  const jskin = 0xd69c6d, robe = 0xf2ead6;
+  jesus.add(merged([addBox([], 0.3, 0.42, 0.22, 0, 0.1, 0)], mat(robe)));            // torso
+  jesus.add(merged([addBox([], 0.26, 0.22, 0.24, 0, 0.44, 0)], mat(jskin)));         // head
+  jesus.add(merged([addBox([], 0.28, 0.1, 0.26, 0, 0.56, 0)], mat(0x5b3a24)));       // hair
+  jesus.add(merged([addBox([], 0.04, 0.04, 0.03, -0.06, 0.45, -0.13)], mat(0x22252b)));
+  jesus.add(merged([addBox([], 0.04, 0.04, 0.03, 0.06, 0.45, -0.13)], mat(0x22252b)));
+  jesus.add(merged([addBox([], 0.36, 0.14, 0.24, 0, -0.16, 0)], mat(0xc0392b)));     // loincloth
+  const armGeoL = merged([addBox([], 0.85, 0.13, 0.14, -0.5, 0, 0)], mat(jskin));
+  const armGeoR = merged([addBox([], 0.85, 0.13, 0.14, 0.5, 0, 0)], mat(jskin));
+  jesus.add(armGeoL, armGeoR);
+  jesus.add(merged([addBox([], 0.12, 0.5, 0.13, -0.09, -0.47, 0)], mat(jskin)));
+  jesus.add(merged([addBox([], 0.12, 0.5, 0.13, 0.09, -0.47, 0)], mat(jskin)));
+  jesus.add(merged([addCyl([], 0.17, 0.045, 0, 0.585, 0)], mat(gold)));              // crown of thorns (halo gold)
+  jesus.position.set(0, 0.32, -0.19);   // sits proud of the cross beams
+  cross.add(jesus);
+  cross.position.set(0, 3.05, D.z0 + 0.35);
+  group.add(cross);
+
+  // ---- lectern (ambo) with open book, LEGO pastor standing behind it ----
+  const lect = new THREE.Group();
+  lect.add(merged([addBox([], 0.16, 1.0, 0.16, 0, 0.5, 0)], mat(wood)));
+  lect.add(merged([addBox([], 0.7, 0.5, 0.09, 0, 1.12, 0)], mat(wood)));
+  lect.add(merged([addBox([], 0.62, 0.05, 0.4, 0, 0.98, 0.06)], mat(wood)));
+  lect.add(merged([addBox([], 0.28, 0.04, 0.32, -0.16, 1.01, 0.05)], mat(0xfaf7ef)), );
+  const bookR = merged([addBox([], 0.28, 0.04, 0.32, 0.16, 1.01, 0.05)], mat(0xfaf7ef));
+  bookR.rotation.z = 0;
+  const bookL = lect.children[3];
+  bookL.rotation.z = 0.16; bookR.rotation.z = -0.16;
+  lect.add(bookR);
+  lect.add(merged([addBox([], 0.66, 0.06, 0.06, 0, 0.9, 0.16)], mat(gold)));
+  lect.position.set(0, 0.3, D.z0 + 3.1);
+  group.add(lect);
+  solid(-0.42, 0.3, D.z0 + 2.85, 0.42, 1.35, D.z0 + 3.35);
+
+  const pastor = legoFig(mat, 0x22252b, 0xffcc99, { hair: 0x6b6b6b, beard: 0xd9d9d9, collar: true });
+  pastor.scale.setScalar(1.25);
+  pastor.position.set(0, 0.3, D.z0 + 3.75);   // behind the lectern, under the cross
+  group.add(pastor);
+  solid(-0.4, 0.3, D.z0 + 3.45, 0.4, 1.3, D.z0 + 4.05);
+
+  // ---- rows of pews, two columns split by the center aisle ----
+  const pewSolid = (x0, x1, z) => {
+    solid(x0, 0, z - 0.28, x1, 0.52, z + 0.28);            // seat block
+    solid(x0, 0.52, z + 0.2, x1, 1.12, z + 0.32);          // backrest
+  };
+  for (const rowZ of [-2.6, -1.1, 0.4, 1.9]) {
+    for (const [x0, x1] of [[-5.3, -1.4], [1.4, 5.3]]) {
+      const pew = new THREE.Group();
+      const seat = merged([addBox([], x1 - x0, 0.1, 0.52, 0, 0.47, 0)], mat(wood));
+      seat.position.z = rowZ;
+      const back = merged([addBox([], x1 - x0, 0.62, 0.12, 0, 0.81, 0)], mat(wood));
+      back.position.z = rowZ + 0.26;
+      const posts = merged([
+        addBox([], 0.14, 1.0, 0.66, -(x1 - x0) / 2 + 0.07, 0.5, 0),
+        addBox([], 0.14, 1.0, 0.66, (x1 - x0) / 2 - 0.07, 0.5, 0)
+      ], mat(woodDark));
+      posts.position.z = rowZ;
+      pew.add(seat, back, posts);
+      group.add(pew);
+      pewSolid(x0, x1, rowZ);
+    }
+  }
+  // hymnal racks on the aisle-side ends of the front pews
+  for (const sx of [-1.15, 1.15]) {
+    const rack = merged([addBox([], 0.3, 0.34, 0.1, 0, 0.85, 0)], mat(woodDark));
+    rack.position.set(sx, 0, -2.6);
+    group.add(rack);
+    const book = merged([addBox([], 0.22, 0.26, 0.06, 0, 0, 0)], mat(0x7d1d2b));
+    book.position.set(sx, 0.85, -2.66);
+    group.add(book);
+  }
+
+  // ---- baptismal font near the door, candle stands either side of the step ----
+  const font = merged([
+    addCyl([], 0.22, 0.85, 0, 0.42, 0), addCyl([], 0.42, 0.16, 0, 0.93, 0), addCyl([], 0.34, 0.1, 0, 1.02, 0)
+  ], mat(stone));
+  font.position.set(D.x0 + 1.5, 0, D.z1 - 1.7);
+  group.add(font);
+  solid(D.x0 + 1.0, 0, D.z1 - 2.2, D.x0 + 2.0, 1.05, D.z1 - 1.2);
+
+  const standMat = mat(gold, { metalness: 0.5, roughness: 0.35 });
+  for (const sx of [-2.4, 2.4]) {
+    const stand = merged([addCyl([], 0.05, 1.5, 0, 0.75, 0), addCyl([], 0.16, 0.06, 0, 0.03, 0)], standMat);
+    stand.position.set(sx, 0, D.z0 + 4.5);
+    group.add(stand);
+    solid(sx - 0.2, 0, D.z0 + 4.3, sx + 0.2, 1.5, D.z0 + 4.7);
+    const fl = new THREE.Mesh(SP.clone(), flameMat);
+    fl.scale.set(0.05, 0.09, 0.05);
+    fl.position.set(sx, 1.62, D.z0 + 4.5);
+    group.add(fl);
+    flames.push(fl);
+  }
+
+  // ---- stained-glass windows inset on both side walls + rose over the door ----
+  const glassCols = [0x35a7ff, 0xe8402a, 0xffd23f, 0x43d46c, 0x9b5de5];
+  let gi = 0;
+  for (const wx of [D.x0 + 0.14, D.x1 - 0.14]) {
+    for (let j = 0; j < 4; j++) {
+      const gm = mkMat(glassCols[gi % glassCols.length], { emissive: glassCols[gi % glassCols.length], emissiveIntensity: 0.55, transparent: true, opacity: 0.85 });
+      gi++;
+      const pane = merged([addBox([], 0.06, 2.5, 1.1, 0, 0, 0), addBox([], 0.06, 0.5, 1.1, 0, 1.5, 0)], gm);
+      pane.position.set(wx, 2.6, D.z0 + 2.6 + j * 3.1);
+      group.add(pane);
+      const lead = merged([addBox([], 0.08, 3.0, 0.09, 0, 0, 0), addBox([], 0.08, 0.09, 1.1, 0, 0, 0)], mat(0x3b3f46));
+      lead.position.set(wx, 2.5, D.z0 + 2.6 + j * 3.1);
+      group.add(lead);
+    }
+  }
+  const rose = new THREE.Mesh(CY.clone().scale(0.85, 0.08, 0.85),
+    mkMat(0xffd23f, { emissive: 0xffb347, emissiveIntensity: 0.8, transparent: true, opacity: 0.9 }));
+  rose.rotation.x = Math.PI / 2;
+  rose.position.set(0, 4.4, D.z1 - 0.12);
+  group.add(rose);
+
+  // ---- hanging bell near the entry, gentle sway ----
+  const beam = merged([addBox([], 1.6, 0.14, 0.14, 0, 0, 0)], mat(woodDark));
+  beam.position.set(0, D.h - 0.5, D.z1 - 2.6);
+  group.add(beam);
+  const bellG = new THREE.Group();
+  bellG.add(merged([addCyl([], 0.02, 0.5, 0, 0.25, 0)], mat(0x9aa5b1)));
+  bellG.add(merged([addCyl([], 0.09, 0.09, 0, -0.04, 0), addCyl([], 0.2, 0.32, 0, -0.24, 0)], mat(gold)));
+  bellG.position.set(0, D.h - 0.58, D.z1 - 2.6);
+  group.add(bellG);
+
+  // ---- wall hanging + offering plate by the door ----
+  const tapestry = merged([addBox([], 1.1, 1.6, 0.05, 0, 0, 0), addBox([], 0.12, 0.9, 0.02, 0, 0.1, -0.03), addBox([], 0.55, 0.12, 0.02, 0, 0.3, -0.03)], mat(0x5b2c6f));
+  tapestry.position.set(D.x1 - 0.2, 2.7, D.z1 - 2.2);
+  group.add(tapestry);
+  const plate = new THREE.Mesh(CY.clone().scale(0.24, 0.05, 0.24), mat(gold, { metalness: 0.55, roughness: 0.3 }));
+  plate.position.set(D.x1 - 1.6, 1.0, D.z1 - 1.5);
+  const stool = merged([addBox([], 0.5, 0.95, 0.5, 0, 0.475, 0)], mat(woodDark));
+  stool.position.set(D.x1 - 1.6, 0, D.z1 - 1.5);
+  group.add(stool, plate);
+  solid(D.x1 - 1.9, 0, D.z1 - 1.8, D.x1 - 1.3, 1.0, D.z1 - 1.2);
+
+  const tick = (t, dt) => {
+    for (const fl of flames) {
+      fl.scale.y = 0.075 * (0.85 + Math.sin(t * 9 + fl.position.x * 7) * 0.2);
+    }
+    bellG.rotation.z = Math.sin(t * 0.9) * 0.06;
+    const p = pastor.userData.parts;
+    p.armR.rotation.x = -0.5 + Math.sin(t * 1.6) * 0.3;   // pastor gestures from the lectern
+  };
+  return { tick, tv: null, screenMesh: null };
+}
+
+/* ------------------------------------------------------------ STORE type */
+const SLUSH_FLAVORS = [
+  { name: 'Blue Raspberry', color: 0x2f9bd8 },
+  { name: 'Cherry', color: 0xd62828 },
+  { name: 'Grape', color: 0x9b5de5 },
+  { name: 'Orange', color: 0xff9f1c }
+];
+
+function sceneStore(group, D, ctx) {
+  const { solid, mat } = ctx;
+  const shelfGray = 0xb9c2cc, tileFloor = 0xe6ebf0;
+
+  const floorTile = merged([addBox([], D.x1 - D.x0 - 0.5, 0.05, D.z1 - D.z0 - 0.5, 0, 0.125, 0)], mat(tileFloor));
+  group.add(floorTile);
+
+  const canRow = (colors, x, y, z, dz, n, axis) => {
+    for (let i = 0; i < n; i++) {
+      const c = new THREE.Mesh(CY.clone().scale(0.09, 0.22, 0.09), mkMat(colors[i % colors.length]));
+      c.position.set(x + (axis === 'x' ? i * dz : 0), y, z + (axis === 'z' ? i * dz : 0));
+      group.add(c);
+    }
+  };
+
+  // ---- two grocery rows (gondolas) running front-to-back, stocked both sides ----
+  const buildRow = (cx) => {
+    const w = 1.1, z0 = -4.6, z1 = 0.6, len = z1 - z0, cz = (z0 + z1) / 2;
+    const body = merged([
+      addBox([], w, 1.7, 0.12, 0, 0.85, -len / 2), addBox([], w, 1.7, 0.12, 0, 0.85, len / 2),
+      addBox([], 0.12, 1.7, len, -w / 2 + 0.06, 0.85, 0), addBox([], 0.12, 1.7, len, w / 2 - 0.06, 0.85, 0),
+      addBox([], w, 0.1, len, 0, 0.05, 0)
+    ], mat(shelfGray));
+    body.position.set(cx, 0, cz);
+    group.add(body);
+    solid(cx - w / 2, 0, z0, cx + w / 2, 1.7, z1);
+    const shelfCols = [0xf8f9fa, 0xdde3e9];
+    for (let s = 0; s < 3; s++) {
+      const sy = 0.42 + s * 0.52;
+      const sh = merged([addBox([], w - 0.1, 0.06, len - 0.1, 0, 0, 0)], mat(shelfCols[s % 2]));
+      sh.position.set(cx, sy, cz);
+      group.add(sh);
+      // stock: cans, boxes, bottles and bags along every shelf, both faces
+      const cols = [0xe8402a, 0x35a7ff, 0x43d46c, 0xffd23f, 0x9b5de5, 0xff9f1c];
+      for (const side of [-1, 1]) {
+        const zx = side < 0 ? cx - w / 2 + 0.22 : cx + w / 2 - 0.22;
+        if (s === 0) canRow(cols, zx, sy + 0.17, z0 + 0.5, 0.42, 11, 'z');
+        else if (s === 1) {
+          for (let i = 0; i < 10; i++) {
+            const b = merged([addBox([], 0.26, 0.34, 0.22, 0, 0, 0)], mkMat(cols[(i + s) % cols.length]));
+            b.position.set(zx, sy + 0.2, z0 + 0.55 + i * 0.46);
+            group.add(b);
+          }
+        } else {
+          for (let i = 0; i < 9; i++) {
+            const bt = merged([addCyl([], 0.08, 0.34, 0, 0.17, 0), addCyl([], 0.035, 0.1, 0, 0.39, 0)], mkMat(0x3fae6a));
+            bt.position.set(zx, sy + 0.05, z0 + 0.6 + i * 0.52);
+            group.add(bt);
+          }
+        }
+      }
+    }
+    // endcap chip bags
+    for (let i = 0; i < 4; i++) {
+      const bag = merged([addBox([], 0.3, 0.42, 0.1, 0, 0, 0)], mkMat([0xffd23f, 0xe8402a, 0x2f7de1, 0x43d46c][i]));
+      bag.position.set(cx, 1.45, z1 - 0.35);
+      bag.rotation.x = -0.25;
+      group.add(bag);
+    }
+    // price tag strip
+    const tag = merged([addBox([], w, 0.12, 0.03, 0, 0, 0)], mat(0xffd23f));
+    tag.position.set(cx, 0.32, z1 + 0.02);
+    group.add(tag);
+  };
+  buildRow(-2.4);
+  buildRow(1.4);
+
+  // ---- produce table + fruit between the rows near the door ----
+  const prod = merged([addBox([], 1.6, 0.7, 1.5, 0, 0.35, 0), addBox([], 1.7, 0.08, 1.6, 0, 0.74, 0)], mat(0x8b5a2b));
+  prod.position.set(-0.5, 0, 2.6);
+  group.add(prod);
+  solid(-1.35, 0, 1.8, 0.35, 0.8, 3.35);
+  const fruits = [0xe8402a, 0xff9f1c, 0xffd23f, 0x43d46c];
+  for (let i = 0; i < 8; i++) {
+    const f = new THREE.Mesh(SP.clone(), mkMat(fruits[i % 4]));
+    f.scale.setScalar(0.11);
+    f.position.set(-1.1 + (i % 4) * 0.4, 0.86, 2.3 + Math.floor(i / 4) * 0.5);
+    group.add(f);
+  }
+  // banana bunch (stepped yellow slabs)
+  const banana = merged([addBox([], 0.5, 0.08, 0.16, 0, 0, 0), addBox([], 0.42, 0.08, 0.14, 0.06, 0.09, 0)], mat(0xf5d547));
+  banana.position.set(-0.5, 0.85, 3.0);
+  group.add(banana);
+
+  // ---- cash register counter with register, candy rack, gum, bags ----
+  const ctr = merged([
+    addBox([], 3.2, 0.95, 1.0, 0, 0.475, 0), addBox([], 3.3, 0.08, 1.1, 0, 0.99, 0),
+    addBox([], 3.2, 0.7, 0.1, 0, 1.33, -0.45)
+  ], mat(0x35688f));
+  ctr.position.set(3.4, 0, 2.8);
+  group.add(ctr);
+  solid(1.85, 0, 2.3, 4.95, 1.0, 3.3);
+  const reg = new THREE.Group();
+  reg.add(merged([addBox([], 0.7, 0.12, 0.55, 0, 0.06, 0)], mat(0x2b3440)));
+  reg.add(merged([addBox([], 0.7, 0.34, 0.34, 0, 0.28, -0.08)], mat(0x39444f)));
+  reg.add(merged([addBox([], 0.44, 0.2, 0.05, 0, 0.62, -0.16)], mkMat(0x7fe7a8, { emissive: 0x2f9e5f, emissiveIntensity: 0.7 })));
+  reg.add(merged([addBox([], 0.5, 0.06, 0.28, 0, 0.15, 0.18)], mat(0xcfd6dd)));  // keypad
+  reg.add(merged([addBox([], 0.62, 0.1, 0.4, 0, -0.05, 0.02)], mat(0xd9dee3)));  // drawer
+  reg.position.set(3.9, 1.03, 2.8);
+  group.add(reg);
+  // candy + gum racks at the counter, chip bag display, paper bags
+  for (let rI = 0; rI < 2; rI++) {
+    const rackBase = merged([addBox([], 0.5, 0.66, 0.3, 0, 0.33, 0)], mat(0xd62828));
+    rackBase.position.set(2.4, 1.03, 3.1);
+    if (rI === 1) rackBase.position.set(2.4, 1.03, 2.5);
+    group.add(rackBase);
+    for (let cI = 0; cI < 3; cI++) {
+      const bar = merged([addBox([], 0.4, 0.09, 0.22, 0, 0, 0)], mkMat([0x8b5a2b, 0xffd23f, 0x9b5de5][(cI + rI) % 3]));
+      bar.position.set(2.4, 1.16 + cI * 0.21, 3.1 - rI * 0.6);
+      group.add(bar);
+    }
+  }
+  for (let i = 0; i < 3; i++) {
+    const bagOf = merged([addBox([], 0.22, 0.34, 0.12, 0, 0, 0)], mat(0xc9a06a));
+    bagOf.position.set(4.5, 1.2, 2.5 + i * 0.3);
+    group.add(bagOf);
+  }
+
+  // ---- drink fridge on the -x wall: glass door, cold cans, glow ----
+  const fr = new THREE.Group();
+  fr.add(merged([addBox([], 0.95, 2.3, 5.2, 0, 1.15, 0)], mat(0xf1f3f5)));
+  for (let s = 0; s < 3; s++) {
+    const inner = merged([addBox([], 0.7, 0.06, 4.9, 0, 0, 0)], mat(0xffffff));
+    inner.position.set(0.12, 0.7 + s * 0.62, 0);
+    fr.add(inner);
+  }
+  fr.position.set(D.x0 + 0.62, 0, -2.9);
+  group.add(fr);
+  solid(D.x0 + 0.1, 0, -5.5, D.x0 + 1.1, 2.3, -0.3);
+  canRow([0xe8402a, 0x35a7ff, 0x43d46c], D.x0 + 0.75, 0.88, -5.1, 0.4, 12, 'z');
+  canRow([0xff9f1c, 0x9b5de5, 0xffd23f], D.x0 + 0.75, 1.5, -5.1, 0.4, 12, 'z');
+  canRow([0x9fe0ff, 0xdc1414, 0x3fae6a], D.x0 + 0.75, 2.12, -5.1, 0.4, 12, 'z');
+  const glass = new THREE.Mesh(BR.clone(), mkMat(0xa8d8f0, { transparent: true, opacity: 0.32, roughness: 0.1 }));
+  glass.scale.set(0.06, 2.1, 4.9);
+  glass.position.set(D.x0 + 1.15, 1.15, -2.9);
+  group.add(glass);
+  for (const hz of [-4.4, -1.4]) {
+    const handle = merged([addCyl([], 0.035, 0.6, 0, 0, 0)], mat(0x6b7480));
+    handle.position.set(D.x0 + 1.24, 1.2, hz);
+    group.add(handle);
+  }
+  const fridgeGlow = new THREE.PointLight(0xbfe6ff, 6, 5, 2);
+  fridgeGlow.position.set(D.x0 + 1.5, 1.6, -2.9);
+  group.add(fridgeGlow);
+
+  // ---- coffee station + microwave shelf on the back wall ----
+  const cof = merged([
+    addBox([], 1.1, 0.9, 0.65, 0, 0.45, 0), addBox([], 1.2, 0.08, 0.72, 0, 0.94, 0),
+    addBox([], 0.5, 0.3, 0.12, 0, 1.1, -0.2)
+  ], mat(0xb0413e));
+  cof.position.set(-3.2, 0, D.z0 + 0.55);
+  group.add(cof);
+  solid(-3.8, 0, D.z0 + 0.2, -2.6, 1.3, D.z0 + 0.9);
+  for (let i = 0; i < 2; i++) {
+    const noz = merged([addCyl([], 0.05, 0.12, 0, 0, 0)], mat(0x2b3440));
+    noz.position.set(-3.45 + i * 0.5, 0.85, D.z0 + 0.85);
+    group.add(noz);
+    const cupM = new THREE.Mesh(CY.clone().scale(0.08, 0.12, 0.08), mkMat(0xfaf7ef));
+    cupM.position.set(-3.45 + i * 0.5, 0.72, D.z0 + 0.85);
+    group.add(cupM);
+  }
+  const micRow = merged([addBox([], 1.3, 0.08, 0.55, 0, 1.3, 0), addBox([], 0.1, 1.3, 0.1, -0.55, 0.65, 0), addBox([], 0.1, 1.3, 0.1, 0.55, 0.65, 0)], mat(shelfGray));
+  micRow.position.set(-1.0, 0, D.z0 + 0.5);
+  group.add(micRow);
+  solid(-1.7, 0, D.z0 + 0.2, -0.3, 1.38, D.z0 + 0.8);
+  const mic = merged([
+    addBox([], 0.8, 0.5, 0.45, 0, 0.25, 0), addBox([], 0.5, 0.34, 0.03, -0.12, 0.25, -0.24),
+    addBox([], 0.2, 0.34, 0.04, 0.27, 0.25, -0.24)
+  ], mat(0x2b3440));
+  mic.position.set(-1.0, 1.38, D.z0 + 0.5);
+  group.add(mic);
+  const micGlass = merged([addBox([], 0.46, 0.3, 0.02, 0, 0, 0)], mkMat(0x1c2733, { emissive: 0x0a2b1f, emissiveIntensity: 0.6 }));
+  micGlass.position.set(-1.12, 1.63, D.z0 + 0.27);
+  group.add(micGlass);
+
+  // ---- SLUSHIE MACHINE at the back (+x side): 4 flavour pads + pour button ----
+  const machX = 3.4, machZ = D.z0 + 0.62;
+  const mach = merged([
+    addBox([], 1.7, 1.6, 0.75, 0, 0.8, 0), addBox([], 1.8, 0.1, 0.85, 0, 1.65, 0),
+    addBox([], 1.7, 0.5, 0.12, 0, 0.25, 0.4)          // drip-tray backer
+  ], mat(0x39444f));
+  mach.position.set(machX, 0, machZ);
+  group.add(mach);
+  solid(machX - 0.9, 0, machZ - 0.45, machX + 0.9, 1.7, machZ + 0.6);
+  const tray = merged([addBox([], 1.5, 0.06, 0.5, 0, 0, 0)], mat(0xcfd6dd));
+  tray.position.set(machX, 0.56, machZ + 0.62);
+  group.add(tray);
+  const flavorMat = mkMat(SLUSH_FLAVORS[0].color, { emissive: SLUSH_FLAVORS[0].color, emissiveIntensity: 0.35 });
+  const tank = new THREE.Mesh(BR.clone(), mkMat(SLUSH_FLAVORS[0].color, { transparent: true, opacity: 0.8, emissive: SLUSH_FLAVORS[0].color, emissiveIntensity: 0.4 }));
+  tank.scale.set(0.55, 0.85, 0.5);
+  tank.position.set(machX, 1.15, machZ - 0.05);
+  group.add(tank);
+  const tankLid = merged([addCyl([], 0.1, 0.1, 0, 0, 0)], mat(0xcfd6dd));
+  tankLid.position.set(machX, 1.62, machZ - 0.05);
+  group.add(tankLid);
+  const noz = merged([addCyl([], 0.06, 0.16, 0, 0, 0)], mat(0x6b7480));
+  noz.position.set(machX, 0.66, machZ + 0.6);
+  group.add(noz);
+
+  const interactMeshes = [];
+  for (let i = 0; i < 4; i++) {
+    const pad = new THREE.Mesh(BR.clone(), mkMat(SLUSH_FLAVORS[i].color, { emissive: SLUSH_FLAVORS[i].color, emissiveIntensity: 0.8 }));
+    pad.scale.set(0.3, 0.16, 0.08);
+    pad.position.set(machX - 0.57 + i * 0.38, 0.95, machZ + 0.42);
+    pad.userData.act = { kind: 'flavor', i };
+    group.add(pad);
+    interactMeshes.push(pad);
+  }
+  const pourBtn = new THREE.Mesh(CY.clone().scale(0.12, 0.07, 0.12), mkMat(0x43d46c, { emissive: 0x2f9e4f, emissiveIntensity: 0.9 }));
+  pourBtn.rotation.x = Math.PI / 2;
+  pourBtn.position.set(machX, 0.72, machZ + 0.42);
+  pourBtn.userData.act = { kind: 'pour' };
+  group.add(pourBtn);
+  interactMeshes.push(pourBtn);
+  const label = merged([addBox([], 1.4, 0.26, 0.05, 0, 0, 0)], mkMat(0xffd23f, { emissive: 0xffb347, emissiveIntensity: 0.6 }));
+  label.position.set(machX, 1.85, machZ + 0.32);
+  group.add(label);
+
+  // cup under the spigot + fill + pour stream
+  const cup = merged([addCyl([], 0.11, 0.26, 0, 0.13, 0)], mkMat(0xffffff, { transparent: true, opacity: 0.5 }));
+  cup.position.set(machX, 0.59, machZ + 0.6);
+  group.add(cup);
+  const cupFillMat = mkMat(SLUSH_FLAVORS[0].color);
+  const cupFill = new THREE.Mesh(CY.clone(), cupFillMat);
+  cupFill.scale.set(0.095, 0.001, 0.095);
+  cupFill.position.set(machX, 0.6, machZ + 0.6);
+  group.add(cupFill);
+  const streamMat = mkMat(SLUSH_FLAVORS[0].color, { transparent: true, opacity: 0.9, emissive: SLUSH_FLAVORS[0].color, emissiveIntensity: 0.3 });
+  const stream = new THREE.Mesh(CY.clone(), streamMat);
+  stream.scale.set(0.045, 0.01, 0.045);
+  stream.position.set(machX, 0.62, machZ + 0.6);
+  stream.visible = false;
+  group.add(stream);
+  const drips = [];
+  const dripMat = mkMat(SLUSH_FLAVORS[0].color, { transparent: true, opacity: 0.9 });
+  for (let i = 0; i < 10; i++) {
+    const dr = new THREE.Mesh(SP.clone(), dripMat);
+    dr.scale.setScalar(0.035);
+    dr.visible = false;
+    dr.userData.v = 0;
+    group.add(dr);
+    drips.push(dr);
+  }
+
+  let flavor = 0, pour = -1;
+  const setFlavor = (i) => {
+    flavor = i;
+    const col = SLUSH_FLAVORS[i].color;
+    tank.material.color.setHex(col); tank.material.emissive.setHex(col);
+    flavorMat.color.setHex(col); flavorMat.emissive.setHex(col);
+    streamMat.color.setHex(col); streamMat.emissive.setHex(col);
+    dripMat.color.setHex(col);
+    cupFillMat.color.setHex(col);
+  };
+  const interact = (obj) => {
+    const act = obj.userData && obj.userData.act;
+    if (!act) return null;
+    if (act.kind === 'flavor') {
+      setFlavor(act.i);
+      sfx.swap();
+      return `Slushie flavour: ${SLUSH_FLAVORS[act.i].name}!`;
+    }
+    if (act.kind === 'pour') {
+      if (pour >= 0) return 'Still pouring…';
+      pour = 0;
+      for (const dr of drips) { dr.visible = true; dr.userData.v = 0; }
+      sfx.thud();
+      return `Pouring a ${SLUSH_FLAVORS[flavor].name} slushie — mind the wobble!`;
+    }
+    return null;
+  };
+
+  // ---- misc convenience-store dressing ----
+  const magRack = new THREE.Group();
+  magRack.add(merged([addCyl([], 0.05, 1.4, 0, 0.7, 0)], mat(0x6b7480)));
+  for (let i = 0; i < 4; i++) {
+    const mg = merged([addBox([], 0.44, 0.6, 0.04, 0, 0, 0)], mkMat([0xffd23f, 0x35a7ff, 0xe8402a, 0x43d46c][i]));
+    const a = (i / 4) * Math.PI * 2;
+    mg.position.set(Math.sin(a) * 0.3, 0.85, Math.cos(a) * 0.3);
+    mg.rotation.y = a;
+    magRack.add(mg);
+  }
+  magRack.position.set(4.6, 0, 4.2);
+  group.add(magRack);
+  solid(4.25, 0, 3.85, 4.95, 1.4, 4.55);
+  const atm = merged([addBox([], 0.9, 1.3, 0.25, 0, 0, 0), addBox([], 0.5, 0.3, 0.05, 0, 0.35, -0.15), addBox([], 0.3, 0.1, 0.05, 0, 0.02, -0.15)], mat(0x2b6e4f));
+  atm.position.set(D.x1 - 0.15, 1.6, 0.4);
+  group.add(atm);
+  const atmScreen = merged([addBox([], 0.46, 0.26, 0.02, 0, 0, 0)], mkMat(0x43d46c, { emissive: 0x2f9e4f, emissiveIntensity: 0.9 }));
+  atmScreen.position.set(D.x1 - 0.32, 1.95, 0.4);
+  group.add(atmScreen);
+  const bin = merged([addCyl([], 0.22, 0.7, 0, 0.35, 0)], mat(0x4a5560));
+  bin.position.set(D.x0 + 0.8, 0, D.z1 - 1.2);
+  group.add(bin);
+  solid(D.x0 + 0.55, 0, D.z1 - 1.45, D.x0 + 1.05, 0.7, D.z1 - 0.95);
+  const sign = merged([addBox([], 0.5, 0.05, 0.4, 0, 0.02, 0), addBox([], 0.45, 0.5, 0.06, 0, 0.3, 0)], mkMat(0xffd23f));
+  sign.position.set(-1.2, 0.14, 1.4);
+  sign.rotation.y = 0.5;
+  group.add(sign);
+  const baskets = merged([addBox([], 0.45, 0.28, 0.6, 0, 0.14, 0), addBox([], 0.45, 0.28, 0.6, 0, 0.2, 0.62)], mat(0xe8402a));
+  baskets.position.set(-4.3, 0, 4.2);
+  group.add(baskets);
+  solid(-4.55, 0, 3.9, -4.05, 0.5, 4.9);
+  const openSign = merged([addBox([], 1.0, 0.3, 0.08, 0, 0, 0)], mkMat(0x43d46c, { emissive: 0x43d46c, emissiveIntensity: 1.1 }));
+  openSign.position.set(0, D.h - 0.55, D.z1 - 0.2);
+  group.add(openSign);
+
+  const tick = (t, dt) => {
+    atmScreen.material.emissiveIntensity = 0.7 + Math.sin(t * 2.3) * 0.25;
+    if (pour < 0) return;
+    pour += dt;
+    const dur = 1.3;
+    const f = Math.min(pour / dur, 1);
+    stream.visible = pour < dur;
+    stream.scale.y = 0.07;
+    stream.position.y = 0.585;
+    for (const dr of drips) {
+      dr.userData.v += 9 * dt;
+      dr.position.set(machX + (Math.random() - 0.5) * 0.05, dr.position.y - dr.userData.v * dt, machZ + 0.6);
+      if (dr.position.y < 0.62) { dr.userData.v = 0; dr.position.y = 0.66 + Math.random() * 0.04; }
+    }
+    cupFill.scale.y = 0.001 + f * 0.22;
+    cupFill.position.y = 0.6 + f * 0.11;
+    if (pour >= dur) {
+      pour = -1;
+      stream.visible = false;
+      for (const dr of drips) dr.visible = false;
+      sfx.place();
+    }
+  };
+  return { tick, tv: null, screenMesh: null, interactMeshes, interact };
+}
+
+const SCENES = { home: sceneHome, farm: sceneFarm, school: sceneSchool, police: scenePolice, fire: sceneFire, church: sceneChurch, store: sceneStore };
 const PALS = {
   home: { floor: 0xd9b98a, wall: 0xf6efe3 },
   farm: { floor: 0xb98a55, wall: 0xf1e3c8 },
   school: { floor: 0xd9cdb6, wall: 0xeef3ee },
   police: { floor: 0xc2ccd6, wall: 0xe7edf2 },
-  fire: { floor: 0xb8bec4, wall: 0xf3e6e3 }
+  fire: { floor: 0xb8bec4, wall: 0xf3e6e3 },
+  church: { floor: 0xc4784f, wall: 0xf4ead6 },
+  store: { floor: 0xdfe5ea, wall: 0xeef3ee }
 };
 
 /* Build (or return cached) interior for a type+variant seed. Home variant
@@ -886,6 +1464,8 @@ export function makeInterior(scene, type = 'home', seed = 0) {
     solids: shell.solids,
     screenMesh: sceneApi.screenMesh || null,
     tv: sceneApi.tv || null,
+    interactMeshes: sceneApi.interactMeshes || null,
+    interact: sceneApi.interact || null,
     tick(t, dt) { tickPad(t); if (sceneApi.tick) sceneApi.tick(t, dt); }
   };
 }

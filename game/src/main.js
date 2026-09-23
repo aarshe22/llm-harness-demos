@@ -159,6 +159,8 @@ class World {
     this.interiorCache = new Map();
     this.policeStations = [];
     this.fireStations = [];
+    this.churches = [];
+    this.stores = [];
     this.build();
   }
 
@@ -511,6 +513,8 @@ class World {
     this.interiors = [];
     this.policeStations = [];
     this.fireStations = [];
+    this.churches = [];
+    this.stores = [];
     this.swings = [];
     this.villageSites = [];
     this.townSites = [];
@@ -563,6 +567,7 @@ class World {
     this.buildExtraTowns();
     this.buildRuralAndFarms();
     this.buildCivic();
+    this.buildChurchesAndStores();
     for (let i = 0; i < this.count('tree'); i++) this.buildTree();
     this.buildBridge();
     if (this.preset.train) this.buildRingRail();
@@ -1131,6 +1136,150 @@ class World {
       pad: { x: cx + fx * (d / 2 + 3), z: cz + fz * (d / 2 + 3) },
       bay: { x: cx + fx * (d / 2 + 1.6) + px * -2.2, z: cz + fz * (d / 2 + 1.6) + pz * -2.2, yaw: ry }
     };
+  }
+
+  /* ---- churches + convenience stores: one per options count (0..4 each),
+     each on its own civic site with road frontage, its own enterable
+     interior, and a damageable prop like any other civic building. ---- */
+  buildChurchesAndStores() {
+    this.churches = [];
+    this.stores = [];
+    if (!this.preset.towns && !this.preset.zones) return;
+    const k = this.k;
+    const nC = this.count('church'), nS = this.count('store');
+    for (let i = 0; i < nC; i++) {
+      const site = this.civicSite(10 * k, 8 * k);
+      if (!site) break;
+      const st = this.buildChurch(site.x, site.z, site.ry, k, i);
+      if (st) this.churches.push(st);
+    }
+    for (let i = 0; i < nS; i++) {
+      const site = this.civicSite(8.5 * k, 6.5 * k);
+      if (!site) break;
+      const st = this.buildStore(site.x, site.z, site.ry, k, i);
+      if (st) this.stores.push(st);
+    }
+  }
+
+  buildChurch(cx, cz, ry, k, seed = 0) {
+    const w = 10 * k, d = 8 * k, bh = 4.6;
+    const grp = new THREE.Group();
+    const bodyMesh = merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0xf3ead8));
+    grp.add(bodyMesh);
+    const roof = [];
+    for (const sd of [-1, 1]) {
+      const m = addBox(roof, w * 0.74, 0.34, d + 0.5, sd * w * 0.26, bh + 0.9, 0);
+      m.rotation.z = -sd * 0.6;
+    }
+    addBox(roof, w * 0.28, 0.4, d + 0.55, 0, bh + 1.55, 0);
+    grp.add(merged(roof, this.mat(0x6b3b2f)));
+    // front bell tower with steeple + gold cross
+    grp.add(merged([addBox([], 2.6 * k, bh + 2.6, 2.6 * k, 0, (bh + 2.6) / 2, -d / 2 + 1.6 * k)], this.mat(0xf3ead8)));
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.05, 2.6, 4), this.mat(0x6b3b2f));
+    cone.position.set(0, bh + 3.9, -d / 2 + 1.6 * k);
+    cone.castShadow = true;
+    grp.add(cone);
+    const crossV = merged([addBox([], 0.16, 1.3, 0.16, 0, 0, 0)], this.mat(0xffd23f));
+    crossV.position.set(0, bh + 5.75, -d / 2 + 1.6 * k);
+    const crossH = merged([addBox([], 0.7, 0.16, 0.16, 0, 0, 0)], this.mat(0xffd23f));
+    crossH.position.set(0, bh + 6.05, -d / 2 + 1.6 * k);
+    grp.add(crossV, crossH);
+    const bell = merged([addCyl([], 0.3, 0.16, 0, -0.08, 0), addCyl([], 0.5, 0.55, 0, -0.42, 0)], this.mat(0xc9a227));
+    bell.position.set(0, bh + 2.3, -d / 2 + 1.6 * k);
+    grp.add(bell);
+    // rose window + arched windows front and sides
+    const roseW = new THREE.Mesh(new THREE.CircleGeometry(1.0, 12),
+      mkMat(0x9b5de5, { emissive: 0x6d3fc0, emissiveIntensity: 0.55, side: THREE.DoubleSide }));
+    roseW.position.set(0, bh - 0.9, d / 2 + 0.06);
+    grp.add(roseW);
+    const win = [];
+    for (const sx of [-3.4, -1.7, 1.7, 3.4]) {
+      addBox(win, 0.8, 2.2, 0.08, sx * k, 2.3, d / 2 + 0.04);
+      addBox(win, 0.08, 2.2, 0.8, w / 2 * 0.99, 2.3, sx * k);
+      addBox(win, 0.08, 2.2, 0.8, -w / 2 * 0.99, 2.3, sx * k);
+    }
+    grp.add(merged(win, mkMat(0x8fd0e8, { emissive: 0x2f7de1, emissiveIntensity: 0.25 })));
+    grp.add(merged([
+      addBox([], 0.62, 2.3, 0.12, -0.33, 1.15, d / 2 + 0.07),
+      addBox([], 0.62, 2.3, 0.12, 0.33, 1.15, d / 2 + 0.07)
+    ], this.mat(0x5b3a24)));
+    grp.add(merged([
+      addBox([], 3.0, 0.16, 0.6, 0, 0.08, d / 2 + 0.5),
+      addBox([], 3.4, 0.16, 0.6, 0, 0.0, d / 2 + 1.05)
+    ], this.mat(0xd8cfbc)));
+    grp.rotation.y = ry;
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    const box = new THREE.Box3(
+      new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
+      new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
+    );
+    const bodySolid = this.addSolid(box, null, true);
+    this.registerProp('church', cx, cz, 480, [
+      { mesh: bodyMesh, solid: bodySolid },
+      ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))
+    ]);
+    this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
+    this.registerDoor('church', cx, cz, ry, d / 2 + 1.9, seed);
+    this.respawnAnchors.push({ x: cx, z: cz + d / 2 + 2.5 });
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    return { x: cx, z: cz, ry, pad: { x: cx + fx * (d / 2 + 4), z: cz + fz * (d / 2 + 4) } };
+  }
+
+  buildStore(cx, cz, ry, k, seed = 0) {
+    const w = 8.5 * k, d = 6.5 * k, bh = 3.0;
+    const grp = new THREE.Group();
+    const bodyMesh = merged([addBox([], w, bh, d, 0, bh / 2, 0)], this.mat(0x2fa39b));
+    grp.add(bodyMesh);
+    grp.add(merged([addBox([], w + 0.1, 0.55, d + 0.1, 0, bh + 0.1, 0)], this.mat(0xf4e9d2)));
+    grp.add(merged([addBox([], w * 0.7, 0.8, 0.14, 0, bh + 0.75, d / 2 + 0.08)],
+      mkMat(0xffd23f, { emissive: 0xffb347, emissiveIntensity: 0.85 })));
+    grp.add(merged([addBox([], w * 0.86, 2.0, 0.08, 0, 1.15, d / 2 + 0.06)],
+      mkMat(0x9fe0ff, { transparent: true, opacity: 0.55, roughness: 0.15 })));
+    for (const sx of [-2.6, -0.9, 0.9, 2.6]) {
+      grp.add(merged([addBox([], 0.1, 2.1, 0.12, sx * k, 1.15, d / 2 + 0.1)], this.mat(0x39444f)));
+    }
+    grp.add(merged([addBox([], 1.3, 2.1, 0.1, 0, 1.05, d / 2 + 0.13)], mkMat(0xbfe6ff, { transparent: true, opacity: 0.4 })));
+    const win = [];
+    for (const sx of [-2.4, 0, 2.4]) {
+      addBox(win, 0.08, 1.0, 1.2, w / 2 * 0.99, 1.9, sx * k);
+      addBox(win, 0.08, 1.0, 1.2, -w / 2 * 0.99, 1.9, sx * k);
+    }
+    grp.add(merged(win, mkMat(0x9fe0ff)));
+    grp.add(merged([addBox([], 1.6, 0.5, 1.2, -w / 4, bh + 0.5, -d / 4)], this.mat(0x8f97a1)));
+    const totem = merged([
+      addBox([], 0.3, 1.9, 0.3, 0, 0.95, 0), addBox([], 1.4, 0.9, 0.2, 0, 2.3, 0)
+    ], this.mat(0xe8402a));
+    totem.position.set(w / 2 - 0.6 * k, 0, d / 2 + 2.4 * k);
+    grp.add(totem);
+    const totemPanel = merged([addBox([], 1.2, 0.6, 0.06, 0, 0, 0)], mkMat(0x11151b, { emissive: 0x2f9e4f, emissiveIntensity: 0.55 }));
+    totemPanel.position.set(w / 2 - 0.6 * k, 2.3, d / 2 + 2.32 * k);
+    grp.add(totemPanel);
+    const vend = merged([addBox([], 0.9, 1.7, 0.6, 0, 0.85, 0), addBox([], 0.7, 1.2, 0.06, 0, 1.1, -0.33)], mkMat(0xd62828));
+    vend.position.set(-w / 2 + 1.0 * k, 0, d / 2 + 1.1 * k);
+    grp.add(vend);
+    const ice = merged([addBox([], 1.1, 0.7, 0.8, 0, 0.35, 0), addBox([], 1.15, 0.12, 0.85, 0, 0.75, 0)], this.mat(0x35a7ff));
+    ice.position.set(-w / 2 + 2.4 * k, 0, d / 2 + 1.1 * k);
+    grp.add(ice);
+    grp.rotation.y = ry;
+    grp.position.set(cx, 0, cz);
+    this.addObj(grp);
+    this._b.staticMeshes.push(grp);
+    const box = new THREE.Box3(
+      new THREE.Vector3(cx - w / 2 - 0.1, 0, cz - d / 2 - 0.1),
+      new THREE.Vector3(cx + w / 2 + 0.1, bh, cz + d / 2 + 0.1)
+    );
+    const bodySolid = this.addSolid(box, null, true);
+    this.registerProp('store', cx, cz, 420, [
+      { mesh: bodyMesh, solid: bodySolid },
+      ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))
+    ]);
+    this.obstacles.push({ x: cx, z: cz, w: w / 2 + 0.5, d: d / 2 + 0.5 });
+    this.registerDoor('store', cx, cz, ry, d / 2 + 1.7, seed);
+    this.respawnAnchors.push({ x: cx, z: cz + d / 2 + 2.5 });
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    return { x: cx, z: cz, ry, pad: { x: cx + fx * (d / 2 + 4), z: cz + fz * (d / 2 + 4) } };
   }
 
   buildFarm(s) {
@@ -3527,11 +3676,24 @@ class Game {
     this.pick.setFromCamera(ndc, this.camera);
 
     if (this.world.inHouse) {
-      const scr = this.world.activeInterior.ref.screenMesh;
+      const ref = this.world.activeInterior.ref;
+      if (ref.interactMeshes && ref.interact) {
+        const hits = this.pick.intersectObjects(ref.interactMeshes, false);
+        if (hits.length) {
+          const msg = ref.interact(hits[0].object);
+          if (msg) {
+            this.toast(msg, 'good');
+            voice.speak(msg);
+            if (navigator.vibrate) navigator.vibrate(12);
+          }
+        }
+        return;
+      }
+      const scr = ref.screenMesh;
       if (!scr) { this.toast('This building has no TV', 'bad'); return; }
       const hits = this.pick.intersectObjects([scr], false);
       if (hits.length) {
-        this.world.activeInterior.ref.tv.nextChannel();
+        ref.tv.nextChannel();
         this.toast('BRICK TV — channel changed', 'good');
         if (navigator.vibrate) navigator.vibrate(10);
       }
@@ -3751,7 +3913,7 @@ class Game {
     this.orbit.pitch = 0.3;
     this.orbit.wantDist = 6.5;
     this.ghost.visible = false;
-    const tip = { home: 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.' }[it.type] || '';
+    const tip = { home: 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.', church: 'The LEGO pastor is mid-sermon at the lectern — Jesus on the big cross behind him.', store: 'Grab a slushie at the back: tap a flavour, then press the green button to pour.' }[it.type] || '';
     DBG.log('ENTER', it.type);
     this.toast(`Inside the ${it.type}! ${tip} Green pad = exit.`, 'good');
   }

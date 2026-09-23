@@ -3,6 +3,8 @@
 export const OBJECT_TYPES = [
   { id: 'house', label: 'Houses', icon: '🏠', def: 4, max: 20 },
   { id: 'school', label: 'School', icon: '🏫', def: 1, max: 3 },
+  { id: 'church', label: 'Churches', icon: '⛪', def: 1, max: 4 },
+  { id: 'store', label: 'Convenience stores', icon: '🏪', def: 1, max: 4 },
   { id: 'playground', label: 'Playgrounds', icon: '🛝', def: 2, max: 6 },
   { id: 'mountain', label: 'Mountains', icon: '⛰️', def: 4, max: 8 },
   { id: 'volcano', label: 'Volcanoes', icon: '🌋', def: 1, max: 3 },
