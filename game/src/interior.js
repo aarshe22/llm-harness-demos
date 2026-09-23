@@ -44,6 +44,39 @@ const C = {
   lamp: 0xffe08a
 };
 
+/* Every house body colour gets its own interior theme: wall/floor/trim
+   colours, an accent palette for soft furnishings, a themed furniture block
+   (fired in sceneHome), and an extra themed room corner (fired in
+   sceneHomeExtra). Homes whose colour is not in this table fall back to the
+   first entry. */
+export const HOME_THEMES = {
+  0xe8402a: { floor: 0xe9c48f, wall: 0xf3e0cc, trim: 0xffffff, ceiling: 0xf8ecdc, accent: 0xe8402a,
+    extras: 'attic', blurb: 'red house · attic loft with a treasure trunk' },
+  0xffc42e: { floor: 0xf0dcb4, wall: 0xfbf1da, trim: 0xf7e6b0, ceiling: 0xfdf7e8, accent: 0xffc42e,
+    extras: 'greenhouse', blurb: 'yellow house · sunroom greenhouse of brick plants' },
+  0x35a7ff: { floor: 0xd8e2ec, wall: 0xe6f1fb, trim: 0xcfe3f5, ceiling: 0xf1f8ff, accent: 0x35a7ff,
+    extras: 'bunks', blurb: 'blue house · bunk-bed kids room with a toy chest' },
+  0x35b56a: { floor: 0xdcdba6, wall: 0xe7f3df, trim: 0xc9e2c0, ceiling: 0xf3faf0, accent: 0x35b56a,
+    extras: 'green', blurb: 'green house · indoor herb garden and reading nook' },
+  0xff8a3d: { floor: 0xf0cba8, wall: 0xfce6d4, trim: 0xf2c9a0, ceiling: 0xfef1e6, accent: 0xff8a3d,
+    extras: 'fireplace', blurb: 'orange house · snug with a roaring brick fireplace' },
+  0x9b5de5: { floor: 0xd9cfe8, wall: 0xe9dcf7, trim: 0xd2bce8, ceiling: 0xf4ecff, accent: 0x9b5de5,
+    extras: 'planet', blurb: 'purple house · stargazer loft with a telescope' },
+  0x2f7de1: { floor: 0xd0daea, wall: 0xe1e9f6, trim: 0xa9c4e8, ceiling: 0xeef3fb, accent: 0x2f7de1,
+    extras: 'library', blurb: 'dark-blue house · library with ladder and reading chair' },
+  0xffd23f: { floor: 0xefe2a8, wall: 0xf9f0cf, trim: 0xf2df8f, ceiling: 0xfdf8e0, accent: 0xffd23f,
+    extras: 'pantry', blurb: 'gold house · bakery pantry with a cake stand' },
+  0xff7f50: { floor: 0xf0bf9e, wall: 0xfadbc8, trim: 0xf0b28f, ceiling: 0xfdeee3, accent: 0xff7f50,
+    extras: 'hammock', blurb: 'coral house · sun porch with a hammock and palm' }
+};
+const HOME_THEME_LIST = Object.values(HOME_THEMES);
+
+function homeTheme(seed) {
+  // -1 = legacy/unknown seed: rotate the theme list instead of falling back
+  if (!(seed > 0)) return HOME_THEME_LIST[Math.abs(seed | 0) % HOME_THEME_LIST.length];
+  return HOME_THEMES[seed] || HOME_THEME_LIST[0];
+}
+
 function mulberry(seed) {
   let s = (seed >>> 0) || 1;
   return () => {
@@ -310,18 +343,33 @@ function furnishBath(group, solid, mat, D) {
 function sceneHome(group, D, ctx, seed) {
   const { solid, mat } = ctx;
   const rand = mulberry(seed);
+  const th = homeTheme(seed);
   const SOFA = [0x2f7de1, 0x35b56a, 0xe8402a, 0x9b5de5, 0x16a3b8, 0xd81e5b];
   const RUG = [0xff8a3d, 0x35a7ff, 0xffd23f, 0x2aa876];
   const BED = [0xff5d8f, 0x9b5de5, 0x43d46c, 0x35a7ff];
   const QUILT = [0xffd23f, 0xf4e9d2, 0xff9ff3, 0x9fe0ff];
-  const sofaCol = SOFA[Math.floor(rand() * SOFA.length)];
-  const rugCol = RUG[Math.floor(rand() * RUG.length)];
-  const bedCol = BED[Math.floor(rand() * BED.length)];
+  // the accent leads the soft furnishing colours so the inside matches the
+  // exterior brick colour of the house
+  const sofaCol = th.accent;
+  const rugCol = SOFA[(SOFA.indexOf(th.accent) + 2) % SOFA.length];
+  const bedCol = BED[(BED.indexOf(th.accent) + 1 + BED.length) % BED.length] || th.accent;
   const quiltCol = QUILT[Math.floor(rand() * QUILT.length)];
-  const layout = Math.floor(rand() * 3); // 0 classic, 1 wide sofa, 2 study corner
+  const layout = ['attic', 'planet', 'library', 'hammock'].includes(th.extras) ? 2
+    : ['fireplace', 'bunks', 'greenhouse'].includes(th.extras) ? 1 : 0;
   const tickKitchen = furnishKitchen(group, solid, mat, -2.95);
   const tickBath = furnishBath(group, solid, mat, D);
-  furnishBedroom(group, solid, mat, bedCol, quiltCol, 3.7, 2.6);
+  if (th.extras === 'bunks') furnishBunks(group, solid, mat, th.accent);
+  else furnishBedroom(group, solid, mat, bedCol, quiltCol, 3.7, 2.6);
+  // one themed interior block per house colour (see HOME_THEMES.extras)
+  const homeFx = { flames: [], sway: [], orbit: null, tick: null };
+  if (th.extras === 'attic') furnishAttic(group, solid, mat, D);
+  if (th.extras === 'greenhouse') furnishGreenhouse(group, solid, mat, D);
+  if (th.extras === 'green') furnishHerbGarden(group, solid, mat, D, homeFx);
+  if (th.extras === 'fireplace') furnishFireplace(group, solid, mat, D, homeFx);
+  if (th.extras === 'planet') furnishPlanetLoft(group, solid, mat, D, homeFx);
+  if (th.extras === 'library') furnishLibrary(group, solid, mat, D);
+  if (th.extras === 'pantry') furnishPantry(group, solid, mat, D);
+  if (th.extras === 'hammock') furnishSunPorch(group, solid, mat, D, homeFx);
 
   // living room: TV wall + sofa (-x/+z corner)
   const tvFrame = [];
@@ -417,6 +465,19 @@ function sceneHome(group, D, ctx, seed) {
   const tick = (t, dt) => {
     tickKitchen(t, dt);
     tickBath(t, dt);
+    for (const fl of homeFx.flames) {
+      if (fl.isPointLight) fl.intensity = 4 + Math.sin(t * 9) * 1.4;
+      else fl.scale.y = 0.2 * (0.8 + Math.sin(t * 8 + fl.position.z * 9) * 0.25);
+    }
+    if (homeFx.orbit) {
+      homeFx.orbit.planet.rotation.y += dt * 0.35;
+      homeFx.orbit.ring.rotation.z += dt * 0.12;
+    }
+    for (let i = 0; i < homeFx.sway.length; i++) {
+      const o = homeFx.sway[i];
+      if (o.isGroup) o.rotation.x = Math.sin(t * 1.1) * 0.06;
+      else o.rotation.z = Math.sin(t * 2.2 + i) * 0.12;
+    }
     tvClock += dt;
     if (tvClock > 0.1) {
       tvClock = 0;
@@ -425,6 +486,380 @@ function sceneHome(group, D, ctx, seed) {
     }
   };
   return { tick, tv: painter, screenMesh: screen };
+}
+
+/* ---- themed home furniture: one per HOME_THEMES.extras ----
+   All props sit in the dead bands of the floor plan: the west strip
+   (x ≈ -4.5..-3.5, between kitchen run and sofa), the east wall gap
+   (z ≈ -0.5..1.0, between bath and bed), and the ceiling. */
+
+function plantPot(group, solid, mat, x, z, s = 1, potCol = 0xb46a3c) {
+  const pot = merged([addCyl([], 0.17 * s, 0.24 * s, 0, 0.12 * s, 0)], mat(potCol));
+  pot.position.set(x, 0, z);
+  group.add(pot);
+  const leafM = mat(0x3fae6a);
+  for (let i = 0; i < 3; i++) {
+    const lf = new THREE.Mesh(SP.clone(), leafM);
+    lf.scale.set(0.2 * s, 0.2 * s, 0.2 * s);
+    lf.position.set(x + (i - 1) * 0.12 * s, (0.32 + i * 0.09) * s, z + (i % 2 ? 0.08 : -0.06) * s);
+    lf.rotation.z = (i - 1) * 0.5;
+    group.add(lf);
+  }
+  solid(x - 0.2 * s, 0, z - 0.2 * s, x + 0.2 * s, 0.24 * s, z + 0.2 * s);
+}
+
+function furnishBunks(group, solid, mat, accent) {
+  // twin bunk beds in the bedroom corner (3.0..4.4, 1.55..3.65)
+  const frame = [];
+  addBox(frame, 1.35, 0.42, 2.1, 0, 0.21, 0);
+  addBox(frame, 1.45, 0.65, 0.16, 0, 0.5, -1.05);
+  group.add(merged(frame, mat(C.porcelain)).translateX(3.7).translateZ(2.6));
+  const sheet = merged([addBox([], 1.33, 0.16, 2.05, 0, 0.46, 0)], mat(accent));
+  sheet.position.set(3.7, 0, 2.6);
+  group.add(sheet);
+  const upFrame = [];
+  addBox(upFrame, 1.35, 0.14, 2.1, 0, 1.45, 0);
+  for (const sx of [-0.62, 0.62]) for (const sz of [-0.98, 0.98])
+    addBox(upFrame, 0.1, 0.95, 0.1, sx, 1.95, sz);
+  addBox(upFrame, 1.35, 0.12, 0.12, 0, 1.9, -0.98);
+  const upM = merged(upFrame, mat(C.porcelain));
+  upM.position.set(3.7, 0, 2.6);
+  group.add(upM);
+  const upSheet = merged([addBox([], 1.3, 0.12, 1.9, 0, 1.58, 0)], mat(0xffd23f));
+  upSheet.position.set(3.7, 0, 2.6);
+  group.add(upSheet);
+  const ladder = merged([
+    addBox([], 0.07, 1.15, 0.07, -0.3, 1.0, 1.06), addBox([], 0.07, 1.15, 0.07, 0.3, 1.0, 1.06),
+    addBox([], 0.67, 0.06, 0.07, 0, 0.75, 1.06), addBox([], 0.67, 0.06, 0.07, 0, 1.15, 1.06)
+  ], mat(C.woodLight));
+  ladder.position.set(3.7, 0, 2.6);
+  group.add(ladder);
+  solid(3.0, 0, 1.55, 4.4, 0.42, 3.65);
+  solid(3.0, 0, 1.48, 4.4, 2.1, 1.65);       // headboard posts
+  solid(3.0, 1.38, 1.55, 4.4, 2.05, 3.65);   // upper bunk: don't stand in it
+  // toy chest by the foot of the bunks
+  const toy = merged([addBox([], 0.9, 0.5, 0.55, 0, 0.25, 0), addBox([], 0.94, 0.1, 0.6, 0, 0.53, 0)], mat(0xd81e5b));
+  toy.position.set(2.35, 0, 3.5);
+  group.add(toy);
+  solid(1.9, 0, 3.2, 2.8, 0.58, 3.8);
+  for (let i = 0; i < 4; i++) {
+    const b = new THREE.Mesh(SP.clone(), mat([0xe8402a, 0x35a7ff, 0x35b56a, 0xffd23f][i]));
+    b.scale.setScalar(0.14);
+    b.position.set(2.05 + i * 0.2, 0.66, 3.5);
+    group.add(b);
+  }
+}
+
+function furnishAttic(group, solid, mat, D) {
+  // mezzanine loft in the west strip: stair steps up to a plank platform,
+  // treasure trunk + cushion + lamp up top
+  const plank = mat(C.woodLight);
+  const steps = [];
+  addBox(steps, 0.55, 0.55, 0.7, 0, 0.275, 0);
+  addBox(steps, 0.55, 1.1, 0.7, 0, 0.55, -0.7);
+  addBox(steps, 0.55, 1.65, 0.7, 0, 0.825, -1.4);
+  const stM = merged(steps, plank);
+  stM.position.set(-2.95, 0, -1.6);
+  group.add(stM);
+  solid(-3.25, 0, -3.1, -2.65, 2.2, -1.25);
+  const loft = merged([addBox([], 1.7, 0.14, 1.9, 0, 2.13, 0)], plank);
+  loft.position.set(-3.95, 0, -2.4);
+  group.add(loft);
+  solid(-4.8, 2.06, -3.35, -3.1, 2.2, -1.45);
+  for (const sx of [-4.6, -3.3]) {
+    const leg = merged([addBox([], 0.12, 2.06, 0.12, 0, 1.03, 0)], mat(C.wood));
+    leg.position.set(sx, 0, -1.6);
+    group.add(leg);
+  }
+  const rail = merged([addBox([], 0.08, 0.55, 1.9, 0, 2.45, 0)], mat(C.wood));
+  rail.position.set(-3.15, 0, -2.4);
+  group.add(rail);
+  // treasure trunk
+  const trunk = merged([addBox([], 0.85, 0.42, 0.55, 0, 0.21, 0), addBox([], 0.88, 0.16, 0.58, 0, 0.5, 0)], mat(0x7a4a21));
+  trunk.position.set(-4.1, 2.2, -2.6);
+  group.add(trunk);
+  const band = merged([addBox([], 0.2, 0.44, 0.58, 0, 0, 0)], mat(0xffd23f));
+  band.position.set(-4.1, 2.71, -2.6);
+  group.add(band);
+  const cush = merged([addBox([], 0.6, 0.16, 0.6, 0, 0, 0)], mat(0xd81e5b));
+  cush.position.set(-3.5, 2.28, -1.9);
+  group.add(cush);
+  const lampP = [];
+  addCyl(lampP, 0.04, 0.4, 0, 0.2, 0);
+  const lampPole = merged(lampP, mat(C.chrome));
+  lampPole.position.set(-4.6, 2.2, -1.7);
+  group.add(lampPole);
+  const shade = new THREE.Mesh(CY.clone().scale(0.16, 0.18, 0.16),
+    mkMat(C.lamp, { emissive: C.lamp, emissiveIntensity: 0.8 }));
+  shade.position.set(-4.6, 2.68, -1.7);
+  group.add(shade);
+}
+
+function furnishGreenhouse(group, solid, mat, D) {
+  // glass sunroom lean-to along the west strip: paned frame, plant shelves
+  const frameMat = mat(0xf3ead8);
+  const fr = [];
+  for (const fz of [-2.2, -0.9, 0.4]) addBox(fr, 0.9, 2.1, 0.09, 0, 1.05, fz);
+  addBox(fr, 0.9, 0.1, 2.7, 0, 2.14, -0.9);
+  const frM = merged(fr, frameMat);
+  frM.position.set(-4.15, 0, -0.9);
+  group.add(frM);
+  const glass = new THREE.Mesh(BR.clone().scale(0.8, 1.95, 2.6),
+    mkMat(0xbfe6ff, { transparent: true, opacity: 0.28, roughness: 0.1 }));
+  glass.position.set(-4.15, 1.05, -0.9);
+  group.add(glass);
+  for (const sz of [-2.2, -1.55, -0.9, -0.25, 0.4]) {
+    const shelf = merged([addBox([], 0.72, 0.07, 0.5, 0, 0, 0)], mat(C.woodLight));
+    shelf.position.set(-4.15, 0.85, sz + 0.32);
+    group.add(shelf);
+  }
+  plantPot(group, solid, mat, -4.3, -1.9, 1.0);
+  plantPot(group, solid, mat, -3.7, -0.2, 0.8, 0x7f8c99);
+  plantPot(group, solid, mat, -4.3, 0.5, 1.2, 0xb46a3c);
+  solid(-4.65, 0, -2.5, -3.65, 2.2, 0.7);
+}
+
+function furnishHerbGarden(group, solid, mat, D, fx) {
+  // tiered herb planter + trellis in the west strip
+  const box = merged([
+    addBox([], 1.1, 0.45, 1.9, 0, 0.225, 0), addBox([], 1.2, 0.1, 2.0, 0, 0.5, 0)
+  ], mat(C.wood));
+  box.position.set(-4.0, 0, -1.2);
+  group.add(box);
+  solid(-4.6, 0, -2.2, -3.4, 0.55, -0.2);
+  const herbM = mat(0x3fae6a);
+  fx.sway = [];
+  for (let i = 0; i < 6; i++) {
+    const h = new THREE.Mesh(SP.clone(), herbM);
+    h.scale.set(0.22, 0.16 + (i % 3) * 0.05, 0.22);
+    h.position.set(-4.28 + (i % 2) * 0.55, 0.66, -2.0 + Math.floor(i / 2) * 0.75);
+    group.add(h);
+    fx.sway.push(h);
+  }
+  const trellis = [];
+  for (const tz of [-2.1, -1.2, -0.3]) addBox(trellis, 0.08, 1.8, 0.08, 0, 0.9, tz);
+  addBox(trellis, 0.08, 0.08, 2.0, 0, 1.75, -1.2);
+  addBox(trellis, 0.08, 0.08, 2.0, 0, 0.95, -1.2);
+  const trM = merged(trellis, mat(C.woodLight));
+  trM.position.set(-4.72, 0, -1.2);
+  group.add(trM);
+  const vine = mat(0x2f8f4f);
+  for (let i = 0; i < 4; i++) {
+    const v = new THREE.Mesh(SP.clone(), vine);
+    v.scale.setScalar(0.14);
+    v.position.set(-4.62, 0.6 + i * 0.32, -1.6 + (i % 2) * 0.8);
+    group.add(v);
+  }
+}
+
+function furnishFireplace(group, solid, mat, D, fx) {
+  // brick hearth on the east wall gap; mantel holds candles, TV moves above
+  const brick = mat(0xa9483c);
+  const chim = [];
+  addBox(chim, 0.55, 3.2, 1.4, 0, 1.6, 0);
+  addBox(chim, 0.7, 0.16, 1.6, 0, 1.72, 0);          // mantel
+  addBox(chim, 0.35, 0.7, 0.9, 0, 1.15, 0);          // firebox recess back
+  const chM = merged(chim, brick);
+  chM.position.set(D.x1 - 0.28, 0, 0.25);
+  group.add(chM);
+  solid(D.x1 - 0.55, 0, -0.45, D.x1, 2.9, 0.95);
+  const glow = mkMat(0xff7b2d, { emissive: 0xff5a1f, emissiveIntensity: 1.6, transparent: true, opacity: 0.95 });
+  fx.flames = [];
+  for (let i = 0; i < 3; i++) {
+    const fl = new THREE.Mesh(SP.clone(), glow);
+    fl.scale.set(0.12, 0.2, 0.1);
+    fl.position.set(D.x1 - 0.56, 0.32, -0.05 + i * 0.32);
+    group.add(fl);
+    fx.flames.push(fl);
+  }
+  const hearthLight = new THREE.PointLight(0xff9f4a, 5, 4.5, 2);
+  hearthLight.position.set(D.x1 - 0.9, 0.6, 0.25);
+  group.add(hearthLight);
+  fx.flames.push(hearthLight);
+  for (const cz of [-0.2, 0.7]) {
+    const cndl = merged([addCyl([], 0.05, 0.3, 0, 0.15, 0)], mat(0xfff6e8));
+    cndl.position.set(D.x1 - 0.42, 1.8, cz);
+    group.add(cndl);
+  }
+  const logs = [];
+  for (const lz of [0.08, 0.42]) addCyl(logs, 0.07, 0.62, 0, 0, lz);
+  const logM = merged(logs, mat(0x5b3a24));
+  logM.rotation.z = Math.PI / 2;
+  logM.position.set(D.x1 - 0.5, 0.14, 0);
+  group.add(logM);
+}
+
+function furnishPlanetLoft(group, solid, mat, D, fx) {
+  // stargazer loft: glowing planet hanging from the ceiling + telescope
+  const planetMat = mkMat(0x35a7ff, { emissive: 0x1c4f9c, emissiveIntensity: 0.7 });
+  const planet = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 14), planetMat);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.06, 8, 28),
+    mkMat(0xffd23f, { emissive: 0xb8860b, emissiveIntensity: 0.6 }));
+  ring.rotation.x = 1.25;
+  planet.position.set(-3.9, D.h - 1.15, -1.1);
+  ring.position.copy(planet.position);
+  group.add(planet, ring);
+  const cord = merged([addCyl([], 0.015, 1.0, 0, 0.5, 0)], mat(0x555c66));
+  cord.position.set(-3.9, D.h - 0.4, -1.1);
+  group.add(cord);
+  fx.orbit = { planet, ring };
+  const stars = mkMat(0xfff6d0, { emissive: 0xffffff, emissiveIntensity: 1.2 });
+  for (let i = 0; i < 10; i++) {
+    const st = new THREE.Mesh(SP.clone(), stars);
+    st.scale.setScalar(0.045);
+    st.position.set(-4.5 + (i % 5) * 0.45, D.h - 0.35 - Math.floor(i / 5) * 0.3, -2.2 + (i % 3) * 0.8);
+    group.add(st);
+  }
+  // telescope on a tripod in the west strip, aimed at the ceiling planet
+  const tube = merged([addCyl([], 0.1, 0.9, 0, 0, 0), addCyl([], 0.13, 0.12, 0, 0.48, 0)], mat(0x2b3440));
+  tube.rotation.z = 0.75;
+  tube.position.set(-3.1, 1.15, 0.4);
+  group.add(tube);
+  const legs = [];
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const m = addCyl(legs, 0.035, 1.15, 0, 0.57, 0);
+    m.rotation.z = Math.cos(a) * 0.28;
+    m.rotation.x = Math.sin(a) * 0.28;
+  }
+  const legM = merged(legs, mat(0x555c66));
+  legM.position.set(-3.1, 0, 0.4);
+  group.add(legM);
+  solid(-3.45, 0, 0.05, -2.75, 2.0, 0.75);
+}
+
+function furnishLibrary(group, solid, mat, D) {
+  // floor-to-ceiling shelves + rolling ladder + armchair in the west strip
+  const shelf = [];
+  addBox(shelf, 0.5, 3.0, 2.6, 0, 1.5, 0);
+  for (const sy of [0.7, 1.3, 1.9, 2.5]) addBox(shelf, 0.52, 0.07, 2.5, 0.06, sy, 0);
+  const shM = merged(shelf, mat(C.wood));
+  shM.position.set(-4.6, 0, -1.3);
+  group.add(shM);
+  solid(-4.85, 0, -2.65, -4.3, 3.0, 0.05);
+  const bookCols = [0xe8402a, 0x2f7de1, 0x35b56a, 0xff8a3d, 0x9b5de5, 0xffd23f];
+  for (let row = 0; row < 4; row++) {
+    for (let b = 0; b < 9; b++) {
+      const bk = merged([addBox([], 0.16, 0.4, 0.12, 0, 0, 0)],
+        mat(bookCols[(row * 3 + b) % bookCols.length]));
+      bk.position.set(-4.33, 0.95 + row * 0.6, -2.35 + b * 0.26);
+      group.add(bk);
+    }
+  }
+  const lad = merged([
+    addBox([], 0.5, 2.6, 0.1, 0, 1.3, 0),
+    addBox([], 0.5, 0.07, 0.3, 0, 0.55, 0), addBox([], 0.5, 0.07, 0.3, 0, 1.15, 0),
+    addBox([], 0.5, 0.07, 0.3, 0, 1.75, 0), addBox([], 0.5, 0.07, 0.3, 0, 2.35, 0)
+  ], mat(C.woodLight));
+  lad.position.set(-4.0, 0, 0.2);
+  group.add(lad);
+  solid(-4.25, 0, -0.05, -3.75, 2.7, 0.45);
+  const chair = [];
+  addBox(chair, 0.9, 0.45, 0.9, 0, 0.28, 0);
+  addBox(chair, 0.9, 0.85, 0.22, 0, 0.7, -0.36);
+  addBox(chair, 0.2, 0.62, 0.9, -0.37, 0.5, 0);
+  addBox(chair, 0.2, 0.62, 0.9, 0.37, 0.5, 0);
+  const chM = merged(chair, mat(0x8b3a3a));
+  chM.position.set(-3.1, 0, 0.9);
+  chM.rotation.y = 0.9;
+  group.add(chM);
+  solid(-3.7, 0, 0.3, -2.5, 0.9, 1.6);
+  const lampP = [];
+  addCyl(lampP, 0.05, 1.5, 0, 0.75, 0);
+  const pole = merged(lampP, mat(C.chrome));
+  pole.position.set(-2.4, 0, 1.6);
+  group.add(pole);
+  const shade = new THREE.Mesh(CY.clone().scale(0.2, 0.24, 0.2),
+    mkMat(C.lamp, { emissive: C.lamp, emissiveIntensity: 0.9 }));
+  shade.position.set(-2.4, 1.7, 1.6);
+  group.add(shade);
+}
+
+function furnishPantry(group, solid, mat, D) {
+  // bakery pantry: counter with cake stand, jar shelf, hanging pots
+  const counter = [];
+  addBox(counter, 1.0, 0.9, 1.9, 0, 0.45, 0);
+  addBox(counter, 1.1, 0.1, 2.0, 0, 0.95, 0);
+  const cnM = merged(counter, mat(C.cabCream));
+  cnM.position.set(-4.0, 0, -1.2);
+  group.add(cnM);
+  solid(-4.55, 0, -2.2, -3.45, 1.0, -0.2);
+  const stand = [];
+  addCyl(stand, 0.05, 0.2, 0, 0.1, 0);
+  const standM = merged(stand, mat(C.chrome));
+  standM.position.set(-4.0, 1.0, -1.2);
+  group.add(standM);
+  const plate = new THREE.Mesh(CY.clone().scale(0.26, 0.04, 0.26), mat(0xffffff));
+  plate.position.set(-4.0, 1.21, -1.2);
+  group.add(plate);
+  const cake = merged([addCyl([], 0.2, 0.18, 0, 0.09, 0), addCyl([], 0.13, 0.1, 0, 0.23, 0)],
+    mkMat(0xff9ff3, { emissive: 0x6d1f7c, emissiveIntensity: 0.15 }));
+  cake.position.set(-4.0, 1.23, -1.2);
+  group.add(cake);
+  const cherry = new THREE.Mesh(SP.clone(), mat(0xd62828));
+  cherry.scale.setScalar(0.07);
+  cherry.position.set(-4.0, 1.47, -1.2);
+  group.add(cherry);
+  for (const jz of [-1.9, -1.5]) {
+    const jar = new THREE.Mesh(CY.clone().scale(0.12, 0.2, 0.12),
+      mkMat(0xffd23f, { transparent: true, opacity: 0.85 }));
+    jar.position.set(-3.9, 1.1, jz);
+    group.add(jar);
+    const lid = new THREE.Mesh(CY.clone().scale(0.13, 0.05, 0.13), mat(0xb46a3c));
+    lid.position.set(-3.9, 1.31, jz);
+    group.add(lid);
+  }
+  const rail = merged([addBox([], 0.05, 0.05, 1.6, 0, 0, 0)], mat(C.chrome));
+  rail.position.set(-4.55, 2.35, -1.2);
+  group.add(rail);
+  for (const hz of [-1.75, -1.2, -0.65]) {
+    const pot = new THREE.Mesh(CY.clone().scale(0.14, 0.16, 0.14), mat(0x9aa5b1));
+    pot.position.set(-4.55, 2.15, hz);
+    group.add(pot);
+  }
+}
+
+function furnishSunPorch(group, solid, mat, D, fx) {
+  // coral house sun porch: hammock strung between two posts + potted palm
+  const postM = mat(C.wood);
+  const post1 = merged([addBox([], 0.18, 2.3, 0.18, 0, 1.15, 0)], postM);
+  post1.position.set(-3.7, 0, -1.9);
+  group.add(post1);
+  const post2 = merged([addBox([], 0.18, 2.3, 0.18, 0, 1.15, 0)], postM);
+  post2.position.set(-3.7, 0, 0.7);
+  group.add(post2);
+  solid(-3.85, 0, -2.05, -3.55, 2.3, -1.75);
+  solid(-3.85, 0, 0.55, -3.55, 2.3, 0.85);
+  const hammock = new THREE.Group();
+  const segs = [];
+  for (let i = 0; i <= 8; i++) {
+    const f = i / 8;
+    addBox(segs, 0.52, 0.07, 0.3, 0, -Math.sin(f * Math.PI) * 0.5, -1.9 + f * 2.6);
+  }
+  const hmM = merged(segs, mat(0xff7f50));
+  hammock.add(hmM);
+  hammock.position.set(-3.7, 1.85, 0);
+  group.add(hammock);
+  fx.sway = [hammock];
+  const palm = [];
+  addCyl(palm, 0.09, 0.3, 0, 0.15, 0);
+  const pot = merged(palm, mat(0xb46a3c));
+  pot.position.set(-3.0, 0, 1.7);
+  group.add(pot);
+  const trunkM = merged([addCyl([], 0.05, 1.3, 0, 0.65, 0)], mat(0x8b5a2b));
+  trunkM.position.set(-3.0, 0.3, 1.7);
+  trunkM.rotation.z = 0.08;
+  group.add(trunkM);
+  const frond = mat(0x3fae6a);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const fr2 = merged([addBox([], 0.9, 0.05, 0.16, 0.4, 0, 0)], frond);
+    fr2.position.set(-3.0, 1.68, 1.7);
+    fr2.rotation.y = -a;
+    fr2.rotation.z = -0.25;
+    group.add(fr2);
+  }
+  solid(-3.3, 0, 1.4, -2.7, 0.6, 2.0);
 }
 
 /* ------------------------------------------------------------- FARM type */
@@ -1454,12 +1889,14 @@ export function makeInterior(scene, type = 'home', seed = 0) {
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
-  const shell = buildShell(D, PALS[kind] || PALS.home, group);
+  const pal = kind === 'home' ? homeTheme(seed) : (PALS[kind] || PALS.home);
+  const shell = buildShell(D, pal, group);
   const sceneApi = SCENES[kind](group, D, shell, seed | 0);
   const tickPad = shell.tickPad;
   return {
     type: kind,
     def: D,
+    theme: kind === 'home' ? homeTheme(seed) : null,
     group,
     solids: shell.solids,
     screenMesh: sceneApi.screenMesh || null,

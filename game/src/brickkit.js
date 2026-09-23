@@ -200,13 +200,18 @@ export function brickPile(count, census, rnd, opt = {}) {
   const STACK_CAP = 2;        // never more than 2 courses anywhere
   const stack = new Map();    // lattice cell -> settled course count
   const byHex = new Map();    // hex -> Matrix4 list
-  for (let i = 0; i < order.length; i++) {
+  const freeCell = () => {
+    // sample emptiest-first; a cell is only accepted while it still has a
+    // free course, so two bricks can NEVER settle at the same position
+    // (the old Math.min(stack, CAP) clamp double-stacked bricks on top of
+    // each other and the colors z-fought/flickered)
     let bx = 0, bz = 0, bScore = Infinity;
-    for (let t = 0; t < 10; t++) {
+    for (let t = 0; t < 12; t++) {
       const a = rnd() * Math.PI * 2;
       const rr = spread * Math.sqrt(rnd());
       const gx = Math.round(Math.cos(a) * rr / cell);
       const gz = Math.round(Math.sin(a) * rr / cell);
+      if ((stack.get(`${gx}|${gz}`) || 0) >= STACK_CAP) continue;
       let load = 0;
       for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) load += stack.get(`${gx + dx}|${gz + dz}`) || 0;
@@ -216,7 +221,21 @@ export function brickPile(count, census, rnd, opt = {}) {
       if (score < bScore) { bScore = score; bx = gx; bz = gz; }
       if (load === 0) break;
     }
-    const gy = Math.min(stack.get(`${bx}|${bz}`) || 0, STACK_CAP);
+    if ((stack.get(`${bx}|${bz}`) || 0) < STACK_CAP && bScore < Infinity) return [bx, bz];
+    // fallback: walk out in an expanding spiral until a free course is found
+    for (let ring = 0; ring < 400; ring++) {
+      for (let dx = -ring; dx <= ring; dx++) {
+        for (let dz = -ring; dz <= ring; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+          if ((stack.get(`${dx}|${dz}`) || 0) < STACK_CAP) return [dx, dz];
+        }
+      }
+    }
+    return [0, 0];
+  };
+  for (let i = 0; i < order.length; i++) {
+    const [bx, bz] = freeCell();
+    const gy = stack.get(`${bx}|${bz}`) || 0;   // always < STACK_CAP here
     stack.set(`${bx}|${bz}`, gy + 1);
     pos.set(
       cx + bx * cell + (rnd() - 0.5) * 0.25,

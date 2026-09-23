@@ -21,17 +21,61 @@ export const MODES = [
 ];
 export const MODE_KEYS = { KeyB: 'build', KeyV: 'weapon', KeyC: 'weather' };
 
+/* First WEATHERS index that belongs to the Disasters half of the weather
+   strip (everything from rain onwards); the strip draws a divider here. */
+export const DISASTER_FROM = WEATHERS.findIndex((w) => w.id === 'rain');
+
 const UP = new THREE.Vector3(0, 1, 0);
 
 const BRICKS = [
   { name: 'Brick', w: 1, h: 1, d: 1, color: 0xe8402a, studs: [[0, 0]] },
   { name: 'Plate', w: 1, h: 0.4, d: 1, color: 0x2f7de1, studs: [[0, 0]] },
   { name: 'Wide', w: 2, h: 1, d: 1, color: 0xffc42e, studs: [[-0.5, 0], [0.5, 0]] },
-  { name: 'Tile', w: 2, h: 0.4, d: 2, color: 0x35b56a, studs: [] },
+  // Tile: smooth-topped 2x2, four corner pegs like a real LEGO tile-brick
+  { name: 'Tile', w: 2, h: 0.35, d: 2, color: 0x35b56a,
+    studs: [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]] },
   { name: 'Arch', w: 1, h: 2, d: 1, color: 0x9b5de5, studs: [[0, 0]], hollow: true },
   { name: 'Round', w: 1, h: 1, d: 1, color: 0xff8a3d, studs: [[0, 0]], round: true }
 ];
 const BED_TOP = -2.2;
+
+/* Isometric SVG icon matching each block's real proportions + stud layout,
+   so hotbar previews look like the blocks that actually get placed. */
+export function brickIcon(b) {
+  const hex = `#${b.color.toString(16).padStart(6, '0')}`;
+  const w = b.w, d = b.d, h = Math.max(b.h, 0.3);
+  const u = Math.min(52 / ((w + d) * 0.866), 54 / ((w + d) * 0.5 + h + 0.3));
+  const px = (x, z) => 32 + (x - z) * 0.866 * u;
+  const py = (x, z, y) => 56 - (x + z) * 0.5 * u - y * u;
+  const pt = (x, z, y) => `${px(x, z).toFixed(1)},${py(x, z, y).toFixed(1)}`;
+  const face = (pts, fill, op) =>
+    `<polygon points="${pts.join(' ')}" fill="${fill}"${op ? ` fill-opacity="${op}"` : ''}/>`;
+  let body = '';
+  if (b.round) {
+    const r = 0.5 * u, cx = px(w / 2, d / 2);
+    const topY = py(w / 2, d / 2, h), botY = py(w / 2, d / 2, 0);
+    body = `<rect x="${(cx - r).toFixed(1)}" y="${topY.toFixed(1)}" width="${(2 * r).toFixed(1)}" height="${(botY - topY).toFixed(1)}" fill="${hex}"/>` +
+      `<ellipse cx="${cx.toFixed(1)}" cy="${botY.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * 0.5).toFixed(1)}" fill="#000" fill-opacity=".2"/>` +
+      `<ellipse cx="${cx.toFixed(1)}" cy="${topY.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * 0.5).toFixed(1)}" fill="${hex}" stroke="rgba(0,0,0,.3)" stroke-width="1"/>`;
+  } else {
+    body =
+      face([pt(0, 0, h), pt(w, 0, h), pt(w, d, h), pt(0, d, h)], hex) +
+      face([pt(w, 0, h), pt(w, d, h), pt(w, d, 0), pt(w, 0, 0)], hex) +
+      face([pt(w, 0, h), pt(w, d, h), pt(w, d, 0), pt(w, 0, 0)], '#000', '.18') +
+      face([pt(0, d, h), pt(w, d, h), pt(w, d, 0), pt(0, d, 0)], hex) +
+      face([pt(0, d, h), pt(w, d, h), pt(w, d, 0), pt(0, d, 0)], '#000', '.34');
+  }
+  let studs = '';
+  for (const [sx, sz] of (b.round ? [[0, 0]] : b.studs || [])) {
+    const cx = px(w / 2 + sx, d / 2 + sz);
+    const cy = py(w / 2 + sx, d / 2 + sz, h);
+    const rx = Math.max(4, 0.19 * u), ry = rx * 0.5;
+    studs += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy - ry).toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="${hex}" stroke="rgba(0,0,0,.3)" stroke-width="1"/>`;
+    studs += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy - ry).toFixed(1)}" rx="${(rx * 0.6).toFixed(1)}" ry="${(ry * 0.6).toFixed(1)}" fill="#fff" fill-opacity=".3"/>`;
+  }
+  return `<svg class="bicon" viewBox="0 0 64 64" aria-hidden="true">${body}${studs}</svg>`;
+}
+
 
 /* Debug-mode toggle lives in the options panel (Developer section).
    window.DBG.dump() copies captured rows to the clipboard for analysis. */
@@ -653,25 +697,51 @@ class World {
   }
 
   buildGround() {
-    const H = this.half, r = this.river, grass = this.mat(0x74c745);
-    const regions = [
+    const H = this.half, r = this.river, grass = mkMat(0x74c745);
+    this.regions = [
       [0, (r.z0 - H - 1) / 2, 2 * (H + 1), r.z0 + H + 1],
       [0, (r.z1 + H + 1) / 2, 2 * (H + 1), H + 1 - r.z1],
       [(r.x0 - H - 1) / 2, (r.z0 + r.z1) / 2, r.x0 + H + 1, r.z1 - r.z0],
       [(r.x1 + H + 1) / 2, (r.z0 + r.z1) / 2, H + 1 - r.x1, r.z1 - r.z0]
     ];
-    const parts = [];
-    for (const [cx, cz, w, d] of regions) {
+    // Physics: one solid slab per region (tagged terrain so craters can cut
+    // them). Visuals: an instanced 2x2 cell grid so a nuke/meteor can punch
+    // real holes by zeroing the instances inside the blast radius.
+    for (const [cx, cz, w, d] of this.regions) {
       if (w <= 0 || d <= 0) continue;
-      addBox(parts, w, 2, d, cx, -1, cz);
-      this.addSolid(new THREE.Box3(
+      const rec = this.addSolid(new THREE.Box3(
         new THREE.Vector3(cx - w / 2, -2, cz - d / 2),
         new THREE.Vector3(cx + w / 2, 0, cz + d / 2)
       ), null, true, true);
+      rec.terrain = true;
     }
-    const ground = merged(parts, grass);
+    const P = 2;                       // cell pitch
+    const gx0 = -H - 1, gz0 = -H - 1;  // grid origin (covers regions exactly)
+    const nx = Math.ceil((2 * (H + 1)) / P), nz = nx;
+    this.groundGrid = { P, gx0, gz0, nx, nz, cells: new Map(), carved: new Map() };
+    const inRegion = (x, z) => this.regions.some(
+      ([cx2, cz2, w2, d2]) => Math.abs(x - cx2) < w2 / 2 && Math.abs(z - cz2) < d2 / 2);
+    const geo = new THREE.BoxGeometry(P, 2, P);
+    geo.translate(0, -1, 0);           // instance at y=0 -> top flush with 0
+    const mtx = new THREE.Matrix4();
+    const idx = [];
+    for (let ix = 0; ix < nx; ix++) {
+      for (let iz = 0; iz < nz; iz++) {
+        const x = gx0 + ix * P + P / 2, z = gz0 + iz * P + P / 2;
+        if (!inRegion(x, z)) continue;
+        this.groundGrid.cells.set(`${ix}|${iz}`, idx.length);
+        idx.push([x, z]);
+      }
+    }
+    const ground = new THREE.InstancedMesh(geo, grass, idx.length);
+    ground.receiveShadow = true;
+    ground.castShadow = false;
+    ground.frustumCulled = false;
+    idx.forEach(([x, z], i) => { mtx.makeTranslation(x, 0, z); ground.setMatrixAt(i, mtx); });
+    ground.instanceMatrix.needsUpdate = true;
     this.addObj(ground);
     this._b.staticMeshes.push(ground);
+    this.groundGrid.mesh = ground;
     this.registerZones();
 
     const bed = merged([addBox([], r.x1 - r.x0, 1.2, r.z1 - r.z0, 0, BED_TOP - 0.6, (r.z0 + r.z1) / 2)], this.mat(0xd9b98a));
@@ -719,6 +789,116 @@ class World {
     }
     this.addObj(merged(stems, this.mat(0x2f9e4f)));
     headsByColor.forEach((list, i) => { if (list.length) this.addObj(merged(list, headMats[i])); });
+  }
+
+  /* Punch a bowl-shaped hole in the terrain. Terrain-flagged slabs are cut
+     by integer depth rings (adjacent rings differ by at most one step, so a
+     survivor can always walk or jump back out); ground cell instances inside
+     are hidden and a charred floor is laid at the bottom. Returns nothing;
+     craters are permanent until the world regenerates. */
+  carveCrater(cx, cz, radius, maxDepth) {
+    const G = this.groundGrid;
+    if (!G || !G.mesh) return;
+    const P = G.P;
+    const depthAt = (x, z) => {
+      const dn = Math.hypot(x - cx, z - cz) / radius;
+      if (dn >= 1) return 0;
+      return maxDepth * Math.pow(1 - dn, 1.7);
+    };
+    // quantise per distance ring, 0.6 terraces (grounded step-up is 1.05 so
+    // every ring stays walkable), cap depth at 1.7 so the 2-unit ground slab
+    // always keeps >=0.3 of floor underneath the pit
+    maxDepth = Math.min(maxDepth, 1.7);
+    const STEPQ = 0.6;
+    const rings = new Map();
+    let prevD = maxDepth;
+    for (let rr = 0; rr <= Math.ceil(radius) + 1; rr++) {
+      let d = Math.floor(depthAt(cx + rr, cz) / STEPQ) * STEPQ;
+      d = Math.min(d, prevD);
+      d = Math.max(d, prevD - STEPQ);
+      rings.set(rr, d);
+      prevD = d;
+    }
+    const depthFor = (x, z) => rings.get(Math.round(Math.hypot(x - cx, z - cz))) ?? 0;
+
+    const cuts = [];                   // {x0,z0,x1,z1,d} unit of 1 column depth
+    const cellKeys = [];
+    const r0 = Math.floor((radius + P) / P) + 1;
+    const ix0 = Math.floor((cx - G.gx0 - P / 2) / P), iz0 = Math.floor((cz - G.gz0 - P / 2) / P);
+    for (let ix = ix0 - r0; ix <= ix0 + r0; ix++) {
+      for (let iz = iz0 - r0; iz <= iz0 + r0; iz++) {
+        const ci = G.cells.get(`${ix}|${iz}`);
+        if (ci === undefined) continue;
+        const x = G.gx0 + ix * P + P / 2, z = G.gz0 + iz * P + P / 2;
+        if (Math.hypot(x - cx, z - cz) > radius + P * 0.5) continue;
+        const d = depthFor(x, z);
+        if (d <= 0) continue;
+        cellKeys.push([ci, ix, iz, x, z, d]);
+      }
+    }
+    // hide ground instances (scale to zero)
+    const mtx = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (const [ci] of cellKeys) G.mesh.setMatrixAt(ci, mtx);
+    G.mesh.instanceMatrix.needsUpdate = true;
+
+    // cut terrain slabs: subtract (cellRect x [-d..0]) from flagged solids
+    const charMat = mkMat(0x3a2c22, { roughness: 1 });
+    const capParts = [], rimParts = [];
+    for (const [, , , x, z, d] of cellKeys) {
+      const cut = new THREE.Box3(
+        new THREE.Vector3(x - P / 2, -d, z - P / 2),
+        new THREE.Vector3(x + P / 2, 0.01, z + P / 2)
+      );
+      this._subSolidFrom(cut);
+      addBox(capParts, P, 0.08, P, x, -d + 0.04, z);
+      if (Math.hypot(x - cx, z - cz) > radius * 0.72) {
+        addBox(rimParts, P, 0.24, P, x, 0.12, z);   // scorched lip at surface
+      }
+    }
+    // charred pit floor / scorch ring are visuals only: the terrain slab cut
+    // left >=0.3 of slab under every pit cell, so the slab bottom is the floor
+    if (capParts.length) this.addObj(merged(capParts, charMat));
+    if (rimParts.length) this.addObj(merged(rimParts, charMat));
+    for (const [, , , x, z, d] of cellKeys) this.groundGrid.carved.set(`${Math.round(x)}|${Math.round(z)}`, d);
+  }
+
+  /* Subtract box `cut` (only its upper part, down to cut.min.y) from every
+     terrain-flagged solid, replacing the rec box with the remaining pieces. */
+  _subSolidFrom(cut) {
+    // carve a box out of the terrain-flagged slab solids. Subtracting one AABB
+    // from another yields up to six keep-slabs; the -Y slab always survives so
+    // a pit keeps a walkable floor, and a solid that misses the cut is kept
+    // whole rather than split along an axis it doesn't overlap.
+    const sub = (b, c) => {
+      const ix0 = Math.max(b.min.x, c.min.x), ix1 = Math.min(b.max.x, c.max.x);
+      const iy0 = Math.max(b.min.y, c.min.y), iy1 = Math.min(b.max.y, c.max.y);
+      const iz0 = Math.max(b.min.z, c.min.z), iz1 = Math.min(b.max.z, c.max.z);
+      if (ix0 >= ix1 || iy0 >= iy1 || iz0 >= iz1) return null;
+      const out = [];
+      const mk = (x0, y0, z0, x1, y1, z1) => {
+        if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4 || z1 - z0 < 1e-4) return;
+        out.push(new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1)));
+      };
+      mk(b.min.x, b.min.y, b.min.z, ix0, b.max.y, b.max.z);
+      mk(ix1, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
+      mk(ix0, b.min.y, b.min.z, ix1, b.max.y, iz0);
+      mk(ix0, b.min.y, iz1, ix1, b.max.y, b.max.z);
+      mk(ix0, iy1, iz0, ix1, b.max.y, iz1);
+      mk(ix0, b.min.y, iz0, ix1, iy0, iz1);
+      return out;
+    };
+    const flat = [];
+    for (const rec of this.solids) {
+      if (!rec.terrain || rec.disabled) { flat.push(rec); continue; }
+      const pieces = sub(rec.box, cut);
+      if (!pieces) { flat.push(rec); continue; }
+      pieces.forEach((pb, i2) => {
+        if (i2 === 0) { rec.box = pb; flat.push(rec); }
+        else flat.push({ ...rec, box: pb });
+      });
+    }
+    this.solids.length = 0;
+    this.solids.push(...flat);
   }
 
   buildWater() {
@@ -1911,9 +2091,11 @@ class World {
        ...grp.children.filter((c) => c !== bodyMesh && c.isMesh).map((mesh) => ({ mesh }))]);
     this.houseRects.push({ x: h.x, z: h.z, w: w / 2, d: d / 2 });
 
-    // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along facing
+    // front-door anchor: door sits at local (0, 0, bd/2), 1.6 units out along
+    // facing. Home interiors key off the body colour (HOME_THEMES), so the
+    // seed IS the brick colour of this house.
     this.registerDoor(h.farm ? 'farm' : 'home', h.x, h.z, h.ry, 1.6,
-      hash32(`${this.opts.size}:${Math.round(h.x)}:${Math.round(h.z)}`));
+      h.farm ? hash32(`${this.opts.size}:${Math.round(h.x)}:${Math.round(h.z)}`) : h.body);
     return true;
   }
 
@@ -2122,7 +2304,10 @@ class World {
     for (const s of this.solids) {
       if (s.disabled) continue;
       const b = s.box;
-      if (b.max.y > -1 && b.max.y > top &&
+      // -1.9 cut-off: crater floors (down to -1.7) must count as ground so the
+      // ejector/respawn see them; the riverbed (-2.2) stays "void" so trench
+      // handling keeps ownership of the river
+      if (b.max.y > -1.9 && b.max.y > top &&
           x >= b.min.x && x <= b.max.x && z >= b.min.z && z <= b.max.z) top = b.max.y;
     }
     return top;
@@ -2572,10 +2757,11 @@ class Game {
     const mesh = this.ghost;
     if (!mesh) return;
     mesh.geometry.dispose();
-    mesh.geometry = BR.clone().scale(def.w, def.h, def.d);
+    mesh.geometry = def.round ? CY.clone().scale(def.w / 2, def.h, def.d / 2)
+      : BR.clone().scale(def.w, def.h, def.d);
     const edges = mesh.children[0];
     edges.geometry.dispose();
-    edges.geometry = new THREE.EdgesGeometry(BR.clone().scale(def.w, def.h, def.d));
+    edges.geometry = new THREE.EdgesGeometry(mesh.geometry.clone());
     mesh.material.color.setHex(def.color);
   }
 
@@ -2641,9 +2827,9 @@ class Game {
     this.slots = [];
     BRICKS.forEach((b, i) => {
       const el = document.createElement('button');
-      el.className = 'slot' + (b.w === 2 ? ' wide' : '');
+      el.className = 'slot';
       el.title = b.name;
-      el.innerHTML = `<span class="key">${i + 1}</span><span class="swatch" style="background:#${b.color.toString(16).padStart(6, '0')}"></span>`;
+      el.innerHTML = `<span class="key">${i + 1}</span>${brickIcon(b)}`;
       el.addEventListener('click', () => this.selectSlot(i));
       bar.appendChild(el);
       this.slots.push(el);
@@ -2712,15 +2898,34 @@ class Game {
     });
     this.stripBar.appendChild(this.exploreClear);
 
+    // weather strip splits into Sky/Time group and Disasters group with a
+    // divider; each button carries an emoji + a text label
     this.weatherSlots = WEATHERS.map((w) => {
       const el = document.createElement('button');
       el.className = 'slot weather-w';
       el.title = w.name;
-      el.innerHTML = `<span class="wicon">${w.icon}</span>`;
+      el.innerHTML = `<span class="wicon">${w.icon}</span><span class="wlabel">${w.name}</span>`;
       el.addEventListener('click', (e) => { e.preventDefault(); this.onWeatherClick(w.id); });
       this.stripBar.appendChild(el);
       return el;
     });
+    this.stripDivider = document.createElement('div');
+    this.stripDivider.className = 'strip-div';
+    this.stripDivider.textContent = '⚠️';
+    this.stripDivider.title = 'Disasters';
+    this.stripBar.insertBefore(this.stripDivider, this.weatherSlots[DISASTER_FROM]);
+  }
+
+  /* One row at a time; only wrap to a second row once the bar would exceed
+     90% of the viewport width (per UAT layout rule). */
+  layoutStrips() {
+    const max = window.innerWidth * 0.9;
+    for (const bar of [this.hotbar, this.stripBar, this.modeBar]) {
+      if (!bar) continue;
+      bar.classList.remove('wrap2');
+      bar.style.maxWidth = '';
+      if (bar.scrollWidth > max) bar.classList.add('wrap2');
+    }
   }
 
   setMode(mode) {
@@ -2768,6 +2973,9 @@ class Game {
     this.hotbar.classList.toggle('hidden', !build);
     this.stripBar.classList.toggle('hidden', !weapon && !weather);
     if (this.exploreClear) this.exploreClear.style.display = weather ? '' : 'none';
+    if (this.stripDivider) this.stripDivider.style.display = weather ? 'flex' : 'none';
+    this.stripBar.classList.toggle('labeled', weather);
+    this.layoutStrips();
     this.weaponSlots.forEach((el, i) => {
       el.style.display = weapon ? '' : 'none';
       el.classList.toggle('active', weapon && i === this.weapon);
@@ -3101,7 +3309,6 @@ class Game {
       n.cloud.rotation.y += dt * 0.25;
       if (n.t > 26) {
         this.scene.remove(n.cloud);
-        this.scene.remove(n.crater);
         n.cloud = null; n.crater = null;
         n.stage = 'done';
         if (this.weather === 'nuke') this.activateWeather('clear');
@@ -3130,22 +3337,10 @@ class Game {
     this.bricksInRadius(at, def.radius - 2, (rec) => this.hurtBrick(rec, def.dmg));
     this.damageSplash(def, at, null);
     if (this.life) this.life.killNear(n.tx, n.tz, def.radius + 4);
-    const crater = new THREE.Group();
-    const char = mkMat(0x2b2320, { roughness: 1 });
-    for (let a = 0; a < 26; a++) {
-      const ang = (a / 26) * Math.PI * 2;
-      const rr = 9 + (a % 3);
-      const b = new THREE.Mesh(BR, char);
-      b.scale.set(1.6, 0.5, 1.6);
-      b.position.set(n.tx + Math.cos(ang) * rr, gTop + 0.25, n.tz + Math.sin(ang) * rr);
-      b.rotation.y = ang;
-      crater.add(b);
-    }
-    const floor = new THREE.Mesh(BR, char);
-    floor.scale.set(15, 0.3, 15);
-    floor.position.set(n.tx, gTop + 0.16, n.tz);
-    crater.add(floor);
-    this.scene.add(crater);
+    // Permanent terrain crater scaled to the blast: ~80% of the damage
+    // radius, 1.7 deep at GZ, terraced walls the player can walk down;
+    // char ring + pit floor come from carveCrater itself
+    this.world.carveCrater(n.tx, n.tz, Math.round(def.radius * 0.8), 1.7);
     const cloud = new THREE.Group();
     const cl = mkMat(0xd9c9a8, { emissive: 0xff7b2d, emissiveIntensity: 0.45, roughness: 1 });
     const cl2 = mkMat(0xb9a685, { roughness: 1 });
@@ -3162,7 +3357,7 @@ class Game {
     cloud.position.set(n.tx, gTop, n.tz);
     cloud.scale.setScalar(0.2);
     this.scene.add(cloud);
-    n.cloud = cloud; n.crater = crater; n.gTop = gTop;
+    n.cloud = cloud; n.gTop = gTop;
     this.toast('☢️ GROUND ZERO — 25kt. The map will remember that.', 'bad');
   }
 
@@ -3333,6 +3528,8 @@ class Game {
       this.fx.spawn(m.mesh.position.x, m.mesh.position.y, m.mesh.position.z, 'fire', 3);
       if (m.mesh.position.y <= 0.6) {
         const def = { ...WEATHERS.find((w) => w.id === 'meteor'), radius: 6, maxBreak: 6, dmg: 150 };
+        // bowl-shaped terrain dent sized to the meteor's damage footprint
+        this.world.carveCrater(m.mesh.position.x, m.mesh.position.z, def.radius + 1, 1.0);
         this.explode(new THREE.Vector3(m.mesh.position.x, 0.8, m.mesh.position.z), def);
         this.scene.remove(m.mesh);
         this.meteors.splice(i, 1);
@@ -3482,7 +3679,7 @@ class Game {
     });
     window.addEventListener('keyup', (e) => { if (map[e.code]) this.keys.delete(map[e.code]); });
     window.addEventListener('blur', () => this.keys.clear());
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', () => { this.resize(); this.layoutStrips?.(); });
     if (matchMedia('(hover: none)').matches) document.body.classList.add('touch');
 
     const c = this.canvas;
@@ -3819,7 +4016,9 @@ class Game {
       const t = this.computePlacement(ndc);
       if (t) {
         const d = t.def;
-        this.ghost.position.set(t.gx + d.w / 2 - 0.5, t.gy + d.h / 2, t.gz + d.d / 2 - 0.5);
+        // sink the ghost 2 cm: coplanar faces with the block it previews on
+        // z-fought blue/white on every top surface
+        this.ghost.position.set(t.gx + d.w / 2 - 0.5, t.gy + d.h / 2 - 0.02, t.gz + d.d / 2 - 0.5);
         this.ghost.material.opacity = t.valid ? 0.42 : 0.15;
         this.ghost.children[0].material.color.setHex(t.valid ? 0xffffff : 0xff5555);
         this.ghost.visible = true;
@@ -3913,7 +4112,7 @@ class Game {
     this.orbit.pitch = 0.3;
     this.orbit.wantDist = 6.5;
     this.ghost.visible = false;
-    const tip = { home: 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.', church: 'The LEGO pastor is mid-sermon at the lectern — Jesus on the big cross behind him.', store: 'Grab a slushie at the back: tap a flavour, then press the green button to pour.' }[it.type] || '';
+    const tip = { home: it.theme ? it.theme.blurb : 'Tap the TV to change the channel.', farm: 'Mind the produce crates.', school: 'Rows of desks up front — take a seat.', police: 'The holding cell is barred; no touching.', fire: 'The engine is parked; hop in the bay.', church: 'The LEGO pastor is mid-sermon at the lectern — Jesus on the big cross behind him.', store: 'Grab a slushie at the back: tap a flavour, then press the green button to pour.' }[it.type] || '';
     DBG.log('ENTER', it.type);
     this.toast(`Inside the ${it.type}! ${tip} Green pad = exit.`, 'good');
   }
