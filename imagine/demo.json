@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "grok-4.7",
+  "harness": "Cursor",
+  "maxContextWindow": null,
+  "updated": "2026-09-26",
+  "notes": "Original short film Button. Context limit and token usage were not exposed."
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BUTTON</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.170.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="vignette"></div>
+    <div class="bar top"></div>
+    <div class="bar bottom"></div>
+
+    <p id="who"></p>
+    <p id="line"></p>
+    <div id="progress" hidden><i></i></div>
+
+    <section id="poster">
+      <p class="eyebrow">a short film</p>
+      <h1>BUTTON</h1>
+      <p class="log">A button comes loose on the walk home.<br />A paper boat offers him a ride.</p>
+      <button id="play" type="button">Play</button>
+      <p class="hint">space pauses · arrows skip</p>
+    </section>
+
+    <section id="end" hidden>
+      <p class="eyebrow">the end</p>
+      <h2>BUTTON</h2>
+      <p class="log">For anyone who has ever come loose.</p>
+      <ul>
+        <li><b>Pip</b> the button</li>
+        <li><b>Fold</b> the paper boat</li>
+        <li><b>Nim</b> the moth</li>
+      </ul>
+      <button id="replay" type="button">Replay</button>
+    </section>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
