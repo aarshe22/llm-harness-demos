@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "qwen3.8-flash-next",
+  "harness": "opencode",
+  "maxContextWindow": null,
+  "updated": "2026-09-26",
+  "notes": "Modern Three.js Paperboy remix: Mon-Sun route with training course, bloom + film-grain post-FX, procedural world and synthwave audio, live options panel, and an angry 'Fake News Guy' who lobs your papers back. Token usage was not exposed."
+}
