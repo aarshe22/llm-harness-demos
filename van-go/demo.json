@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "qwen3.8-flash-next",
+  "harness": "opencode",
+  "maxContextWindow": null,
+  "updated": "2026-09-26",
+  "notes": "First-person cat hunt inside three Van Gogh paintings: The Starry Night, Cafe Terrace at Night, A Meadow in the Mountains. Single-file Three.js, procedural sky/terrain shaders and a painterly post pass. Context limit and token usage were not exposed."
+}
