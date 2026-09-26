@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "grok-4.7",
+  "harness": "Cursor",
+  "maxContextWindow": null,
+  "updated": "2026-09-26",
+  "notes": "Endless Three.js Star Force remake with a live control panel. Context limit and token usage were not exposed."
+}

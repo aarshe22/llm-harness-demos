@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <title>STARFORCE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;600;700;800&family=Sora:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="vignette"></div>
+    <div id="hurt"></div>
+
+    <header id="hud" class="hidden">
+      <div class="read left">
+        <p class="kicker">Final Star</p>
+        <p id="score">0</p>
+        <p id="combo">x1 · 0 HIT</p>
+        <p id="graze">GRAZE 0</p>
+      </div>
+      <div class="read mid">
+        <p id="sector">SECTOR 01</p>
+        <p id="biome">NEON ABYSS</p>
+      </div>
+      <div class="read right">
+        <p id="dist">0.0 km</p>
+        <p id="best">BEST 0</p>
+      </div>
+    </header>
+
+    <div id="bossbar" class="hidden">
+      <p>AEGIS CORE</p>
+      <div class="track"><div id="bossfill"></div></div>
+    </div>
+
+    <div id="banner"></div>
+    <div id="popups"></div>
+
+    <footer id="dock" class="hidden">
+      <div id="lives" class="lives" aria-label="Lives"></div>
+      <div class="meter">
+        <span>SHIELD</span>
+        <div class="track"><div id="shieldfill"></div></div>
+      </div>
+      <div class="meter weapon">
+        <span id="weapon-name">VECTOR</span>
+        <div id="pips"></div>
+      </div>
+      <div class="meter">
+        <span>NOVA</span>
+        <div id="novas"></div>
+      </div>
+    </footer>
+    <p id="hint" class="hidden">WASD or mouse to fly · Shift focus · Space nova · T control panel · wingtips are safe</p>
+
+    <div id="overlay">
+      <section id="title" class="panel">
+        <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+        <p class="eyebrow">Endless ascent · inspired by the 1984 raid</p>
+        <h1 class="wordmark">STARFORCE</h1>
+        <p class="lede">Fly the Final Star through living worlds. Break cores. Keep the chain.</p>
+        <div class="actions">
+          <button id="launch" type="button">Launch</button>
+          <button id="tune-title" type="button">Control</button>
+        </div>
+        <p id="title-best" class="best"></p>
+      </section>
+
+      <section id="gameover" class="panel hidden">
+        <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+        <p class="eyebrow">Signal lost</p>
+        <h2>THE STAR FALLS</h2>
+        <dl id="stats"></dl>
+        <button id="relaunch" type="button">Relaunch</button>
+      </section>
+
+      <section id="paused" class="panel hidden">
+        <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+        <p class="eyebrow">Hold</p>
+        <h2>PAUSED</h2>
+        <button id="resume" type="button">Resume</button>
+      </section>
+    </div>
+
+    <button id="mute" type="button">Sound</button>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
