@@ -220,11 +220,12 @@ const TUNE_DEFAULTS = {
   fnPenalty: 200,   // points deducted when the returned paper bonks you
   fnPower: 11,      // how hard the paper is lobbed back
   traffic: 1,       // street hazard frequency multiplier
+  detail: 1,        // world dressing & street life: 0 low, 1 normal, 2 rich
   pedal: 1,         // acceleration multiplier
   steer: 1,         // steering agility multiplier
   paperArc: 1,      // thrown-paper gravity multiplier
   volume: 0.5,      // master volume
-  bloom: 0.62,      // bloom glow strength
+  bloom: 0.35,      // bloom glow strength (0 = off)
   grain: 0.5,       // film grain amount
 };
 const T = Object.assign({}, TUNE_DEFAULTS);
@@ -519,6 +520,222 @@ function stdMat(color, opts={}){
 function disposeTree(root){
   root.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
 }
+/* ---------------- street dressing & ambient life ---------------- */
+function decorate(G, houses, D){
+  const det = THREE.MathUtils.clamp(T.detail|0, 0, 2);
+  const m = [0.35, 1, 1.9][det];
+  const R = Math.random;
+  const mtx = new THREE.Matrix4(), qt = new THREE.Quaternion();
+  const sv = new THREE.Vector3(1,1,1), tmp = new THREE.Vector3();
+
+  /* picket fences */
+  const fenceH = houses.filter(()=>R() < 0.55*m);
+  if (fenceH.length){
+    const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07,0.75,0.07), stdMat(0xf2ecdd), fenceH.length*24);
+    let pi=0;
+    for (const h of fenceH){
+      const fx = h.side*(ROAD_HALF+3.7);
+      for (const seg of [-1,1]){
+        for (let k=0;k<6;k++){
+          mtx.compose(tmp.set(fx, 0.42, h.z0 + seg*(2.4+k*1.15)), qt, sv.set(1,1,1));
+          posts.setMatrixAt(pi++, mtx);
+        }
+        for (const ry of [0.32,0.55]){
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,6.2), stdMat(0xe9e2d0));
+          rail.position.set(fx, ry, h.z0 + seg*5.25); G.add(rail);
+        }
+      }
+    }
+    posts.count = pi; posts.instanceMatrix.needsUpdate = true; G.add(posts);
+  }
+  /* hedge bushes */
+  {
+    const n = Math.round(50*m);
+    if (n>0){
+      const bu = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.5,0), stdMat(0x3c8a45,{roughness:1}), n);
+      const col = new THREE.Color();
+      for (let k=0;k<n;k++){
+        const h = houses[Math.floor(R()*houses.length)];
+        const s = 0.55 + R()*0.85;
+        mtx.compose(tmp.set(h.side*(ROAD_HALF+5+R()*1.5), 0.4*s, h.z0 + (R()*14-7)), qt, sv.set(s,s*0.8,s));
+        bu.setMatrixAt(k, mtx);
+        col.setHSL(0.3+R()*0.08, 0.5, 0.26+R()*0.14); bu.setColorAt(k, col);
+      }
+      bu.castShadow = true; G.add(bu);
+    }
+  }
+  /* front path stones */
+  {
+    const list = houses.filter(()=>R() < 0.8*m);
+    if (list.length){
+      const st = new THREE.InstancedMesh(new THREE.BoxGeometry(0.75,0.08,0.55), stdMat(0xb9bec6), list.length*3);
+      let si=0;
+      for (const h of list) for (let k=0;k<3;k++){
+        mtx.compose(tmp.set(h.side*(6.1+k*1.15), 0.29, h.porch.z), qt, sv.set(1,1,1));
+        st.setMatrixAt(si++, mtx);
+      }
+      st.count = si; G.add(st);
+    }
+  }
+  /* flower patches */
+  {
+    const n = Math.round(150*m);
+    if (n>0){
+      const fl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14,0.18,0.14), new THREE.MeshStandardMaterial({roughness:1}), n);
+      const col = new THREE.Color();
+      for (let k=0;k<n;k++){
+        const h = houses[Math.floor(R()*houses.length)];
+        mtx.compose(tmp.set(h.side*(ROAD_HALF+5.4+R()*6), 0.13, h.z0+(R()*16-8)), qt, sv.set(1,1,1));
+        fl.setMatrixAt(k, mtx);
+        col.setHSL(R(), 0.85, 0.6); fl.setColorAt(k, col);
+      }
+      G.add(fl);
+    }
+  }
+  /* fire hydrants */
+  houses.forEach((h,hi)=>{
+    if (hi%2) return;
+    const hm = stdMat(0xd53a3a,{metalness:0.4,roughness:0.4});
+    const x = h.side*(ROAD_HALF+0.95), z = h.z0-6.2;
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.14,0.55,8), hm); b.position.set(x,0.52,z); b.castShadow=true;
+    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), hm); tp.position.set(x,0.83,z);
+    const c1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.3,6), hm); c1.rotation.z=Math.PI/2; c1.position.set(x,0.65,z);
+    G.add(b,tp,c1);
+  });
+  /* trash cans & newspaper vending boxes */
+  houses.forEach((h,hi)=>{
+    if (R() < 0.3*m){
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.28,0.75,9), stdMat(0x5a616c,{metalness:0.5,roughness:0.5}));
+      can.position.set(h.side*(ROAD_HALF+3.1), 0.63, h.z0-7.4); can.castShadow=true; G.add(can);
+    }
+    if (hi%4===0){
+      const bx = h.side*(ROAD_HALF+2.3), bz = h.z0;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.7,0.12), stdMat(0x4a4f58)); post.position.set(bx,0.6,bz);
+      const boxM = new THREE.Mesh(new THREE.BoxGeometry(0.52,0.55,0.36), stdMat(0xc23a3a,{metalness:0.3,roughness:0.4})); boxM.position.set(bx,1.15,bz); boxM.castShadow=true;
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.54,0.1,0.38), stdMat(0xf2f2f2)); stripe.position.set(bx,1.24,bz);
+      G.add(post,boxM,stripe);
+    }
+  });
+  /* driveways + parked cars */
+  for (const h of houses){
+    if (R() > 0.4*m) continue;
+    const dz = h.z0-6;
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(5,0.06,2.4), stdMat(0x6f747c,{roughness:0.95}));
+    slab.position.set(h.side*10.2, 0.05, dz); slab.receiveShadow=true; G.add(slab);
+    const o = OB.car();
+    o.g.position.set(h.side*10.6, 0.06, dz);
+    o.g.rotation.y = Math.PI/2 + (R()-0.5)*0.3;
+    G.add(o.g);
+  }
+  /* bus shelters */
+  for (const bz of [{z:170,s:1},{z:310,s:-1}]){
+    const g = new THREE.Group();
+    const postM2 = stdMat(0x3a4050,{metalness:0.6,roughness:0.5});
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(2.6,0.12,1.5), stdMat(0x2e7a62)); roof.position.y=2.3; roof.castShadow=true;
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(2.4,1.3,0.06),
+      new THREE.MeshStandardMaterial({color:0x9fd8ff, roughness:0.1, metalness:0.4, transparent:true, opacity:0.35}));
+    panel.position.set(0,1.4,-0.65);
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(2,0.09,0.45), stdMat(0x8a5a2a)); bench.position.set(0,0.55,0.2);
+    g.add(roof,panel,bench);
+    for (const px of [-1.15,1.15]){
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.3,6), postM2); p.position.set(px,1.15,-0.6); g.add(p);
+    }
+    const sign = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,2.8,6), postM2); sign.position.set(1.7,1.4,0.4);
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.06,12),
+      new THREE.MeshStandardMaterial({color:0xffd23f, emissive:0xffb300, emissiveIntensity: D.lights?2:0.4}));
+    disc.rotation.x=Math.PI/2; disc.position.set(1.7,2.7,0.4);
+    g.add(sign,disc);
+    g.position.set(bz.s*(ROAD_HALF+1.9), 0.25, bz.z);
+    G.add(g);
+  }
+  /* background buildings with instanced windows */
+  {
+    const bcols = [0xd9c2b0, 0xc2cfd9, 0xd9c9d4, 0xcfd9c2, 0xe0d2b8, 0xb8cfe0];
+    const winXf = [];
+    for (let z=8; z<FINISH_Z-10; z+= 26+R()*24){
+      if (R() > 0.5+0.22*m) continue;
+      const sx = R()<0.5?-1:1;
+      const w = 9+R()*7, dp = 7+R()*5, hgt = 6+R()*10;
+      const bx = sx*(ROAD_HALF + 21 + R()*10);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(dp, hgt, w), stdMat(bcols[Math.floor(R()*bcols.length)]));
+      body.position.set(bx, hgt/2, z); body.castShadow=true; G.add(body);
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(dp+0.4, 0.5, w+0.4), stdMat(0x9aa2ac));
+      trim.position.set(bx, hgt+0.25, z); G.add(trim);
+      const faceX = bx - sx*dp/2;
+      const cols = Math.max(2, Math.floor(w/2.2)), rows = Math.max(2, Math.floor(hgt/2.6));
+      for (let c=0;c<cols;c++) for (let r=0;r<rows;r++)
+        winXf.push([faceX, 1.6+r*2.6, z - w/2 + 1.3 + c*((w-2.6)/Math.max(1,cols-1))]);
+    }
+    if (winXf.length){
+      const winMat = new THREE.MeshStandardMaterial({ color:0x26303c, emissive:0xffc878, emissiveIntensity: D.lights?2.2:0.08, roughness:0.3 });
+      const wm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14,1.2,0.9), winMat, winXf.length);
+      winXf.forEach((w,k)=>{ mtx.compose(tmp.set(w[0],w[1],w[2]), qt, sv.set(1,1,1)); wm.setMatrixAt(k, mtx); });
+      wm.instanceMatrix.needsUpdate = true; G.add(wm);
+    }
+  }
+}
+function createLife(G, D){
+  const det = THREE.MathUtils.clamp(T.detail|0, 0, 2);
+  const life = { walkers:[], birds:null, plane:null };
+  const R = Math.random;
+  const shirts = [0xd53a3a,0x3a7bd5,0x33a852,0xd5a53a,0x8a4ad5,0xff6ec7,0x2ec7ff,0x7dffa8];
+  const n = Math.round(7*[0.25,1,1.8][det]);
+  for (let k=0;k<n;k++){
+    const g = new THREE.Group();
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17,0.5,3,8), stdMat(shirts[Math.floor(R()*shirts.length)]));
+    torso.position.y=1.0;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15,10,10), stdMat(0xf2c49b));
+    head.position.y=1.62;
+    g.add(torso,head);
+    const side = k%2? 1:-1;
+    g.position.set(side*(ROAD_HALF+1.5+R()*0.9), 0.25, S.z + (R()*150-60));
+    G.add(g);
+    life.walkers.push({ g, dir:R()<0.5?-1:1, speed:0.9+R()*1.2, ph:R()*7 });
+  }
+  {
+    const bn = 14;
+    const bg = new THREE.BufferGeometry();
+    const bpos = new Float32Array(bn*3);
+    bg.setAttribute('position', new THREE.BufferAttribute(bpos,3));
+    const pts = new THREE.Points(bg, new THREE.PointsMaterial({ color:0x1c2a3a, size:0.55, fog:false }));
+    pts.frustumCulled = false; G.add(pts);
+    const bd = [];
+    for (let k=0;k<bn;k++) bd.push({ r:4+R()*10, w:0.5+R()*0.8, ph:R()*Math.PI*2, y:17+R()*8 });
+    life.birds = { pts, bpos, bd };
+  }
+  {
+    const pg = new THREE.Group();
+    const fus = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.4,2.4), stdMat(0xf4f4f8));
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(4.2,0.07,0.7), stdMat(0xe8e8f0));
+    pg.add(fus,wing);
+    pg.position.set(R()<0.5?-240:240, 44, STREET_END*0.6);
+    G.add(pg);
+    life.plane = pg;
+  }
+  return life;
+}
+function updateLife(dt){
+  const L = world && world.life; if (!L) return;
+  for (const w of L.walkers){
+    w.g.position.z += w.dir*w.speed*dt;
+    w.g.position.y = 0.25 + Math.abs(Math.sin(tGlobal*6 + w.ph))*0.05;
+    w.g.rotation.y = w.dir<0 ? Math.PI : 0;
+    const rel = w.g.position.z - S.z;
+    if (rel > 95 || rel < -30){ w.g.position.z = S.z + 60 + Math.random()*30; w.dir = Math.random()<0.5?-1:1; }
+  }
+  const B = L.birds;
+  const cz = S.z + 45;
+  for (let k=0;k<B.bd.length;k++){
+    const b = B.bd[k], a = tGlobal*b.w + b.ph;
+    B.bpos[k*3]   = Math.cos(a)*b.r;
+    B.bpos[k*3+1] = b.y + Math.sin(a*2+b.ph)*1.4;
+    B.bpos[k*3+2] = cz + Math.sin(a)*b.r*0.65;
+  }
+  B.pts.geometry.attributes.position.needsUpdate = true;
+  const p = L.plane;
+  p.position.x += (p.position.x<0? 7 : -7)*dt;
+  p.rotation.y = p.position.x<0 ? Math.PI/2 : -Math.PI/2;
+}
 function buildWorld(day){
   if (world){ scene.remove(world.group); disposeTree(world.group); }
   for (const bp of boomerPapers) world && world.group.remove(bp.p);
@@ -704,6 +921,9 @@ function buildWorld(day){
     banner.position.set(0, 6.6, 0);
     gm.add(p1,p2,banner); gm.position.set(0,0,FINISH_Z); G.add(gm);
   }
+  /* street dressing & ambient life */
+  decorate(G, houses, D);
+  const life = createLife(G, D);
   scene.add(G);
 
   /* day palette */
@@ -722,7 +942,7 @@ function buildWorld(day){
   for (const c of clouds) c.material.opacity = 0.35 + (1-D.stars)*0.5;
   grade.uniforms.sat.value = 1.08 + D.stars*0.1;
   grade.uniforms.tint.value.setRGB(1, 1 - D.stars*0.06, 1);
-  return { group:G, houses, obstacles:[], restocks, training, sprinklers, day };
+  return { group:G, houses, obstacles:[], restocks, training, sprinklers, life, day };
 }
 
 /* ---------------- bike rider rig ---------------- */
@@ -956,8 +1176,8 @@ addEventListener('keydown', e=>{
   } else if ((S.phase==='over'||S.phase==='win') && e.code==='Enter') location.reload();
   else if (S.phase==='summary' && (e.code==='Enter'||e.code==='Space')) nextDay();
   else if (S.phase==='playing'){
-    if (e.code==='KeyQ') tryThrow(-1);
-    if (e.code==='KeyE') tryThrow(1);
+    if (e.code==='KeyQ') tryThrow(1);
+    if (e.code==='KeyE') tryThrow(-1);
     if (e.code==='Space') smartThrow();
     if (e.code==='KeyB'){ AudioEngine.sfx.bell(); speak('ON YOUR LEFT!'); }
     if (e.code==='KeyP') togglePause();
@@ -1308,7 +1528,7 @@ function playerUpdate(dt){
   if (back) S.speed -= 16*dt;
   S.speed = THREE.MathUtils.clamp(S.speed, 0, cap);
 
-  const steer = (left?-1:0)+(right?1:0);
+  const steer = (left?1:0)+(right?-1:0);
   S.lean = THREE.MathUtils.lerp(S.lean, steer, 8*dt);
   S.x += steer * (2.2 + S.speed*0.32) * dt * T.steer;
   S.x = THREE.MathUtils.clamp(S.x, -(ROAD_HALF-0.55), ROAD_HALF-0.55);
@@ -1402,8 +1622,8 @@ function startGame(diff){
   beginDay();
 }
 function beginDay(){
-  world = buildWorld(S.day);
   S.x=0; S.z=-15; S.speed=0; S.y=0; S.vy=0; S.air=false; S.invulnT=0;
+  world = buildWorld(S.day);
   S.papers = 26; S.spawnT = 1.2; S.trainingDone=false; S.crashed=false; S.combo=1;
   bike.position.set(0,0,S.z);
   buildRouteTicks(); refreshTicks(); updateHUD();
@@ -1492,11 +1712,12 @@ const OPTS = [
   { k:'fnPenalty',  name:'FAKE NEWS PENALTY',        min:0,   max:1000,step:25,   fmt:v=>v+' pts' },
   { k:'fnPower',    name:'FAKE NEWS LOB POWER',      min:4,   max:20,  step:0.5,  fmt:v=>(+v).toFixed(1)+' m/s' },
   { k:'traffic',    name:'STREET CHAOS',             min:0.2, max:3,   step:0.1,  fmt:v=>'x'+(+v).toFixed(1) },
+  { k:'detail',     name:'WORLD DETAIL',             min:0,   max:2,   step:1,    fmt:v=>['LOW','NORMAL','RICH'][+v], help:'props & street life — applies next day' },
   { k:'pedal',      name:'PEDAL POWER',              min:0.5, max:2,   step:0.1,  fmt:v=>'x'+(+v).toFixed(1) },
   { k:'steer',      name:'STEERING AGILITY',         min:0.5, max:2,   step:0.1,  fmt:v=>'x'+(+v).toFixed(1) },
   { k:'paperArc',   name:'PAPER ARC GRAVITY',        min:0.5, max:2,   step:0.05, fmt:v=>'x'+(+v).toFixed(2) },
   { k:'volume',     name:'MASTER VOLUME',            min:0,   max:1,   step:0.05, fmt:v=>Math.round(v*100)+'%', apply:v=>AudioEngine.setVolume(v) },
-  { k:'bloom',      name:'BLOOM GLOW',               min:0,   max:1.5, step:0.01, fmt:v=>(+v).toFixed(2), apply:v=>bloom.strength=v },
+  { k:'bloom',      name:'BLOOM GLOW (0=OFF)',       min:0,   max:1.5, step:0.01, fmt:v=>v<=0.005?'OFF':(+v).toFixed(2), apply:v=>bloom.strength=v },
   { k:'grain',      name:'FILM GRAIN',               min:0,   max:1,   step:0.05, fmt:v=>Math.round(v*100)+'%', apply:v=>grade.uniforms.grain.value=v },
 ];
 function buildOptions(){
@@ -1591,7 +1812,7 @@ function hintsUpdate(){
   for (const h of world.houses){
     if (!h.sub || h.delivered) continue;
     const dz = h.mailbox.z - S.z;
-    if (dz > -3 && dz < 13){ if (h.side<0) l=true; else r=true; }
+    if (dz > -3 && dz < 13){ if (h.side>0) l=true; else r=true; }
   }
   $('hintL').classList.toggle('on', l);
   $('hintR').classList.toggle('on', r);
@@ -1629,7 +1850,7 @@ function loop(now){
   if (world){
     updatePapers(sdt);
     updateObstacles(S.phase==='playing'? sdt : 0);
-    if (S.phase==='playing') updateBoomers(sdt);
+    if (S.phase==='playing'){ updateBoomers(sdt); updateLife(sdt); }
   }
   updateParticles(sdt);
   cameraUpdate(paused? 0.0001 : Math.max(dt, 0.0001));
@@ -1655,7 +1876,7 @@ function loop(now){
 applyTuning();
 world = buildWorld(1);
 S.speed = 0;
-window.PB = { T, S, bike, opts:OPTS, forceBoomer:(i)=>{ if (world && world.houses[i]) maybeAngryResident(world.houses[i]); } };
+window.PB = { T, S, bike, camera, opts:OPTS, forceBoomer:(i)=>{ if (world && world.houses[i]) maybeAngryResident(world.houses[i]); } };
 loop(performance.now());
 
 </script>
