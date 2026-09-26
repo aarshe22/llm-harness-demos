@@ -1569,6 +1569,7 @@ function cameraUpdate(dt){
 let tGlobal = 0;
 function bikeUpdate(dt){
   const u = bike.userData;
+  bike.position.set(S.x, S.y, S.z);
   const spin = S.speed/0.42;
   u.wheelF.rotation.x -= spin*dt;
   u.wheelR.rotation.x -= spin*dt;
@@ -1654,7 +1655,7 @@ function loop(now){
 applyTuning();
 world = buildWorld(1);
 S.speed = 0;
-window.PB = { T, S, opts:OPTS, forceBoomer:(i)=>{ if (world && world.houses[i]) maybeAngryResident(world.houses[i]); } };
+window.PB = { T, S, bike, opts:OPTS, forceBoomer:(i)=>{ if (world && world.houses[i]) maybeAngryResident(world.houses[i]); } };
 loop(performance.now());
 
 </script>
