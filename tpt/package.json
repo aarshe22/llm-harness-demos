@@ -1,0 +1,12 @@
+{
+  "name": "lsl",
+  "version": "1.0.0",
+  "description": "LSL - Sweet Life Lounge. A retro pixel point-and-click adventure built with Three.js.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
