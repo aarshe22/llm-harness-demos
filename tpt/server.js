@@ -20,19 +20,24 @@ const PORT = process.env.PORT || 8765;
 http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0]);
   if (urlPath === '/') urlPath = '/index.html';
-  const filePath = path.join(ROOT, path.normalize(urlPath));
-  if (!filePath.startsWith(ROOT)) {
-    res.writeHead(403);
-    return res.end('Forbidden');
-  }
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
+  const candidates = [path.join(ROOT, path.normalize(urlPath))];
+  const stripped = urlPath.replace(/^\/[^/]+(?=\/|$)/, '');
+  if (stripped !== urlPath) candidates.push(path.join(ROOT, path.normalize(stripped === '' ? '/index.html' : stripped)));
+  if (stripped === '/' || stripped === '') candidates.push(path.join(ROOT, 'index.html'));
+  const tryFile = (i) => {
+    if (i >= candidates.length) {
       res.writeHead(404);
       return res.end('Not found');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
-  });
+    const filePath = candidates[i];
+    if (!filePath.startsWith(ROOT)) return tryFile(i + 1);
+    fs.readFile(filePath, (err, data) => {
+      if (err) return tryFile(i + 1);
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+      res.end(data);
+    });
+  };
+  tryFile(0);
 }).listen(PORT, () => {
   console.log(`LSL running at http://localhost:${PORT}`);
 });
