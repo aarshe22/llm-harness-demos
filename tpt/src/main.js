@@ -58,6 +58,7 @@ const quadMat = new THREE.ShaderMaterial({
       float grain = 0.018 * sin(gl_FragCoord.x * 7.0 + uTime * 11.0)
                           * sin(gl_FragCoord.y * 9.0 - uTime * 7.0);
       c.rgb += grain;
+      c.rgb = pow(clamp(c.rgb, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
       gl_FragColor = c;
     }
   `,
@@ -202,6 +203,7 @@ function triggerHotspot(h) {
 }
 
 canvas.addEventListener('pointerdown', (ev) => {
+  if (cmdInput) cmdInput.blur();
   if (!current || ui.isOpen || ui.danceActive) return;
   if (document.getElementById('intro').classList.contains('hidden') === false) return;
   const hits = pick(ev);
@@ -230,7 +232,9 @@ cmdInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     runCommand(cmdInput.value);
     cmdInput.value = '';
+    cmdInput.blur();
   }
+  if (e.key === 'Escape') cmdInput.blur();
   e.stopPropagation();
 });
 
@@ -270,12 +274,24 @@ function ITEM_LABELS_SHORT(id) {
 /* -------- WASD / arrow walking -------- */
 
 const held = new Set();
+const MOVE_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 window.addEventListener('keydown', (e) => {
-  if (e.target && e.target.tagName === 'INPUT') return;
+  const inInput = e.target && e.target.tagName === 'INPUT';
+  if (inInput) {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      cmdInput.blur();
+      held.add(e.code);
+      e.preventDefault();
+    }
+    return;
+  }
   held.add(e.code);
   if (e.code === 'Slash') cmdInput.focus();
+  if (MOVE_CODES.includes(e.code) || e.code === 'Space') e.preventDefault();
+  if (e.key === 'Escape' && ui.isOpen && !ui.danceActive) ui.close();
 });
 window.addEventListener('keyup', (e) => held.delete(e.code));
+window.addEventListener('blur', () => held.clear());
 
 function tryMove(dx, dz) {
   const b = current.bounds;
@@ -296,11 +312,6 @@ function tryMove(dx, dz) {
   player.position.z = pz;
   return px !== player.position.x || pz !== player.position.z || Math.hypot(dx, dz) > 0;
 }
-
-window.addEventListener('keydown', (e) => {
-  if (e.target && e.target.tagName === 'INPUT') return;
-  if (e.key === 'Escape' && ui.isOpen && !ui.danceActive) ui.close();
-});
 
 document.getElementById('music-btn').addEventListener('click', () => {
   const on = sound.toggleMusic();
