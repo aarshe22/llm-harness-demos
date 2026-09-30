@@ -419,8 +419,9 @@ function update(dt) {
 }
 
 function resize() {
-  const w = innerWidth;
-  const h = innerHeight;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(320, Math.round(rect.width) || innerWidth);
+  const h = Math.max(200, Math.round(rect.height) || innerHeight);
   renderer.setSize(w, h, false);
   const aspect = w / h;
   camera.left = (-VIEW_H * aspect) / 2;
@@ -428,13 +429,31 @@ function resize() {
   camera.top = VIEW_H / 2;
   camera.bottom = -VIEW_H / 2;
   camera.updateProjectionMatrix();
-  const rtH = Math.max(160, Math.round(h / PIXEL_SCALE));
+  const rtH = Math.max(180, Math.round(h / PIXEL_SCALE));
   const rtW = Math.max(240, Math.round(rtH * aspect));
   rt.setSize(rtW, rtH);
   quadMat.uniforms.uRes.value.set(rtW, rtH);
+  const dbg = document.getElementById('debug');
+  if (dbg && dbg.style.display === 'block') dbg.textContent = debugLine(w, h, rtW, rtH);
+}
+function debugLine(w, h, rtW, rtH) {
+  return `canvas ${w}x${h} | rt ${rtW}x${rtH} | inner ${innerWidth}x${innerHeight}` +
+    ` | room ${roomKey} | pos ${player.position.x.toFixed(1)},${player.position.z.toFixed(1)}` +
+    ` | moving ${!!playerTarget} | keys ${held.size}`;
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
 resize();
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'F1') {
+    const dbg = document.getElementById('debug');
+    dbg.style.display = dbg.style.display === 'block' ? 'none' : 'block';
+    e.preventDefault();
+  }
+});
 
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -445,6 +464,14 @@ function loop(now) {
     if (objTimer > 0.5) {
       objTimer = 0;
       ui.setObjective(game.objective());
+      const dbg = document.getElementById('debug');
+      if (dbg && dbg.style.display === 'block') {
+        dbg.textContent = debugLine(
+          Math.round(canvas.getBoundingClientRect().width),
+          Math.round(canvas.getBoundingClientRect().height),
+          rt.width, rt.height
+        );
+      }
     }
   }
   quadMat.uniforms.uTime.value = time;
@@ -463,3 +490,5 @@ ui.showIntro(() => {
   setTimeout(() => ui.toast('CHAPTER 1: SWEET LIFE LOUNGE'), 900);
   enterRoom('lounge', { x: 0, z: 4 });
 });
+
+window.LSL = { player, sound, ui, game, get room() { return roomKey; }, get target() { return playerTarget; } };

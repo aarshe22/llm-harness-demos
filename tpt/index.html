@@ -78,6 +78,10 @@
     8% { opacity: 1; transform: translateY(0); }
     85% { opacity: 1; } 100% { opacity: 0; } }
 
+  #debug { position: fixed; top: 52px; left: 16px; z-index: 55; display: none;
+    background: rgba(0,0,0,.85); border: 2px solid #3ec46d; color: #3ec46d;
+    font-size: 8px; padding: 8px 10px; line-height: 1.8; max-width: 90vw; }
+
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none;
     z-index: 60; transition: opacity .3s; }
   #fade.on { opacity: 1; }
@@ -140,6 +144,7 @@
   </div>
 
   <div id="fade"></div>
+  <div id="debug"></div>
 
   <div id="chapter" class="screen hidden">
     <h2 id="chap-title"></h2>
