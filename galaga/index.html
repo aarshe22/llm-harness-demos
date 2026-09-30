@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GALAGA 3D — Projective Assault</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="topbar">
+    <div class="hudcol"><span class="cyan">1UP</span><br><span class="score" id="nextScore">00020000</span></div>
+    <div class="hudcol"><span class="red">SCORE</span><br><span class="score" id="score">00000000</span></div>
+    <div class="hudcol"><span class="yellow">HI-SCORE</span><br><span class="score" id="hiscore">00000000</span></div>
+  </div>
+
+  <div id="banner"></div>
+  <div id="centerMsg"></div>
+
+  <div id="bottombar">
+    <div id="lives"></div>
+    <div id="stageBadge"><span id="stageEmblem"></span><span id="stageNum" class="white">STAGE&nbsp;1</span></div>
+  </div>
+
+  <div id="overlay">
+    <h1><span class="t-g">GALAGA</span> <span class="t-3">3D</span></h1>
+    <div class="subtitle">PROJECTIVE&nbsp;ASSAULT</div>
+    <div class="legend">
+      <div class="legend-row"><span class="en bee"></span><span>ZAKO&nbsp;·&nbsp;<b>50/100</b>&nbsp;PTS</span></div>
+      <div class="legend-row"><span class="en goeiu"></span><span>GOEIU&nbsp;·&nbsp;<b>80/160</b>&nbsp;PTS</span></div>
+      <div class="legend-row"><span class="en boss"></span><span>BOSS&nbsp;GALAGA&nbsp;·&nbsp;<b>150/400</b>&nbsp;PTS</span></div>
+    </div>
+    <div class="controls">
+      <span>← →&nbsp;/&nbsp;A D&nbsp;&nbsp;MOVE</span>
+      <span>SPACE&nbsp;&nbsp;FIRE</span>
+      <span>P&nbsp;&nbsp;PAUSE</span>
+    </div>
+    <div class="blink" id="pressStart">PRESS ENTER TO START</div>
+    <div class="hint">DIVE-BOMBING ALIENS CAN CAPTURE YOUR FIGHTER — SHOOT THE BOSS WHILE DIVING TO RESCUE IT AND FORM A DUAL FIGHTER</div>
+  </div>
+
+  <div id="paused">PAUSED</div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

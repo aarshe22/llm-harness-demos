@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "qwen3.8-flash-next",
+  "harness": "opencode",
+  "maxContextWindow": null,
+  "updated": "2026-09-30",
+  "notes": "GALAGA 3D: the 1981 fixed shooter re-imagined in Three.js as a projective 3D battlefield with real depth. Bezier entry flights, breathing formation, dive-bombers, tractor-beam Boss Galaga captures and dual-fighter rescues, challenging stages every 4th wave. Palette decoded from the arcade color PROM (prom-5.5n); authentic score table. three.module.js vendored so the folder is self-contained on static hosts."
+}
