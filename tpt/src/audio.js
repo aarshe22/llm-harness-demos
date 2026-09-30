@@ -164,6 +164,11 @@ export class Sound {
     if (track.hat && s % 2 === 1) this.hat(t);
   }
 
+  stopMusic() {
+    clearInterval(this.timer);
+    this.timer = null;
+  }
+
   toggleMusic() {
     this.ensure();
     this.musicOn = !this.musicOn;

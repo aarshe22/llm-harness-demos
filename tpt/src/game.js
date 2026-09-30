@@ -135,7 +135,10 @@ export function createGame({ ui, api }) {
         break;
       case 'bruno':
         if (has('vipOpen')) {
-          dlg('BRUNO', 'The boss heard Miracle Boogie. You are officially cleared as a hazard to the velvet rope. Go. Before I reconsider.', [EXIT]);
+          dlg('BRUNO', 'The boss heard Miracle Boogie. You are officially cleared as a hazard to the velvet rope. Go. Before I reconsider.', [
+            { label: 'Use the VIP door.', do: () => { ui.close(); api.enterRoom('vip', { x: 2.8, z: 2.4 }, 'THE VIP SECTION. THE AIR TASTES RICHER.'); } },
+            EXIT
+          ]);
         } else {
           dlg('BRUNO', 'Bruno does not move. Bruno IS the door.', [
             { label: 'Special night?', do: () => say('BRUNO', 'Every night is special. None of them include you.') },
@@ -186,7 +189,7 @@ export function createGame({ ui, api }) {
         break;
       case 'plant':
         if (!has('chip')) {
-          say('NARRATION', 'Dead fronds, new regrets, and one solid gold lucky chip. That fern has been carrying a curse like a waiter carries a grudge.', () => { ui.addItem('chip'); });
+          say('NARRATION', 'Dead fronds, new regrets, and one solid gold lucky chip. That fern has been carrying a curse like a waiter carries a grudge.', () => { ui.addItem('chip'); set('chip'); });
         } else say('NARRATION', 'The fern looks lighter already. Guilt-free foliage suits it.');
         break;
       case 'fountain':

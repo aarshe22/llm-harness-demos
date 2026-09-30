@@ -26,7 +26,7 @@ const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 60);
 camera.position.set(0, 5.4, 10);
 camera.lookAt(0, 1.3, 0);
 
-const PIXEL_SCALE = 4;
+const PIXEL_SCALE = 3;
 const rt = new THREE.WebGLRenderTarget(320, 180, {
   minFilter: THREE.NearestFilter,
   magFilter: THREE.NearestFilter,
@@ -51,7 +51,7 @@ const quadMat = new THREE.ShaderMaterial({
     uniform float uTime;
     void main() {
       vec4 c = texture2D(tDiffuse, vUv);
-      float scan = mod(gl_FragCoord.y, 2.0) < 1.0 ? 0.92 : 1.0;
+      float scan = mod(floor(vUv.y * uRes.y), 2.0) < 1.0 ? 0.92 : 1.0;
       float d = distance(vUv, vec2(0.5));
       float vig = smoothstep(0.95, 0.35, d);
       c.rgb *= mix(0.52, 1.0, vig) * scan;
@@ -75,7 +75,7 @@ const api = {
   sound,
   enterRoom,
   interstitial: (...args) => ui.showInterstitial(...args),
-  victory: (text) => ui.showVictory(text),
+  victory: (text) => { sound.stopMusic(); sound.win(); ui.showVictory(text); },
   toast: (msg) => ui.toast(msg),
   sash: (on) => { sash.visible = on; },
   roomTrack: () => ROOM_TRACKS[roomKey] || 'lounge'
@@ -149,8 +149,18 @@ player.add(sash);
 
 let playerTarget = null;
 let moveCb = null;
+let stuckTimer = 0;
 const SPEED = 2.4;
 const MARGIN = 0.22;
+
+const marker = new THREE.Mesh(
+  new THREE.RingGeometry(0.14, 0.24, 20),
+  new THREE.MeshBasicMaterial({ color: 0x1ec9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+);
+marker.rotation.x = -Math.PI / 2;
+marker.visible = false;
+scene.add(marker);
+let markerT = 1;
 
 function insideRect(x, z, r) {
   return x > r.minX - MARGIN && x < r.maxX + MARGIN && z > r.minZ - MARGIN && z < r.maxZ + MARGIN;
@@ -201,10 +211,12 @@ canvas.addEventListener('pointerdown', (ev) => {
   if (fl) {
     sound.ensure();
     const b = current.bounds;
-    walkTo(
-      THREE.MathUtils.clamp(fl.point.x, b.minX, b.maxX),
-      THREE.MathUtils.clamp(fl.point.z, b.minZ, b.maxZ)
-    );
+    const tx = THREE.MathUtils.clamp(fl.point.x, b.minX, b.maxX);
+    const tz = THREE.MathUtils.clamp(fl.point.z, b.minZ, b.maxZ);
+    marker.position.set(tx, 0.03, tz);
+    marker.visible = true;
+    markerT = 0;
+    walkTo(tx, tz);
   }
 });
 
@@ -225,6 +237,8 @@ function update(dt) {
   time += dt;
 
   if (playerTarget) {
+    const beforeX = player.position.x;
+    const beforeZ = player.position.z;
     const dx = playerTarget.x - player.position.x;
     const dz = playerTarget.z - player.position.z;
     const dist = Math.hypot(dx, dz);
@@ -249,15 +263,38 @@ function update(dt) {
       player.position.x = px;
       player.position.z = pz;
       player.userData.moving = true;
-      if (Math.hypot(playerTarget.x - px, playerTarget.z - pz) < 0.08) {
+
+      const moved = Math.hypot(px - beforeX, pz - beforeZ);
+      const arrived = Math.hypot(playerTarget.x - px, playerTarget.z - pz) < 0.08;
+      if (arrived) {
         playerTarget = null;
         const cb = moveCb;
         moveCb = null;
         if (cb) cb();
+      } else if (moved < 0.0008) {
+        stuckTimer += dt;
+        if (stuckTimer > 0.3) {
+          playerTarget = null;
+          const cb = moveCb;
+          moveCb = null;
+          if (cb) cb();
+        }
+      } else {
+        stuckTimer = 0;
       }
     }
   } else {
     player.userData.moving = false;
+    stuckTimer = 0;
+  }
+
+  if (marker.visible) {
+    markerT += dt * 2;
+    if (markerT >= 1) marker.visible = false;
+    else {
+      marker.scale.setScalar(1 + markerT * 1.2);
+      marker.material.opacity = 0.8 * (1 - markerT);
+    }
   }
 
   const moving = player.userData.moving;
@@ -312,6 +349,7 @@ requestAnimationFrame(loop);
 ui.showIntro(() => {
   sound.ensure();
   ui.showHUD(true);
-  ui.toast('CHAPTER 1: SWEET LIFE LOUNGE');
+  ui.toast('CLICK TO WALK  •  CLICK PEOPLE / THINGS TO ACT  •  ESC CLOSES DIALOGUE');
+  setTimeout(() => ui.toast('CHAPTER 1: SWEET LIFE LOUNGE'), 900);
   enterRoom('lounge', { x: 0, z: 4 });
 });

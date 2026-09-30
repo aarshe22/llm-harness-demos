@@ -27,6 +27,10 @@ export class UI {
       charismaVal: document.getElementById('charisma-val')
     };
     this.typing = null;
+    this._finish = null;
+    this.el.dlg.addEventListener('pointerdown', () => {
+      if (this._finish) this._finish();
+    });
     this.isOpen = false;
     this.danceActive = false;
     this.items = [];
@@ -98,22 +102,27 @@ export class UI {
 
   _type(text, done) {
     clearInterval(this.typing);
+    this._finish = null;
     this.el.text.textContent = '';
     let i = 0;
+    const finish = () => {
+      clearInterval(this.typing);
+      this._finish = null;
+      this.el.text.textContent = text;
+      if (done) done();
+    };
+    this._finish = finish;
     this.typing = setInterval(() => {
       i += 2;
       this.el.text.textContent = text.slice(0, i);
       if (this.onBlip) this.onBlip();
-      if (i >= text.length) {
-        clearInterval(this.typing);
-        this.el.text.textContent = text;
-        if (done) done();
-      }
+      if (i >= text.length) finish();
     }, 16);
   }
 
   close() {
     clearInterval(this.typing);
+    this._finish = null;
     this.el.dlg.classList.remove('open');
     this.isOpen = false;
   }
