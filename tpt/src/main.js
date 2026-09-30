@@ -21,7 +21,7 @@ renderer.setPixelRatio(1);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
-const VIEW_H = 7.4;
+const VIEW_H = 6.6;
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 60);
 camera.position.set(0, 5.4, 10);
 camera.lookAt(0, 1.3, 0);
@@ -193,18 +193,21 @@ canvas.addEventListener('pointermove', (ev) => {
   }
 });
 
+function triggerHotspot(h) {
+  const d = Math.hypot(player.position.x - h.stand.x, player.position.z - h.stand.z);
+  sound.ensure();
+  sound.select();
+  if (d < 0.45) game.interact(h.id);
+  else walkTo(h.stand.x, h.stand.z, () => game.interact(h.id));
+}
+
 canvas.addEventListener('pointerdown', (ev) => {
   if (!current || ui.isOpen || ui.danceActive) return;
   if (document.getElementById('intro').classList.contains('hidden') === false) return;
   const hits = pick(ev);
   const hot = hits.find((h) => h.object.userData.hot);
   if (hot) {
-    const h = hot.object.userData.hot;
-    const d = Math.hypot(player.position.x - h.stand.x, player.position.z - h.stand.z);
-    sound.ensure();
-    sound.select();
-    if (d < 0.45) game.interact(h.id);
-    else walkTo(h.stand.x, h.stand.z, () => game.interact(h.id));
+    triggerHotspot(hot.object.userData.hot);
     return;
   }
   const fl = hits.find((h) => h.object === current.floor);
@@ -220,7 +223,82 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
 });
 
+/* -------- typed commands -------- */
+
+const cmdInput = document.getElementById('cmd');
+cmdInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    runCommand(cmdInput.value);
+    cmdInput.value = '';
+  }
+  e.stopPropagation();
+});
+
+function findHotspot(q) {
+  const t = q.toLowerCase().replace(/^(to|at)\s+/, '');
+  if (!t) return null;
+  return current.hotspots.find((h) => h.id.includes(t) || h.label.toLowerCase().includes(t)) || null;
+}
+
+function runCommand(raw) {
+  const s = (raw || '').trim().toLowerCase();
+  if (!s) return;
+  if (['help', 'h', '?'].includes(s)) {
+    ui.say('COMMAND LINE', 'TALK <who> - talk to someone. LOOK/EXAMINE <thing> - poke it. USE/TAKE <thing> - grab or use it. GO/OPEN <door> - leave or enter. OBJ - current goal. INV - your stuff. Plus: CLICK to walk, WASD / arrow keys to move. You can always just click people and things too.', () => ui.say('COMMAND LINE', 'This room: ' + current.hotspots.map((h) => h.label).join(' | ')));
+    return;
+  }
+  if (['obj', 'objective', 'quest', 'goal'].includes(s)) {
+    ui.say('OBJECTIVE', game.objective());
+    return;
+  }
+  if (['inv', 'inventory', 'items'].includes(s)) {
+    ui.say('INVENTORY', ui.items.length ? ui.items.map((i) => ITEM_LABELS_SHORT(i)).join(', ') : 'Empty pockets. Tragic.');
+    return;
+  }
+  const m = s.match(/^(talk|speak|talk\s+to|use|look|look\s+at|examine|x|take|grab|get|open|go|go\s+to|enter)\s+(.+)$/);
+  const target = m ? m[2] : s;
+  const hot = findHotspot(target);
+  if (hot) triggerHotspot(hot);
+  else ui.toast('NOTHING HERE MATCHES: ' + target);
+}
+
+function ITEM_LABELS_SHORT(id) {
+  const L = { comb: 'Afro Comb', drink: 'Blue Suede', chip: 'Lucky Chip', hat: "Captain's Hat", skewer: 'Buffet Skewer', mud: 'Mud Tub', pom: 'Zero-G Pom-Pom' };
+  return L[id] || id;
+}
+
+/* -------- WASD / arrow walking -------- */
+
+const held = new Set();
 window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  held.add(e.code);
+  if (e.code === 'Slash') cmdInput.focus();
+});
+window.addEventListener('keyup', (e) => held.delete(e.code));
+
+function tryMove(dx, dz) {
+  const b = current.bounds;
+  let px = player.position.x;
+  let pz = player.position.z;
+  const nx = THREE.MathUtils.clamp(px + dx, b.minX, b.maxX);
+  const nz = THREE.MathUtils.clamp(pz + dz, b.minZ, b.maxZ);
+  let blockedX = false;
+  let blockedZ = false;
+  for (const r of current.colliders) {
+    if (insideRect(nx, pz, r)) blockedX = true;
+    if (insideRect(px, nz, r)) blockedZ = true;
+  }
+  if (!blockedX) px = nx;
+  if (!blockedZ) pz = nz;
+  if (Math.abs(dx) > 0.001) player.scale.x = dx < 0 ? -1 : 1;
+  player.position.x = px;
+  player.position.z = pz;
+  return px !== player.position.x || pz !== player.position.z || Math.hypot(dx, dz) > 0;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;
   if (e.key === 'Escape' && ui.isOpen && !ui.danceActive) ui.close();
 });
 
@@ -232,11 +310,25 @@ document.getElementById('music-btn').addEventListener('click', () => {
 let camX = 0;
 let time = 0;
 let last = performance.now();
+let objTimer = 0;
 
 function update(dt) {
   time += dt;
 
-  if (playerTarget) {
+  let mx = 0;
+  let mz = 0;
+  if (held.has('KeyW') || held.has('ArrowUp')) mz -= 1;
+  if (held.has('KeyS') || held.has('ArrowDown')) mz += 1;
+  if (held.has('KeyA') || held.has('ArrowLeft')) mx -= 1;
+  if (held.has('KeyD') || held.has('ArrowRight')) mx += 1;
+  const wasd = mx !== 0 || mz !== 0;
+  if (wasd) {
+    playerTarget = null;
+    moveCb = null;
+    const len = Math.hypot(mx, mz);
+    tryMove((mx / len) * SPEED * dt, (mz / len) * SPEED * dt);
+    player.userData.moving = true;
+  } else if (playerTarget) {
     const beforeX = player.position.x;
     const beforeZ = player.position.z;
     const dx = playerTarget.x - player.position.x;
@@ -336,7 +428,14 @@ resize();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (current) update(dt);
+  if (current) {
+    update(dt);
+    objTimer += dt;
+    if (objTimer > 0.5) {
+      objTimer = 0;
+      ui.setObjective(game.objective());
+    }
+  }
   quadMat.uniforms.uTime.value = time;
   renderer.setRenderTarget(rt);
   renderer.render(scene, camera);

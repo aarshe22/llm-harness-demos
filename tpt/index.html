@@ -30,6 +30,16 @@
   #hud.hidden { display: none; }
   .hud-chip { background: rgba(10,4,20,.85); border: 3px solid #ff4fd8; padding: 9px 12px;
     font-size: 10px; color: #ffd23f; }
+  #objective-chip { max-width: 46vw; color: #fff; border-color: #1ec9ff; }
+  #objective-chip b { color: #1ec9ff; }
+
+  #cmd-wrap { position: fixed; left: 16px; bottom: 20px; z-index: 22; display: none; align-items: center;
+    background: rgba(10,4,20,.9); border: 3px solid #1ec9ff; padding: 8px 10px; }
+  #cmd-wrap.on { display: flex; }
+  #cmd-wrap label { color: #ff4fd8; font-size: 11px; margin-right: 8px; }
+  #cmd { background: transparent; border: none; outline: none; color: #fff;
+    font-family: inherit; font-size: 10px; width: 320px; }
+  #cmd::placeholder { color: #5a4a78; }
   #charisma b { color: #1ec9ff; }
   #charisma.pop { animation: pop .4s; }
   @keyframes pop { 30% { transform: scale(1.25); } }
@@ -98,7 +108,14 @@
 
   <div id="hud" class="hidden">
     <div class="hud-chip" id="charisma">CHARISMA <b id="charisma-val">0</b></div>
+    <div class="hud-chip" id="objective-chip"><b>GOAL:</b> <span id="objective-val">...</span></div>
     <div class="hud-chip" id="music-btn">&#9834; MUSIC: ON</div>
+  </div>
+
+  <div id="cmd-wrap">
+    <label>&gt;</label>
+    <input id="cmd" type="text" spellcheck="false" autocomplete="off"
+      placeholder="type a command... try: help" />
   </div>
 
   <div id="hotspot-label"></div>
@@ -134,7 +151,8 @@
     <h1>LSL</h1>
     <h2>SWEET LIFE LOUNGE</h2>
     <div class="tag">Five chapters of grown-up leisure. One tight pair of pants.<br>
-      Click to walk. Click people and things to talk or poke.<br>
+      Three ways to play: CLICK to walk and act, WASD/arrow keys to walk,<br>
+      or TYPE commands at the prompt (HELP lists them: talk marge, look box, go vip).<br>
       Featuring Tight Pants Terry: gentleman, dancer, liability.<br><br>
       MATURE COMEDY (17+): gambling, strong drinks, double entendres.<br>
       Nothing explicit - this is a lounge, not a livestream.</div>

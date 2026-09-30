@@ -39,6 +39,12 @@ export class UI {
   showHUD(on) {
     this.el.hud.classList.toggle('hidden', !on);
     this.el.inv.classList.toggle('hidden', !on);
+    document.getElementById('cmd-wrap').classList.toggle('on', !!on);
+  }
+
+  setObjective(text) {
+    this.el.objectiveVal = this.el.objectiveVal || document.getElementById('objective-val');
+    if (this.el.objectiveVal) this.el.objectiveVal.textContent = text;
   }
 
   setCursorLabel(text, x, y) {

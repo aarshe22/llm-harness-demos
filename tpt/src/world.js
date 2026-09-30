@@ -192,11 +192,11 @@ export function buildClub() {
   neon(g, 'VIP', '#ffd23f', '#ffd23f', 6.7, 3.3, -3.0, 1.4, 0.5);
   sprites.bruno = character(g, 'bruno', 6.7, -2.05, Math.PI * 0.02);
 
-  g.add(new THREE.AmbientLight(0x8a7fb0, 0.85));
-  const p1 = new THREE.PointLight(0xff4fd8, 26, 14); p1.position.set(0, 4, 0); g.add(p1);
-  const p2 = new THREE.PointLight(0x1ec9ff, 18, 12); p2.position.set(-5.5, 3.4, -1.5); g.add(p2);
-  const p3 = new THREE.PointLight(0xffd23f, 14, 12); p3.position.set(6, 3.2, 1.5); g.add(p3);
-  const p4 = new THREE.PointLight(0x8b3fd6, 14, 10); p4.position.set(3, 3, -3); g.add(p4);
+  g.add(new THREE.AmbientLight(0xbfa8e0, 2.6));
+  const p1 = new THREE.PointLight(0xff4fd8, 90, 16); p1.position.set(0, 4, 0); g.add(p1);
+  const p2 = new THREE.PointLight(0x1ec9ff, 65, 14); p2.position.set(-5.5, 3.4, -1.5); g.add(p2);
+  const p3 = new THREE.PointLight(0xffd23f, 50, 14); p3.position.set(6, 3.2, 1.5); g.add(p3);
+  const p4 = new THREE.PointLight(0x8b3fd6, 45, 12); p4.position.set(3, 3, -3); g.add(p4);
 
   const hotspots = [
     { id: 'marge', label: 'Marge the Bartender', pos: { x: -6.5, z: -2.85 }, stand: { x: -6.0, z: -1.2 } },
@@ -274,10 +274,10 @@ export function buildVIP() {
 
   sprites.kate = character(g, 'kate', 0, -0.6, 0);
 
-  g.add(new THREE.AmbientLight(0xb07fd0, 1.0));
-  const p1 = new THREE.PointLight(0xff4fd8, 22, 12); p1.position.set(0, 4, -0.3); g.add(p1);
-  const p2 = new THREE.PointLight(0xffd23f, 12, 10); p2.position.set(3, 3, 2); g.add(p2);
-  const p3 = new THREE.PointLight(0x1ec9ff, 10, 10); p3.position.set(-3, 3, 1); g.add(p3);
+  g.add(new THREE.AmbientLight(0xe0a8f0, 2.8));
+  const p1 = new THREE.PointLight(0xff4fd8, 80, 14); p1.position.set(0, 4, -0.3); g.add(p1);
+  const p2 = new THREE.PointLight(0xffd23f, 45, 12); p2.position.set(3, 3, 2); g.add(p2);
+  const p3 = new THREE.PointLight(0x1ec9ff, 38, 12); p3.position.set(-3, 3, 1); g.add(p3);
 
   const hotspots = [
     { id: 'kate', label: 'Champagne Kate', pos: { x: 0, z: -0.6 }, stand: { x: 0, z: 0.8 } },
@@ -357,10 +357,10 @@ export function buildCasino() {
   sprites.cassino.position.set(-0.4, 0.4, -3.6);
   g.add(sprites.cassino);
 
-  g.add(new THREE.AmbientLight(0xb08f7f, 0.8));
-  const p1 = new THREE.PointLight(0xffd23f, 22, 13); p1.position.set(0, 4, 0); g.add(p1);
-  const p2 = new THREE.PointLight(0xff4fd8, 16, 12); p2.position.set(-4, 3.4, -1); g.add(p2);
-  const p3 = new THREE.PointLight(0x3ec46d, 10, 10); p3.position.set(5, 3, 3); g.add(p3);
+  g.add(new THREE.AmbientLight(0xe0c0a8, 2.6));
+  const p1 = new THREE.PointLight(0xffd23f, 80, 15); p1.position.set(0, 4, 0); g.add(p1);
+  const p2 = new THREE.PointLight(0xff4fd8, 60, 14); p2.position.set(-4, 3.4, -1); g.add(p2);
+  const p3 = new THREE.PointLight(0x3ec46d, 36, 12); p3.position.set(5, 3, 3); g.add(p3);
 
   const hotspots = [
     { id: 'pepper', label: 'Pit Boss Pepper', pos: { x: 2.6, z: -0.8 }, stand: { x: 2.6, z: 0.3 } },
@@ -456,10 +456,10 @@ export function buildShip() {
   sprites.sterling.rotation.y = Math.PI;
   g.add(sprites.sterling);
 
-  g.add(new THREE.AmbientLight(0x7f8fb0, 0.9));
-  const p1 = new THREE.PointLight(0xffd23f, 14, 12); p1.position.set(0, 4, -3.5); g.add(p1);
-  const p2 = new THREE.PointLight(0x1ec9ff, 12, 12); p2.position.set(2, 3, -1); g.add(p2);
-  const p3 = new THREE.PointLight(0xff4fd8, 8, 10); p3.position.set(-4, 3, 1); g.add(p3);
+  g.add(new THREE.AmbientLight(0xbfc8e0, 2.6));
+  const p1 = new THREE.PointLight(0xffd23f, 52, 14); p1.position.set(0, 4, -3.5); g.add(p1);
+  const p2 = new THREE.PointLight(0x1ec9ff, 45, 14); p2.position.set(2, 3, -1); g.add(p2);
+  const p3 = new THREE.PointLight(0xff4fd8, 30, 12); p3.position.set(-4, 3, 1); g.add(p3);
 
   const hotspots = [
     { id: 'steward', label: 'Steward Pip', pos: { x: 4.6, z: 0.4 }, stand: { x: 4.3, z: -1.3 } },
@@ -536,8 +536,8 @@ export function buildSpa() {
   sprites.zenqueen.position.set(-0.8, 0, -1.1);
   g.add(sprites.zenqueen);
 
-  g.add(new THREE.AmbientLight(0x8fb0a8, 0.95));
-  const p1 = new THREE.PointLight(0x2fa08f, 16, 12); p1.position.set(0, 4, 0); g.add(p1);
+  g.add(new THREE.AmbientLight(0xcfe8de, 2.6));
+  const p1 = new THREE.PointLight(0x2fa08f, 58, 14); p1.position.set(0, 4, 0); g.add(p1);
   const p2 = new THREE.PointLight(0xffd23f, 10, 10); p2.position.set(4, 3, 0); g.add(p2);
   const p3 = new THREE.PointLight(0xff4fd8, 8, 10); p3.position.set(-3, 3, -1); g.add(p3);
 
@@ -601,8 +601,8 @@ export function buildSpace() {
   sprites.droid.position.set(0, 0, 0.6);
   g.add(sprites.droid);
 
-  g.add(new THREE.AmbientLight(0x7f7fb0, 0.9));
-  const p1 = new THREE.PointLight(0x1ec9ff, 16, 13); p1.position.set(0, 4, 0); g.add(p1);
+  g.add(new THREE.AmbientLight(0xbfbfe8, 2.4));
+  const p1 = new THREE.PointLight(0x1ec9ff, 58, 15); p1.position.set(0, 4, 0); g.add(p1);
   const p2 = new THREE.PointLight(0xff4fd8, 12, 11); p2.position.set(4, 3, -2); g.add(p2);
   const p3 = new THREE.PointLight(0xffd23f, 8, 10); p3.position.set(-5, 3, 1); g.add(p3);
 

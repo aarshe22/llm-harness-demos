@@ -61,6 +61,36 @@ export function createGame({ ui, api }) {
     });
   }
 
+  function objective() {
+    switch (state.chapter) {
+      case 1:
+        if (roomKey === 'vip') return has('cup1') ? 'Celebrate. Then leave via the door.' : 'WIN THE DANCE-OFF vs CHAMPAGNE KATE';
+        if (!has('comb')) return 'FIX THE MANE — find a comb (lost & found near the door)';
+        if (!ui.hasItem('drink')) return 'CHAT UP MARGE — earn a Blue Suede';
+        if (!has('song')) return 'BRING THE BLUE SUEDE to DJ Velvet Fingers';
+        if (!has('vipOpen')) return 'MAKE BRUNO respect you';
+        return 'ENTER THE VIP SECTION via the velvet rope';
+      case 2:
+        if (!has('chip') && !ui.hasItem('chip')) return 'SEARCH the suspicious fern for a Lucky Chip';
+        if (!has('wonSlot')) return 'FEED the Lucky Chip to the slot machine';
+        if (!has('cup2')) return 'CHALLENGE Cassino the Lounge Lizard';
+        return 'Claim the next chapter.';
+      case 3:
+        if (!ui.hasItem('hat') || !ui.hasItem('skewer')) return 'ACQUIRE a captain\'s hat and a buffet skewer';
+        if (!has('cup3')) return 'CHALLENGE Officer Sterling on the Lido deck';
+        return 'Claim the next chapter.';
+      case 4:
+        if (!ui.hasItem('mud') || !has('cukes')) return 'PREP THE MAT: fill a mud tub + grab cucumbers';
+        if (!has('cup4')) return 'CHALLENGE Zen Queen Mireille';
+        return 'Claim the next chapter.';
+      case 5:
+        if (!ui.hasItem('pom') || !has('grav')) return 'GEAR UP: pom-poms from the locker + low gravity';
+        if (!has('cup5')) return 'CHALLENGE R-1N, the dance android';
+        return 'Bask.';
+    }
+    return 'Enjoy the leisure.';
+  }
+
   let roomKey = null;
 
   function onRoom(key) {
@@ -334,6 +364,7 @@ export function createGame({ ui, api }) {
     state,
     interact,
     onRoom,
+    objective,
     chapters: CHAPTERS,
     currentChapter: () => state.chapter
   };
