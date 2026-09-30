@@ -15,9 +15,9 @@ const PAL = {
 const EMBLEMS = [0x9700ff, 0x00ff40, 0xff0000, 0xff9700, 0x0068ff, 0xff00ff, 0xffdd00];
 
 // world bounds
-const PX = 12.5;                 // player horizontal limit
+const PX = 11.5;                 // player horizontal limit
 const PLAYER_Z = 20;             // player plane (near camera)
-const FC = new THREE.Vector3(0, 10, -24); // formation center base
+const FC = new THREE.Vector3(0, 10.6, -12); // formation center base
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -353,28 +353,30 @@ function spawnWave(stage) {
     const side = grp === 1 ? 1 : grp === 0 ? -1 : (idx % 2 ? 1 : -1);
     const slot = G.bonusActive
       ? V3(side * 60, rand(4, 12), 30)
-      : V3((p.i - (p.n - 1) / 2) * 2.7, FC.y + p.y, FC.z + (p.row % 2) * 1.2);
+      : V3((p.i - (p.n - 1) / 2) * 3.1, FC.y + p.y, FC.z + (p.row % 2) * 1.2);
     const style = G.bonusActive ? pick(['top', 'toploop', 'sideloop']) : ['toploop', 'toploop', 'sideloop', 'sideloop', 'top'][grp % 5];
     const e = {
       type: p.type, obj, slot, state: 'enter',
-      t: -1 - (grp * 0.45 + p.i * 0.18),
+      t: 0,
       dur: (G.bonusActive ? rand(6, 7.5) : 5.2 - Math.min(1.5, stage * 0.12)) * rand(0.92, 1.08),
       curve: null, style, side,
       r: p.type === 'boss' ? 1.45 : p.type === 'goeiu' ? 1.2 : 1.05,
       capturedBy: null, capturedFighter: null,
       flap: rand(0, 6),
     };
+    const delay = grp * 0.45 + p.i * 0.18;
     e.curve = entryCurve(style, side, slot);
     const p0 = e.curve.getPoint(0);
     obj.position.copy(p0);
     scene.add(obj);
+    e.t = -delay / e.dur;          // real-time delay before flying in
     G.enemies.push(e);
   });
 }
 
 function slotPos(e) {
   const t = G.t;
-  const fcx = FC.x + 3.2 * Math.sin(t * 0.17), fcz = FC.z + 5 * Math.sin(t * 0.22);
+  const fcx = FC.x + 2.5 * Math.sin(t * 0.17), fcz = FC.z + 4 * Math.sin(t * 0.22);
   const breathe = 1 + 0.07 * Math.sin(t * 0.5);
   const jx = 0.25 * Math.sin(t * 1.1 + e.flap * 7), jy = 0.2 * Math.sin(t * 1.3 + e.flap * 3);
   return V3(
@@ -406,12 +408,14 @@ function startDive(e, capture = false) {
 }
 
 function throwBomb(pos) {
-  const dir = V3((player.x - pos.x) * 0.6, -7, 24).normalize().multiplyScalar(rand(16, 20));
+  const vel = V3(player.x, 1.2, PLAYER_Z).sub(pos)
+    .add(V3(rand(-1.5, 1.5), rand(-1, 1), 0))
+    .normalize().multiplyScalar(rand(17, 21));
   const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8),
     new THREE.MeshBasicMaterial({ color: PAL.magenta }));
   m.position.copy(pos);
   scene.add(m);
-  G.bombs.push({ m, vel: dir });
+  G.bombs.push({ m, vel });
 }
 
 /* ---------------- input ---------------- */
@@ -529,6 +533,66 @@ function playerCaptured(boss) {
 const tmpV = new THREE.Vector3();
 function fighterPos(f) { return f ? tmpV.copy(f.position).add(player.group.position) : player.group.position; }
 
+// screen-space hit test: what you see is what hits
+const _pn = new THREE.Vector3(), _en = new THREE.Vector3(), _off = new THREE.Vector3();
+const camR = new THREE.Vector3(), camU = new THREE.Vector3();
+function screenHit(bpos, epos, r) {
+  _en.copy(epos).project(camera);
+  _pn.copy(bpos).project(camera);
+  if (_en.z > 1 || _pn.z > 1) return false;
+  _off.copy(epos).addScaledVector(camR, r).project(camera);
+  const rx = Math.abs(_off.x - _en.x);
+  _off.copy(epos).addScaledVector(camU, r).project(camera);
+  const ry = Math.abs(_off.y - _en.y);
+  return Math.abs(_pn.x - _en.x) < rx && Math.abs(_pn.y - _en.y) < ry;
+}
+
+function collisions() {
+  camR.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  camU.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  // player bullets vs enemies
+  for (let i = G.bullets.length - 1; i >= 0; i--) {
+    const b = G.bullets[i];
+    for (let j = G.enemies.length - 1; j >= 0; j--) {
+      const e = G.enemies[j];
+      if (e.state === 'dead') continue;
+      if (screenHit(b.m.position, e.obj.position, e.r + 0.5)) {
+        scene.remove(b.m); G.bullets.splice(i, 1);
+        killEnemy(e);
+        break;
+      }
+    }
+  }
+  if (G.state !== 'playing') return;
+  // bombs vs player fighters
+  const f1 = player.group.position, f2 = player.fighter2 ? fighterPos(player.fighter2).clone() : null;
+  if (player.state === 'normal') {
+    for (let i = G.bombs.length - 1; i >= 0; i--) {
+      const b = G.bombs[i];
+      const hit1 = screenHit(b.m.position, f1, 1.5);
+      const hit2 = f2 ? screenHit(b.m.position, f2, 1.5) : false;
+      if (!hit1 && !hit2) continue;
+      scene.remove(b.m); G.bombs.splice(i, 1);
+      if (hit2) {
+        spawnExplosion(f2, PAL.cyan, 40, 10);
+        SFX.boom();
+        removeFighter2();
+        G.invuln = 1.4;
+        msg('DECOY FIGHTER LOST', 1200, '#ff9700');
+      } else hitPlayer();
+      break;
+    }
+  }
+  // diving enemies vs player (physical ram — keep in world space)
+  for (const e of G.enemies) {
+    if ((e.state === 'dive') && e.obj.position.distanceToSquared(player.group.position) < 1.8) {
+      killEnemy(e, true);
+      hitPlayer();
+      break;
+    }
+  }
+}
+
 function fire() {
   if (G.state !== 'playing' || G.bullets.length >= (G.dual ? 8 : 5)) return;
   if (player.cool > 0) return;
@@ -538,57 +602,12 @@ function fire() {
   for (const ox of xs) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.1, 6),
       new THREE.MeshBasicMaterial({ color: PAL.white }));
-    m.rotation.x = Math.PI / 2;
     m.position.set(player.x + ox, 1.4, PLAYER_Z - 1);
+    const k = m.position.x / (CAM_HOME.z - PLAYER_Z);   // screen-column slope
+    const vel = V3(70 * k, 19, -70);                    // rises with perspective
+    m.quaternion.setFromUnitVectors(V3(0, 1, 0), vel.clone().normalize());
     scene.add(m);
-    G.bullets.push({ m });
-  }
-}
-
-function collisions() {
-  // player bullets vs enemies
-  for (let i = G.bullets.length - 1; i >= 0; i--) {
-    const b = G.bullets[i];
-    for (let j = G.enemies.length - 1; j >= 0; j--) {
-      const e = G.enemies[j];
-      if (e.state === 'dead') continue;
-      if (b.m.position.distanceToSquared(e.obj.position) < e.r * e.r) {
-        scene.remove(b.m); G.bullets.splice(i, 1);
-        killEnemy(e);
-        break;
-      }
-    }
-  }
-  if (G.state !== 'playing') return;
-  // bombs vs player fighters
-  const f1 = player.group.position, f2 = player.fighter2 ? fighterPos(player.fighter2) : null;
-  for (let i = G.bombs.length - 1; i >= 0; i--) {
-    const b = G.bombs[i];
-    let hit = false;
-    if (player.state === 'normal') {
-      if (b.m.position.distanceToSquared(f2 || f1) < 1.0) hit = true;
-      if (!hit && f2 && b.m.position.distanceToSquared(f1) < 1.0) { hit = true; }
-    }
-    if (hit) {
-      scene.remove(b.m); G.bombs.splice(i, 1);
-      const nearF2 = f2 && b.m.position.distanceToSquared(f2) < b.m.position.distanceToSquared(f1);
-      if (f2 && nearF2) {
-        spawnExplosion(f2.clone().setY(f2.y), PAL.cyan, 40, 10);
-        SFX.boom();
-        removeFighter2();
-        G.invuln = 1.4;
-        msg('DECOY FIGHTER LOST', 1200, '#ff9700');
-      } else hitPlayer();
-      break;
-    }
-  }
-  // diving enemies vs player
-  for (const e of G.enemies) {
-    if ((e.state === 'dive') && e.obj.position.distanceToSquared(player.group.position) < 1.8) {
-      killEnemy(e, true);
-      hitPlayer();
-      break;
-    }
+    G.bullets.push({ m, vel });
   }
 }
 
@@ -815,8 +834,8 @@ function updateEnemies(dt) {
 function updateProjectiles(dt) {
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
-    b.m.position.z -= 70 * dt;
-    if (b.m.position.z < -90) { scene.remove(b.m); G.bullets.splice(i, 1); }
+    b.m.position.addScaledVector(b.vel, dt);
+    if (b.m.position.z < -50 || b.m.position.y > 32) { scene.remove(b.m); G.bullets.splice(i, 1); }
   }
   for (let i = G.bombs.length - 1; i >= 0; i--) {
     const b = G.bombs[i];
