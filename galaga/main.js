@@ -266,6 +266,7 @@ const player = {
   group: new THREE.Group(), x: 0, vx: 0,
   fighter: buildFighter(), fighter2: null,
   state: 'normal',          // normal | captured
+  alive: true,
   captureT: 0, captureFrom: V3(0,0,0), captureTo: V3(0,0,0),
 };
 player.group.add(player.fighter);
@@ -472,9 +473,11 @@ function respawnAtHome() {
   scene.add(player.group);            // re-parent if it was carried off by a boss
   player.group.position.set(0, 1.2, PLAYER_Z);
   player.group.rotation.set(0, 0, 0);
+  player.alive = true;
   player.group.visible = true;
   player.state = 'normal';
   player.x = 0; player.vx = 0;
+  G.respawnT = -1;          // no respawn pending
   G.invuln = 2.5;
 }
 
@@ -502,6 +505,7 @@ function hitPlayer() {
     msg('DECOY FIGHTER LOST', 1200, '#ff9700');
     return;
   }
+  player.alive = false;
   player.group.visible = false;
   G.lives--;
   hud();
@@ -632,6 +636,9 @@ const clock = new THREE.Clock();
 player.cool = 0;
 
 function updatePlayer(dt) {
+  if (G.invuln > 0) G.invuln -= dt;
+  player.group.visible = player.alive && (G.invuln <= 0 || (G.t * 12 | 0) % 2 === 0);
+
   if (player.state === 'captured') {
     player.captureT += dt;
     const k = Math.min(player.captureT / 1.4, 1);
@@ -648,6 +655,7 @@ function updatePlayer(dt) {
       beam.visible = false;
       G.activeCapture = null;
       player.state = 'normal';
+      player.alive = false;
       player.group.visible = false;
       if (G.lives < 0) gameOver();
       else G.respawnT = 1.2;
@@ -661,10 +669,12 @@ function updatePlayer(dt) {
     return;
   }
 
-  if (!player.group.visible) {
-    G.respawnT -= dt;
-    if (G.respawnT <= 0 && G.lives >= 0 && (G.state === 'playing' || G.state === 'clear')) {
-      respawnAtHome();
+  if (!player.alive) {
+    if (G.respawnT > 0) {   // only when a death/capture respawn is actually pending
+      G.respawnT -= dt;
+      if (G.respawnT <= 0 && G.lives >= 0 && (G.state === 'playing' || G.state === 'clear')) {
+        respawnAtHome();
+      }
     }
     return;
   }
@@ -684,12 +694,6 @@ function updatePlayer(dt) {
 
   const eng = player.fighter.getObjectByName('engine');
   if (eng) eng.scale.setScalar(1 + Math.sin(G.t * 30) * 0.3 + Math.abs(player.vx) * 0.04);
-
-  if (G.invuln > 0) {
-    G.invuln -= dt;
-    player.group.visible = (G.t * 12 | 0) % 2 === 0;
-    if (G.invuln <= 0) player.group.visible = true;
-  }
 
   player.cool -= dt;
   if (keys.Space) fire();
