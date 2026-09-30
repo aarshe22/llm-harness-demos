@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SGI Demos — three.js ports</title>
+<link rel="stylesheet" href="shared/sgi.css">
+</head>
+<body>
+<div id="gallery">
+  <h1>SGI <b>demos</b> — re-implemented in three.js</h1>
+  <p class="lede">
+    Faithful-ish WebGL ports of the classic Silicon Graphics demos from
+    <a style="color:#7fb0ff" href="https://sgi-demos.org/browse/">sgi-demos.org</a>.
+    Original physics constants, colormaps, geometry tables, the mello electropaint
+    script, the Barcelona radiosity model and the fastobj models are used verbatim;
+    rendering and input are rebuilt on three.js. Each demo links its original source
+    notes in its HUD.
+  </p>
+  <div class="cards">
+    <a class="card" href="jello/"><h3>Jello</h3><div class="meta">Thant Tessman · 1987 · exact physics</div><p>13-mass icosahedron of springs dropped into a box with a halftone shadow. Same integrator, same dt=0.5.</p></a>
+    <a class="card" href="logo/"><h3>Logo</h3><div class="meta">Thant Tessman · 1987 · kinematic chain</div><p>The SGI cube grown from quads as its tube/elbow joints unfold from 180° to 90°.</p></a>
+    <a class="card" href="bounce/"><h3>Bounce</h3><div class="meta">SGI · 1988 · original .bin models</div><p>Three coloured lights riding balls in a lit room; the menu swaps in the real spin/fastobj models.</p></a>
+    <a class="card" href="ep-1988/"><h3>Electropaint 1988</h3><div class="meta">D. Tristram · Panel Library v7</div><p>Four mirrored triangle streams under slow slider LFOs, spectrum colormap, smear &amp; fade.</p></a>
+    <a class="card" href="ep-1989/"><h3>Electropaint 1989</h3><div class="meta">D. Tristram · mello script</div><p>The mature ep driven by Tristram's own script through the ported trapezoidal-oscillator engine.</p></a>
+    <a class="card" href="ep-1994/"><h3>Electropaint 1994</h3><div class="meta">D. Tristram · OpenGL look</div><p>The IRIX screensaver with smooth HLS colour; M toggles the shipped look.</p></a>
+    <a class="card" href="gview/"><h3>Gview: Barcelona</h3><div class="meta">SGI · radiosity viewer</div><p>The original Barcelona.gfo — 2,676 Gouraud polygons with precomputed global illumination. Fly-through.</p></a>
+    <a class="card" href="newave/"><h3>Newave</h3><div class="meta">SGI · wave propagation</div><p>The diamond wave grid with the original spring stencil, speed/grid menus and colour ramp.</p></a>
+    <a class="card" href="insect/"><h3>Insect</h3><div class="meta">Tessman / Ligon · IK walker</div><p>Six-legged walker posed by the original dolegs() IK, flat-shaded from the real parts.c tables.</p></a>
+    <a class="card" href="ideas/"><h3>Ideas in Motion</h3><div class="meta">Thant Tessman · c.1987</div><p>Letters assembling on a lit table under a lamp with the SGI logo; track-driven camera.</p></a>
+    <a class="card" href="flight-1988/"><h3>Flight (1988)</h3><div class="meta">Tarolli / Mace · IRIS 4D tape</div><p>The colour-index-era sim: flat-shaded land, meters, takeoff and crash.</p></a>
+    <a class="card" href="flight-1994/"><h3>Flight 3.4</h3><div class="meta">Mace / Tarolli · IRIX classic</div><p>RGB flight with fog, HUD, time of day, and the original hills.grid / hills.t terrain.</p></a>
+    <a class="card" href="arena/"><h3>Arena</h3><div class="meta">Rob Mace · 1988</div><p>First-person mech combat in a colour-index maze — tracers, explosions, a future sport.</p></a>
+    <a class="card" href="buttonfly/"><h3>Buttonfly</h3><div class="meta">Wade Olsen · demo launcher</div><p>The bevelled 3D button menu that tumbles through sub-menus — it launches the ports here.</p></a>
+    <a class="card" href="cedit/"><h3>Cedit</h3><div class="meta">Paul Haeberli · 1984</div><p>Pick a colormap entry on the test image, edit it with the R/G/B sliders, live.</p></a>
+    <a class="card" href="twilight/"><h3>Twilight</h3><div class="meta">Howard Look · 1991</div><p>The twilight sky gradient with the same 2,700 drand48-seeded stars, star-for-star.</p></a>
+    <a class="card" href="performer-town/"><h3>Performer Town</h3><div class="meta">SGI Performer / webfly</div><p>A camera tour over a fogged low-poly town — the Performer fly-through in miniature.</p></a>
+  </div>
+</div>
+</body>
+</html>

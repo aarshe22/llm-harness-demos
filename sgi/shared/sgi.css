@@ -1,0 +1,47 @@
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #cfd6e4; }
+canvas { display: block; }
+
+#sgihud {
+  position: fixed; top: 12px; left: 14px; z-index: 10; pointer-events: none;
+  max-width: 420px; text-shadow: 0 1px 2px #000;
+}
+#sgihud .sgi-title { font-size: 15px; letter-spacing: 1px; color: #9fb4d8; }
+#sgihud .sgi-title b { color: #e8eefc; }
+#sgihud .sgi-sub { font-size: 11px; color: #7484a3; margin-top: 2px; }
+#sgihud .sgi-blurb { font-size: 11px; color: #9aa8c2; margin-top: 6px; line-height: 1.4; }
+#sgihud .sgi-controls { font-size: 10px; color: #5f6f8f; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+#sgihud .sgi-back { display: inline-block; font-size: 11px; color: #7fb0ff; pointer-events: auto; margin-top: 6px; text-decoration: none; }
+#sgihud .sgi-back:hover { color: #b9d5ff; }
+
+#sgitoast {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  background: rgba(10,14,24,.92); border: 1px solid #35507e; color: #cfe0ff;
+  padding: 7px 14px; font-size: 12px; border-radius: 3px; opacity: 0;
+  transition: opacity .25s; pointer-events: none; z-index: 20; white-space: pre;
+}
+#sgitoast.show { opacity: 1; }
+
+.sgi-pup {
+  position: fixed; z-index: 40; min-width: 180px;
+  background: #c8ccd4; border: 2px outset #eef; color: #000;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 12px;
+  box-shadow: 2px 3px 8px rgba(0,0,0,.6);
+}
+.sgi-pup-head { background: #0a2a66; color: #fff; padding: 2px 8px; font-weight: bold; }
+.sgi-pup-item { padding: 2px 10px; cursor: pointer; }
+.sgi-pup-item:hover { background: #0a2a66; color: #fff; }
+
+#gallery { max-width: 1150px; margin: 0 auto; padding: 34px 20px 80px; }
+#gallery h1 { color: #dfe8fa; font-weight: 300; letter-spacing: 2px; }
+#gallery h1 b { color: #6f86ff; font-weight: 600; }
+#gallery .lede { color: #8fa0bf; font-size: 14px; max-width: 760px; line-height: 1.5; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 14px; margin-top: 26px; }
+.card {
+  display: block; text-decoration: none; border: 1px solid #1d2a44; border-radius: 6px;
+  background: linear-gradient(160deg, #0b1220, #0d1626); padding: 14px 15px; color: #c8d4ea;
+}
+.card:hover { border-color: #3d5a96; background: linear-gradient(160deg, #101a2e, #12203a); }
+.card h3 { margin: 0 0 4px; font-size: 15px; color: #f0f5ff; }
+.card .meta { font-size: 10px; color: #5c6f93; margin-bottom: 7px; }
+.card p { margin: 0; font-size: 12px; line-height: 1.45; color: #94a5c4; }

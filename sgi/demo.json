@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "qwen3.8-flash-next",
+  "harness": "opencode",
+  "maxContextWindow": null,
+  "updated": "2026-09-30",
+  "notes": "Port of every working demo on sgi-demos.org to three.js: Jello (exact spring physics), Logo (kinematic SGI cube), Bounce (original spin/fastobj .bin models), Electropaint 1988/1989/1994 (Tristram's mello script + trapezoidal oscillator engine), Gview (original Barcelona.gfo radiosity model), Newave (original wave stencil), Insect (parts.c geometry tables + dolegs IK walk), Ideas in Motion, Flight 1988 & 3.4 (original hills.grid/hills.t terrain, fog, HUD), Arena, Buttonfly (a launcher for the ports), Cedit, Twilight (identical drand48 stars), Performer Town. three.module.js vendored; originals' data files reused verbatim."
+}
