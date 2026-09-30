@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "modelName": "Qwen 3.8 Flash Next vLLM on 2 Sparks",
+  "harness": "opencode",
+  "maxContextWindow": null,
+  "updated": "2026-09-30",
+  "notes": "Voxel Pagoda Garden on a grass island: 5-tier pagoda, torii gate, cherry trees, pond with arched wooden bridge, stone lanterns, falling petals. Single-file Three.js, standard materials only. Built with Qwen 3.8 Flash Next served by vLLM on 2 Sparks. Token usage not exposed."
+}

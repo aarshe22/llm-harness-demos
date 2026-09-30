@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Voxel Pagoda Garden</title>
+<style>body{margin:0;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf2a65a);
+scene.fog = new THREE.Fog(0xf2a65a, 90, 240);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 600);
+camera.position.set(48, 34, 52);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.target.set(0, 8, 0);
+controls.maxPolarAngle = Math.PI/2 - 0.06;
+controls.minDistance = 20;
+controls.maxDistance = 140;
+
+// ---- lighting (warm sunset) ----
+scene.add(new THREE.HemisphereLight(0xffd9a0, 0x6b4a3a, 0.55));
+const sun = new THREE.DirectionalLight(0xffa64d, 2.4);
+sun.position.set(-45, 26, -30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -50;
+sun.shadow.camera.right = 50;
+sun.shadow.camera.top = 50;
+sun.shadow.camera.bottom = -50;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 200;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// sun disc on the horizon
+const sunDisc = new THREE.Mesh(
+  new THREE.SphereGeometry(7, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffd98a, fog: false })
+);
+sunDisc.position.set(-135, 38, -90);
+scene.add(sunDisc);
+
+// ---- voxel helpers ----
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+function makeMat(color, extra = {}) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
+}
+const grassMat  = makeMat(0x74a05b);
+const dirtMat   = makeMat(0x8a5a3b);
+const wallMat   = makeMat(0xf2e3c8);
+const redMat    = makeMat(0xc0392b);
+const roofMat   = makeMat(0x2b2b3a);
+const goldMat   = makeMat(0xe0a83c, { emissive: 0x332200, emissiveIntensity: 0.6 });
+const stoneMat  = makeMat(0x8d8d94);
+const waterMat  = makeMat(0x4f9dc9, { roughness: 0.25, metalness: 0.15 });
+const woodMat   = makeMat(0x9c6b3f);
+const woodDark  = makeMat(0x6e4a2a);
+const trunkMat  = makeMat(0x6b4226);
+const pinkMat   = makeMat(0xf6b8c1);
+const pinkMat2  = makeMat(0xf7a8b8);
+const pathMat   = makeMat(0xbfb49a);
+const glowMat   = makeMat(0xffcf87, { emissive: 0xff9933, emissiveIntensity: 1.6 });
+const doorMat   = makeMat(0x5a2d20);
+
+function block(x, y, z, sx = 1, sy = 1, sz = 1, material) {
+  const m = new THREE.Mesh(boxGeo, material);
+  m.scale.set(sx, sy, sz);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+
+// ---- grass island ----
+const island1 = block(0, 0.5, 0, 60, 1, 60, grassMat);  island1.castShadow = false;
+const island2 = block(0, -0.5, 0, 56, 2, 56, dirtMat);  island2.castShadow = false; island2.receiveShadow = false;
+const island3 = block(0, -2.5, 0, 48, 2, 48, dirtMat);  island3.castShadow = false; island3.receiveShadow = false;
+
+// ---- stone path ----
+for (let z = 12; z >= -2; z -= 2) block(-6, 1.06, z, 2.2, 0.12, 1.1, pathMat);
+
+// ---- 5-tier pagoda ----
+{
+  const px = -6, pz = -12;
+  block(px, 1.25, pz, 16, 0.5, 16, stoneMat);          // stone platform
+  block(px, 2.9, pz + 5.05, 2, 2.8, 0.4, doorMat);     // front door
+  const tiers = [[10, 3.5], [8, 3], [6, 2.5], [4.4, 2.2], [3, 2]];
+  let y = 1.5;
+  for (const [w, h] of tiers) {
+    block(px, y + h/2, pz, w, h, w, wallMat);          // walls
+    const c = w/2;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      block(px + sx*c, y + h/2, pz + sz*c, 1.1, h, 1.1, redMat);   // corner columns
+    block(px + c, y + h/2, pz, 1.1, h, 1.05, redMat);
+    block(px - c, y + h/2, pz, 1.1, h, 1.05, redMat);
+    block(px, y + h/2, pz + c, 1.05, h, 1.1, redMat);
+    block(px, y + h/2, pz - c, 1.05, h, 1.1, redMat);
+    y += h;
+    block(px, y + 0.5, pz, w + 3.5, 1, w + 3.5, roofMat);          // dark roof
+    block(px, y + 1.5, pz, w + 1.2, 1, w + 1.2, roofMat);
+    y += 2;
+  }
+  block(px, y + 1.2, pz, 0.5, 2.4, 0.5, goldMat);      // spire
+  block(px, y + 2.7, pz, 1.0, 0.6, 1.0, goldMat);
+  block(px, y + 3.3, pz, 0.5, 0.8, 0.5, goldMat);
+}
+
+// ---- torii gate ----
+{
+  const tx = -6, tz = 14;
+  block(tx - 3.5, 4.5, tz, 1.1, 7, 1.1, redMat);
+  block(tx + 3.5, 4.5, tz, 1.1, 7, 1.1, redMat);
+  block(tx, 6.6, tz, 8.8, 0.8, 0.9, redMat);           // nuki
+  block(tx, 8.1, tz, 11.5, 0.9, 1.1, roofMat);         // kasagi
+  block(tx - 5.9, 8.1, tz, 0.7, 1.4, 1.3, roofMat);
+  block(tx + 5.9, 8.1, tz, 0.7, 1.4, 1.3, roofMat);
+}
+
+// ---- pond ----
+{
+  const water = block(14, 0.6, 8, 11, 0.5, 9, waterMat);
+  water.castShadow = false;
+  block(14, 1.25, 2.8, 12.2, 0.7, 1.2, stoneMat);
+  block(14, 1.25, 13.2, 12.2, 0.7, 1.2, stoneMat);
+  block(7.8, 1.25, 8, 1.2, 0.7, 11.6, stoneMat);
+  block(20.2, 1.25, 8, 1.2, 0.7, 11.6, stoneMat);
+}
+
+// ---- wooden arch bridge ----
+for (let z = 2; z <= 14; z += 1.15) {
+  const t = (z - 8) / 6;
+  const by = 1.8 + 1.3 * (1 - t*t);
+  block(14, by, z, 2.6, 0.25, 1.15, woodMat);
+  block(12.8, by + 0.45, z, 0.25, 0.7, 1.15, woodDark);
+  block(15.2, by + 0.45, z, 0.25, 0.7, 1.15, woodDark);
+}
+for (const z of [4.5, 8, 11.5]) {
+  const t = (z - 8) / 6;
+  const by = 1.8 + 1.3 * (1 - t*t);
+  block(14, (by + 0.8)/2, z, 1.6, by - 0.8, 0.6, woodDark);
+}
+
+// ---- cherry trees ----
+function tree(x, z, s) {
+  const th = 4 * s;
+  block(x, 1 + th/2, z, 0.9*s, th, 0.9*s, trunkMat);
+  const cy = 1 + th;
+  block(x, cy + 1.2*s, z, 6*s, 2.4*s, 6*s, pinkMat);
+  block(x + 0.8*s, cy + 2.8*s, z - 0.6*s, 4*s, 1.6*s, 4*s, pinkMat2);
+  block(x - 2.4*s, cy + 0.6*s, z + 1.8*s, 2.2*s, 1.4*s, 2.2*s, pinkMat);
+  block(x + 2.2*s, cy + 0.4*s, z - 2.2*s, 2*s, 1.4*s, 2*s, pinkMat2);
+}
+tree(-18, 8, 1.1);
+tree(19, -7, 0.9);
+tree(8, 19, 1.0);
+
+// ---- stone lanterns ----
+function lantern(x, z) {
+  block(x, 1.3, z, 1.2, 0.6, 1.2, stoneMat);
+  block(x, 2.2, z, 0.5, 1.4, 0.5, stoneMat);
+  block(x, 3.1, z, 1.0, 0.4, 1.0, stoneMat);
+  block(x, 3.7, z, 0.8, 0.8, 0.8, glowMat);
+  block(x, 4.3, z, 1.4, 0.5, 1.4, stoneMat);
+  block(x, 4.75, z, 0.8, 0.4, 0.8, stoneMat);
+  const light = new THREE.PointLight(0xffaa55, 6, 10, 2);
+  light.position.set(x, 3.7, z);
+  scene.add(light);
+}
+lantern(-8.5, 8);
+lantern(-3.5, 3);
+
+// ---- a few rocks ----
+block(3, 1.3, -16, 2.2, 1.2, 2.2, stoneMat);
+block(4.6, 1.15, -14.4, 1.2, 0.8, 1.2, stoneMat);
+block(-19, 1.2, -6, 1.8, 0.9, 1.8, stoneMat);
+
+// ---- falling petals ----
+const petalMat = makeMat(0xffc2d1, { emissive: 0x552233, emissiveIntensity: 0.4 });
+const petals = [];
+for (let i = 0; i < 90; i++) {
+  const p = new THREE.Mesh(boxGeo, petalMat);
+  p.scale.set(0.3, 0.06, 0.3);
+  p.position.set(Math.random()*50 - 25, 1 + Math.random()*28, Math.random()*50 - 25);
+  p.userData.sp = 0.8 + Math.random()*1.2;
+  p.userData.phase = Math.random()*Math.PI*2;
+  scene.add(p);
+  petals.push(p);
+}
+
+// ---- animate ----
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+  for (const p of petals) {
+    p.position.y -= p.userData.sp * dt;
+    p.position.x += Math.sin(t * 0.8 + p.userData.phase) * dt * 1.2;
+    p.rotation.x += dt * 1.5;
+    p.rotation.z += dt;
+    if (p.position.y < 1.1) {
+      p.position.y = 22 + Math.random()*8;
+      p.position.x = Math.random()*50 - 25;
+      p.position.z = Math.random()*50 - 25;
+    }
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
