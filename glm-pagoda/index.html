@@ -11,7 +11,22 @@
   .hud h1{margin:0 0 8px;font-size:17px;letter-spacing:3px;font-weight:700;color:#ffd7e8}
   .hud p{margin:3px 0;font-size:12px;opacity:.9}
   kbd{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:0 6px;font:inherit}
-  .foot{position:fixed;bottom:10px;right:14px;color:rgba(255,233,242,.55);font-size:11px;pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+  .foot{position:fixed;bottom:64px;right:14px;color:rgba(255,233,242,.55);font-size:11px;pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+  .strip{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;
+    background:rgba(10,14,26,.75);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:8px 12px;
+    backdrop-filter:blur(6px);z-index:10;white-space:nowrap}
+  .strip-label{color:#ffd7e8;font-size:11px;letter-spacing:2px;margin-right:4px;opacity:.8;font-weight:700}
+  .strip button{font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#ffe9f2;background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:6px 10px;cursor:pointer;transition:background .15s,transform .05s}
+  .strip button:hover:not(:disabled){background:rgba(255,120,170,.25)}
+  .strip button:active:not(:disabled){transform:scale(.96)}
+  .strip button:disabled{opacity:.35;cursor:default}
+  .strip button[data-d="earthquake"]{border-color:rgba(180,140,90,.55)}
+  .strip button[data-d="meteor"]{border-color:rgba(255,120,60,.55)}
+  .strip button[data-d="tsunami"]{border-color:rgba(80,160,255,.55)}
+  .strip button[data-d="nuke"]{border-color:rgba(255,220,80,.55)}
+  .strip .reset{border-color:rgba(120,255,180,.4)}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:50}
 </style>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
@@ -24,6 +39,15 @@
   <p><kbd>Z</kbd>/<kbd>X</kbd> zoom in / out &nbsp; drag mouse to look around</p>
 </div>
 <div class="foot">grid 256 &times; 256 &times; 256 &middot; 65,536 voxels per layer</div>
+<div class="strip" id="strip">
+  <span class="strip-label">DISASTER DRILL</span>
+  <button data-d="earthquake">Earthquake</button>
+  <button data-d="meteor">Meteor Strike</button>
+  <button data-d="tsunami">Tsunami</button>
+  <button data-d="nuke">25kt Nuclear Airburst</button>
+  <button class="reset" id="resetBtn">Reset World</button>
+</div>
+<div id="flash"></div>
 <script type="module" src="./main.js"></script>
 </body>
 </html>

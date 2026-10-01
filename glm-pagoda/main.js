@@ -304,24 +304,312 @@ for (let i = 0; i < 16; i++) { const s = freeSpot(); if (s) addChicken(s.x, s.z)
 for (let i = 0; i < 9; i++) { const s = freeSpot(); if (s) addCow(s.x, s.z); }
 for (let i = 0; i < 9; i++) { const s = freeSpot(); if (s) addPig(s.x, s.z); }
 
-const staticMesh = (() => {
-  const n = vx.length;
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial(), n);
-  const M = new THREE.Matrix4(), Cc = new THREE.Color();
-  for (let i = 0; i < n; i++) {
-    M.makeTranslation(vx[i] + 0.5, vy[i] + 0.5, vz[i] + 0.5);
-    mesh.setMatrixAt(i, M);
-    Cc.setHex(vc[i]);
-    mesh.setColorAt(i, Cc);
+// ---- live voxel world (supports real damage) ----
+const WKEYS = SIZE * SIZE * 64;
+const colOf = new Uint32Array(WKEYS);
+const slotOf = new Uint32Array(WKEYS);
+const liveList = new Uint32Array(vx.length + 8192);
+const CAP = liveList.length;
+let liveCount = 0;
+for (let i = 0; i < vx.length; i++) {
+  const k = (vz[i] * SIZE + vx[i]) * 64 + vy[i];
+  colOf[k] = vc[i];
+  slotOf[k] = liveCount;
+  liveList[liveCount++] = k;
+}
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const staticMat = new THREE.MeshLambertMaterial();
+const staticMesh = new THREE.InstancedMesh(boxGeo, staticMat, CAP);
+staticMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+staticMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+staticMesh.frustumCulled = false;
+staticMesh.count = liveCount;
+scene.add(staticMesh);
+console.log('static voxels:', liveCount);
+
+let staticDirty = true, lastRebuild = -10;
+const _rc = new THREE.Color();
+function rebuildStatic() {
+  staticDirty = false;
+  lastRebuild = t;
+  const ma = staticMesh.instanceMatrix.array;
+  const ca = staticMesh.instanceColor.array;
+  for (let i = 0; i < liveCount; i++) {
+    const k = liveList[i], o = i * 16;
+    ma[o] = 1; ma[o + 5] = 1; ma[o + 10] = 1; ma[o + 15] = 1;
+    ma[o + 12] = (k >> 6 & 255) + 0.5;
+    ma[o + 13] = (k & 63) + 0.5;
+    ma[o + 14] = (k >> 14) + 0.5;
+    _rc.setHex(colOf[k]);
+    const co = i * 3;
+    ca[co] = _rc.r; ca[co + 1] = _rc.g; ca[co + 2] = _rc.b;
   }
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  staticMesh.count = liveCount;
+  staticMesh.instanceMatrix.needsUpdate = true;
+  staticMesh.instanceColor.needsUpdate = true;
+}
+function removeKey(k) {
+  if (!colOf[k]) return;
+  const s = slotOf[k], lk = liveList[--liveCount];
+  liveList[s] = lk; slotOf[lk] = s;
+  colOf[k] = 0;
+  staticDirty = true;
+}
+function paintKey(k, hex) { if (colOf[k]) { colOf[k] = hex; staticDirty = true; } }
+function addKey(x, y, z, hex) {
+  if (x < 0 || z < 0 || x >= SIZE || z >= SIZE || y < 0 || y >= 64 || liveCount >= CAP) return;
+  const k = (z * SIZE + x) * 64 + y;
+  if (colOf[k]) { colOf[k] = hex; staticDirty = true; return; }
+  colOf[k] = hex; slotOf[k] = liveCount; liveList[liveCount++] = k;
+  staticDirty = true;
+}
+function colBase(x, z) {
+  const i = idx(x, z);
+  return water[i] ? 9 : Math.max(hmap[i], 8);
+}
+function destroyColumn(x, z, from, to) {
+  for (let y = from; y <= to; y++) removeKey((z * SIZE + x) * 64 + y);
+}
+
+// ---- coroutine scheduler ----
+let shakeAmp = 0, flashLevel = 0;
+const flashDiv = document.getElementById('flash');
+function doFlash(v) { flashLevel = Math.max(flashLevel, v); }
+const cos = [];
+const activeDisasters = new Set();
+function spawnCo(g, name) { cos.push({ g, wait: 0, name }); }
+function finishDisaster(n) { if (n) { activeDisasters.delete(n); updateStrip(); } }
+function stepCos(dt) {
+  for (let i = cos.length - 1; i >= 0; i--) {
+    const c = cos[i];
+    c.wait -= dt;
+    let guard = 0;
+    while (c.wait <= 0 && guard++ < 500) {
+      const r = c.g.next();
+      if (r.done) { finishDisaster(c.name); cos.splice(i, 1); break; }
+      c.wait += (typeof r.value === 'number' ? r.value : 0);
+    }
+  }
+}
+
+// ---- disaster helpers ----
+function prepCols(tx, tz) {
+  const arr = [];
+  for (let x = 0; x < SIZE; x++) for (let z = 0; z < SIZE; z++) {
+    const dx = x - tx, dz = z - tz;
+    arr.push([dx * dx + dz * dz, x, z]);
+  }
+  arr.sort((a, b) => a[0] - b[0]);
+  return arr;
+}
+function* digScorch(tx, tz, craterR, structR, fireN, step) {
+  const cols = prepCols(tx, tz);
+  let si = 0, ci = 0, sr = 0, cr = 0;
+  while (sr < structR || (ci < cols.length && cols[ci][0] < craterR * craterR)) {
+    sr = Math.min(structR, sr + Math.max(2, structR / 30));
+    while (si < cols.length && cols[si][0] < sr * sr) {
+      const d2 = cols[si][0], x = cols[si][1], z = cols[si][2]; si++;
+      const h = colBase(x, z);
+      destroyColumn(x, z, h + 1, Math.min(63, h + 44));
+      paintKey((z * SIZE + x) * 64 + h, H(0.06, 0.25, 0.08 + rand() * 0.04));
+    }
+    cr = Math.min(craterR, cr + craterR / 18);
+    while (ci < cols.length && cols[ci][0] < cr * cr) {
+      const d2 = cols[ci][0], x = cols[ci][1], z = cols[ci][2]; ci++;
+      const d = Math.sqrt(d2), h = hmap[idx(x, z)];
+      const depth = Math.max(0, Math.round(craterR * 0.6 - d * 0.4));
+      const floorY = Math.max(2, h - depth);
+      for (let y = floorY; y <= h; y++) removeKey((z * SIZE + x) * 64 + y);
+      if (d < craterR * 0.45) addKey(x, floorY, z, H(0.04, 0.95, 0.42));
+    }
+    staticDirty = true;
+    yield step;
+  }
+  for (let i = 0; i < fireN; i++) {
+    const a = rand() * Math.PI * 2, rr = Math.sqrt(rand()) * (craterR + 24);
+    const x = Math.round(tx + Math.cos(a) * rr), z = Math.round(tz + Math.sin(a) * rr);
+    if (x < 0 || z < 0 || x >= SIZE || z >= SIZE) continue;
+    const k = (z * SIZE + x) * 64 + hmap[idx(x, z)];
+    if (colOf[k]) colOf[k] = H(rand() < 0.5 ? 0.03 : 0.08, 0.95, 0.42 + rand() * 0.1);
+  }
+  staticDirty = true;
+}
+
+// ---- earthquake ----
+function* disasterQuake() {
+  shakeAmp = Math.max(shakeAmp, 2.4);
+  for (let r = 1; r <= 95; r++) {
+    const p = Math.max(0, 0.95 - r / 110);
+    for (let z = C - r; z <= C + r; z++) {
+      if (z < 0 || z >= SIZE) continue;
+      for (let x = C - r; x <= C + r; x++) {
+        if (x < 0 || x >= SIZE) continue;
+        if (Math.max(Math.abs(x - C), Math.abs(z - C)) !== r) continue;
+        if (rand() > p) continue;
+        const h = colBase(x, z);
+        destroyColumn(x, z, h + 1, Math.min(63, h + 42));
+        if (rand() < 0.4) removeKey((z * SIZE + x) * 64 + (h - ((rand() * 3) | 0)));
+        const kt = (z * SIZE + x) * 64 + h;
+        if (colOf[kt] && rand() < 0.3) colOf[kt] = H(0.07, 0.15, 0.16);
+      }
+    }
+    shakeAmp = Math.max(shakeAmp, 2.4 * (1 - r / 100));
+    staticDirty = true;
+    yield 0.07;
+  }
+}
+
+// ---- meteor strike ----
+let meteor = null;
+function startMeteor() {
+  const tx = 60 + ((rand() * 136) | 0), tz = 60 + ((rand() * 136) | 0);
+  const off = [];
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++)
+    if (dx * dx + dy * dy + dz * dz <= 6) off.push([dx, dy, dz, H(0.06 + dy * 0.012, 0.95, 0.5 - dy * 0.05)]);
+  const mesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), off.length);
+  mesh.frustumCulled = false;
+  const _m = new THREE.Matrix4(), _cc = new THREE.Color();
+  off.forEach(([x, y, z, c], i) => {
+    mesh.setMatrixAt(i, _m.makeTranslation(x + 0.5, y + 0.5, z + 0.5));
+    _cc.setHex(c); mesh.setColorAt(i, _cc);
+  });
+  scene.add(mesh);
+  meteor = { mesh, from: new THREE.Vector3(tx - 200, 170, tz - 150), to: new THREE.Vector3(tx, 10, tz), t: 0, dur: 2.4, tx, tz };
+}
+function updateMeteor(dt) {
+  if (!meteor) return;
+  meteor.t += dt;
+  const k = Math.min(1, meteor.t / meteor.dur);
+  meteor.mesh.position.lerpVectors(meteor.from, meteor.to, k * k);
+  if (k >= 1) {
+    const { tx, tz } = meteor;
+    scene.remove(meteor.mesh);
+    meteor = null;
+    doFlash(0.55);
+    shakeAmp = Math.max(shakeAmp, 1.8);
+    spawnCo(digScorch(tx, tz, 10, 34, 140, 0.05), 'meteor');
+  }
+}
+
+// ---- tsunami ----
+const waterPal = [H(0.55, 0.75, 0.42), H(0.56, 0.8, 0.45), H(0.57, 0.7, 0.38), H(0.54, 0.85, 0.5)];
+const foamPal = [H(0, 0, 0.97), H(0.55, 0.5, 0.75)];
+let tsunami = null;
+function startTsunami() {
+  const cap = 11000;
+  const mesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), cap);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.frustumCulled = false;
   scene.add(mesh);
-  return mesh;
-})();
-console.log('static voxels:', vx.length);
+  tsunami = { mesh, cap, x: -14.0, spd: 30 };
+  doFlash(0.15);
+  shakeAmp = Math.max(shakeAmp, 0.8);
+}
+function updateTsunami(dt) {
+  if (!tsunami) return;
+  const w = tsunami;
+  const prevX = Math.floor(w.x);
+  w.x += w.spd * dt;
+  const curX = Math.floor(w.x);
+  for (let x = prevX; x < curX; x++) {
+    if (x < 0 || x >= SIZE) continue;
+    for (let z = 0; z < SIZE; z++) {
+      const i = idx(x, z), base = colBase(x, z);
+      destroyColumn(x, z, base + 1, Math.min(63, base + 18));
+      const mud = rand(), kt = (z * SIZE + x) * 64 + hmap[i];
+      if (colOf[kt]) {
+        if (mud < 0.45) colOf[kt] = H(0.07, 0.35, 0.16 + rand() * 0.06);
+        else if (mud < 0.6) colOf[kt] = H(0.11, 0.4, 0.5);
+      }
+    }
+    staticDirty = true;
+  }
+  const _m = new THREE.Matrix4(), _cc = new THREE.Color();
+  const wx = Math.floor(w.x);
+  let n = 0;
+  for (let z = 0; z < SIZE; z++) {
+    const hcol = 15 + Math.round(3 * Math.sin(z * 0.12) + 2 * Math.sin(z * 0.031 + 1));
+    for (let dy = 0; dy < hcol; dy++) {
+      for (let wdx = 0; wdx < 2; wdx++) {
+        if (n >= w.cap) break;
+        _m.makeTranslation(wx + wdx + 0.5, 6 + dy + 0.5, z + 0.5);
+        w.mesh.setMatrixAt(n++, _m);
+        _cc.setHex(dy >= hcol - 2 ? foamPal[(z + dy) & 1] : waterPal[(z + dy) & 3]);
+        w.mesh.setColorAt(n - 1, _cc);
+      }
+    }
+  }
+  w.mesh.count = n;
+  w.mesh.instanceMatrix.needsUpdate = true;
+  if (w.mesh.instanceColor) w.mesh.instanceColor.needsUpdate = true;
+  if (w.x > SIZE + 20) { scene.remove(w.mesh); tsunami = null; finishDisaster('tsunami'); }
+}
+
+// ---- 25kt nuclear airburst ----
+const nukeLight = new THREE.PointLight(0xffd9a0, 0, 500, 1.8);
+scene.add(nukeLight);
+let mush = null;
+function startMushroom(x, z) {
+  const parts = [];
+  for (let y = 0; y < 20; y++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++)
+    if (dx * dx + dz * dz <= 5) parts.push([dx, y, dz, H(0.07, 0.05, 0.16 + rand() * 0.15)]);
+  for (let dx = -9; dx <= 9; dx++) for (let dy = -3; dy <= 4; dy++) for (let dz = -9; dz <= 9; dz++) {
+    if (dx * dx + dz * dz + dy * dy * 6 > 78 || rand() < 0.15) continue;
+    const hot = dy <= -1 && rand() < 0.6;
+    parts.push([dx, dy + 20, dz, hot ? H(0.05, 0.9, 0.45) : H(0.07, 0.04, 0.14 + rand() * 0.2)]);
+  }
+  const mesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), parts.length);
+  mesh.frustumCulled = false;
+  const _m = new THREE.Matrix4(), _cc = new THREE.Color();
+  parts.forEach(([x2, y2, z2, c], i) => {
+    mesh.setMatrixAt(i, _m.makeTranslation(x2 + 0.5, y2 + 0.5, z2 + 0.5));
+    _cc.setHex(c); mesh.setColorAt(i, _cc);
+  });
+  mesh.position.set(x, 20, z);
+  scene.add(mesh);
+  mush = { mesh, t: 0 };
+}
+function updateMush(dt) {
+  if (!mush) return;
+  mush.t += dt;
+  const rise = Math.min(1, mush.t / 6);
+  mush.mesh.position.y = 20 * rise * rise;
+  if (mush.t > 13) { scene.remove(mush.mesh); mush = null; }
+}
+function* disasterNuke() {
+  const tx = C, tz = C;
+  doFlash(1);
+  nukeLight.position.set(tx, 45, tz);
+  nukeLight.intensity = 4000;
+  shakeAmp = Math.max(shakeAmp, 1.4);
+  yield 0.4;
+  spawnCo(digScorch(tx, tz, 24, 80, 380, 0.04));
+  yield 1.0;
+  startMushroom(tx, tz);
+  yield 14;
+}
+
+// ---- strip wiring ----
+function startDisaster(name) {
+  if (activeDisasters.has(name)) return;
+  if (name === 'earthquake') spawnCo(disasterQuake(), name);
+  else if (name === 'meteor') { startMeteor(); }
+  else if (name === 'tsunami') { startTsunami(); }
+  else if (name === 'nuke') spawnCo(disasterNuke(), name);
+  else return;
+  activeDisasters.add(name);
+  updateStrip();
+}
+function updateStrip() {
+  document.querySelectorAll('#strip button[data-d]').forEach(b => {
+    b.disabled = activeDisasters.has(b.dataset.d);
+  });
+}
+document.querySelectorAll('#strip button[data-d]').forEach(b =>
+  b.addEventListener('click', () => startDisaster(b.dataset.d)));
+const resetBtn = document.getElementById('resetBtn');
+if (resetBtn) resetBtn.addEventListener('click', () => location.reload());
+window.__disaster = startDisaster;
 
 const dyn = [];
 let dynCount = 0;
@@ -469,7 +757,11 @@ function updateCam(dt) {
   _f.set(fx * Math.cos(pitch), Math.sin(pitch), fz * Math.cos(pitch));
   camPos.addScaledVector(_f, mz2 * 44 * dt);
   camPos.y = Math.max(11, Math.min(170, camPos.y));
-  camera.position.copy(camPos);
+  camera.position.set(
+    camPos.x + (Math.random() - 0.5) * shakeAmp,
+    camPos.y + (Math.random() - 0.5) * shakeAmp * 0.6,
+    camPos.z + (Math.random() - 0.5) * shakeAmp
+  );
   _t.copy(camPos).add(_f);
   camera.lookAt(_t);
 }
@@ -478,6 +770,17 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   t += dt;
   updateDyn(dt);
+  updateMeteor(dt);
+  updateTsunami(dt);
+  updateMush(dt);
+  stepCos(dt);
+  shakeAmp = Math.max(0, shakeAmp - dt * 0.9);
+  if (nukeLight.intensity > 0) nukeLight.intensity = Math.max(0, nukeLight.intensity - dt * 900);
+  if (flashLevel > 0) {
+    flashLevel = Math.max(0, flashLevel - dt * 0.6);
+    flashDiv.style.opacity = flashLevel.toFixed(3);
+  }
+  if (staticDirty && t - lastRebuild > 0.4) rebuildStatic();
   updateCam(dt);
   renderer.render(scene, camera);
 });
