@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sakura Pagoda — Voxel Garden</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0a0e1a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  canvas{display:block}
+  .hud{position:fixed;top:14px;left:16px;color:#ffe9f2;text-shadow:0 2px 8px rgba(0,0,0,.8);pointer-events:none;user-select:none}
+  .hud h1{margin:0 0 8px;font-size:17px;letter-spacing:3px;font-weight:700;color:#ffd7e8}
+  .hud p{margin:3px 0;font-size:12px;opacity:.9}
+  kbd{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:0 6px;font:inherit}
+  .foot{position:fixed;bottom:10px;right:14px;color:rgba(255,233,242,.55);font-size:11px;pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+</head>
+<body>
+<div class="hud">
+  <h1>SAKURA PAGODA &mdash; VOXEL GARDEN</h1>
+  <p><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd> fly &nbsp; <kbd>Q</kbd>/<kbd>A</kbd> up / down</p>
+  <p><kbd>Z</kbd>/<kbd>X</kbd> zoom in / out &nbsp; drag mouse to look around</p>
+</div>
+<div class="foot">grid 256 &times; 256 &times; 256 &middot; 65,536 voxels per layer</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
