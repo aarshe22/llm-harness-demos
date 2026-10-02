@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><body>
+<div id="stats"></div>
+<div id="result">BOOTING</div>
+<div id="status"></div>
+<div id="flash"></div>
+<script src="three.min.js"></script>
+<script src="game.js"></script>
+<script>
+window.__test = true;
+setTimeout(() => {
+  const r = [];
+  try {
+    const before = voxels.size;
+    fire('eq', 10, 10);
+    r.push('eq:' + (voxels.size !== before ? 'dmg' : 'nodmg'));
+    fire('nuke', -30, 0);
+    r.push('nuke:' + (hAt(-30, 0) >= 0 && !voxels.has(kkey(-30, hAt(-30, 0), 0)) ? 'dmg' : 'nodmg'));
+    const origRebuild = window.rebuild;
+    window.rebuild = () => {};
+    fire('meteor', 20, 20);
+    let guard = 0;
+    while (meteorState && guard++ < 500) updateMeteor(0.05);
+    const d = Math.hypot(20 - 20, 20 - 20);
+    r.push('meteor:' + (meteorState === null && meteorObj === null ? 'impact' : 'stuck'));
+    fire('tsunami', 0, 0);
+    guard = 0;
+    while (tsunamiState && guard++ < 2000) updateTsunami(0.1);
+    r.push('tsunami:' + (tsunamiState === null && tsunamiWall === null ? 'done' : 'stuck@' + (tsunamiState ? tsunamiState.z : '?')));
+    window.rebuild = origRebuild;
+    rebuild();
+    const after = voxels.size;
+    document.getElementById('result').textContent =
+      ((before - after) > 5000 && r.join(',').indexOf('nodmg') < 0 && r.join(',').indexOf('stuck') < 0
+        ? 'DISASTERS-OK ' : 'DISASTER-SUSPECT ') + r.join(', ') + ' before=' + before + ' after=' + after;
+  } catch (err) {
+    document.getElementById('result').textContent = 'DISASTER-FAIL ' + err.message + ' | ' + r.join(',');
+  }
+}, 1500);
+</script>
+</body></html>
