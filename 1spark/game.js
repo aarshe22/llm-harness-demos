@@ -1050,6 +1050,7 @@ function clearAnimObjects() {
   while (particles.length) scene.remove(particles.pop().m);
   while (fxList.length) scene.remove(fxList.pop().m);
   if (tsunamiWall) { scene.remove(tsunamiWall); tsunamiWall = null; }
+  if (tsunamiFuji) { scene.remove(tsunamiFuji); tsunamiFuji = null; }
   if (meteorObj) { scene.remove(meteorObj); meteorObj = null; }
 }
 
@@ -1148,20 +1149,146 @@ function impactMeteor(cx, cz) {
 }
 
 /* ---- TSUNAMI ---- */
-let tsunamiWall = null, tsunamiState = null;
+let tsunamiWall = null, tsunamiState = null, tsunamiFuji = null;
+
+/* ---- "The Great Wave off Kanagawa" — procedural Hokusai wave wall ---- */
+const WAVE_DEEP = COL(19, 52, 94), WAVE_MID = COL(30, 91, 140), WAVE_LIGHT = COL(77, 142, 192), WAVE_FOAM = COL(242, 248, 252);
+function waveHeight(x) {
+  // five tall crests with troughs between, like Hokusai's claw fingers
+  const C = [[-230, 10], [-120, 15], [0, 21], [95, 14], [200, 18], [275, 9], [-280, 7]];
+  let h = 9;
+  for (const [c, a] of C) {
+    const d = x - c;
+    h += a * Math.exp(-(d * d) / (2 * 34 * 34));
+  }
+  return h + 1.6 * Math.sin(x * 0.11) + 1.2 * Math.sin(x * 0.041 + 1.7);
+}
+function waveProfile(h) {
+  const r = Math.min(5.5, h * 0.33);
+  const p = [[-16, 0], [-13, h * 0.22], [-10, h * 0.45], [-8, h * 0.62], [-6, h * 0.80], [-4.5, h * 0.93]];
+  const cZ = -3, cY = h - r;
+  for (let s = 0; s <= 6; s++) {
+    const a = (90 - s * 23.3) * Math.PI / 180;           // 90deg -> -50deg: curl over and down
+    p.push([cZ + r * Math.cos(a), cY + r * Math.sin(a)]);
+  }
+  p.push([-1.2, 0]);
+  p.tip = p[p.length - 2];
+  return p;
+}
+function buildGreatWave() {
+  const g = new THREE.Group();
+  const pos = [], col = [];
+  const STEP = 4, N = 560 / STEP;
+  const cols = [];
+  for (let i = 0; i <= N; i++) {
+    const x = -280 + i * STEP;
+    cols.push({ x, h: waveHeight(x), p: waveProfile(waveHeight(x)) });
+  }
+  // ribbon the profile strip across x
+  for (let i = 0; i < N; i++) {
+    const A = cols[i], B = cols[i + 1];
+    for (let s = 0; s < A.p.length - 1; s++) {
+      const p0 = A.p[s], p1 = A.p[s + 1], q0 = B.p[s], q1 = B.p[s + 1];
+      const quad = (x0, z0, y0, x1, z1, y1, x2, z2, y2, hex) => {
+        const pts = [[x0, y0, z0], [x1, y1, z1], [x2, y2, z2]];
+        for (const pt of pts) { pos.push(pt[0], pt[1], pt[2]); col.push(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255); }
+      };
+      const hexAt = (x, y, h, sIdx, sTot) => {
+        const n = hash2(Math.floor(x * 0.5), Math.floor(y));
+        if (y > h * 0.86 || (sIdx > sTot * 0.72 && y > h * 0.55))
+          return n < 0.4 ? WAVE_FOAM : WAVE_LIGHT;                          // foam cap & curl underside
+        if (y > h * 0.7) return n < 0.5 ? WAVE_LIGHT : WAVE_MID;
+        const band = Math.sin(y * 1.1 + x * 0.02) > 0.86 ? WAVE_LIGHT : (n < 0.12 ? WAVE_MID : WAVE_DEEP);
+        return band;
+      };
+      const hA = A.h, hB = B.h;
+      quad(A.x, p0[0], p0[1], B.x, q0[0], q0[1], B.x, q1[0], q1[1], hexAt(A.x, p0[1], hA, s, A.p.length));
+      quad(A.x, p0[0], p0[1], B.x, q1[0], q1[1], A.x, p1[0], p1[1], hexAt(A.x, p1[1], hA, s, A.p.length));
+    }
+  }
+  // secondary swells in front (smaller clawed waves)
+  for (let x = -280; x < 280; x += STEP) {
+    const hh = 3 + 2.4 * Math.abs(Math.sin(x * 0.07)) + 1.5 * Math.abs(Math.sin(x * 0.019 + 2));
+    const sp = [[4, 0], [5.5, hh * 0.6], [7, hh], [9.5, 0]];
+    for (let s = 0; s < sp.length - 1; s++) {
+      const p0 = sp[s], p1 = sp[s + 1], x1 = x + STEP;
+      const hex = p0[1] > hh * 0.7 ? WAVE_FOAM : (hash2(x, s) < 0.3 ? WAVE_MID : WAVE_LIGHT);
+      const pts = [[x, p0[1], p0[0]], [x1, p0[1], p0[0]], [x1, p1[1], p1[0]], [x, p0[1], p0[0]], [x1, p1[1], p1[0]], [x, p1[1], p1[0]]];
+      for (const pt of pts) { pos.push(pt[0], pt[1], pt[2]); col.push(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255); }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  geo.computeBoundingSphere();
+  const body = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, vertexColors: true, transparent: true, opacity: 0.94 }));
+  body.frustumCulled = false;
+  g.add(body);
+
+  // foam claws + spray droplets hanging off each crest tip
+  const foamMat = new THREE.MeshLambertMaterial({ color: 0xf4f9fc });
+  const foams = [];
+  for (let i = 0; i < cols.length; i += 2) {
+    const cd = cols[i];
+    if (cd.h < 17) continue;
+    const tip = cd.p.tip;
+    for (let k = 0; k < 7; k++) {
+      const m = new THREE.Mesh(BOX_GEO_PART, foamMat);
+      const s = rr(0.7, 1.9);
+      m.scale.set(s, s, s);
+      m.position.set(cd.x + rr(-1.6, 1.6), tip[1] - rr(-0.8, 1.4), tip[0] + rr(-0.4, 2.4));
+      g.add(m); foams.push(m);
+    }
+    for (let k = 0; k < 5; k++) {                                        // spray fingers
+      const m = new THREE.Mesh(BOX_GEO_PART, foamMat);
+      const s = rr(0.35, 0.85);
+      m.scale.set(s, s, s);
+      m.position.set(cd.x + rr(-2.4, 2.4), tip[1] - rr(1.5, 6.5), tip[0] + rr(1.2, 4));
+      g.add(m); foams.push(m);
+    }
+  }
+  // white water churning at the base
+  for (let x = -280; x < 280; x += 5) {
+    for (let k = 0; k < 3; k++) {
+      const m = new THREE.Mesh(BOX_GEO_PART, foamMat);
+      const s = rr(0.6, 1.6);
+      m.scale.set(s, s, s);
+      m.position.set(x + rr(-2, 2), rr(0.2, 2.4), -14 + rr(-3, 13));
+      g.add(m); foams.push(m);
+    }
+  }
+  g.userData.foams = foams;
+  return g;
+}
+function makeFuji() {
+  const g = new THREE.Group();
+  const geo = new THREE.ConeGeometry(62, 88, 22, 5);
+  const pc = [];
+  const pa = geo.attributes.position;
+  for (let i = 0; i < pa.count; i++) {
+    const y = pa.getY(i) + 44;
+    const a = Math.atan2(pa.getZ(i), pa.getX(i));
+    const snowLine = 56 + 9 * Math.sin(a * 7) + 5 * Math.sin(a * 3 + 1);
+    pc.push(y > snowLine ? 0.95 : 0.16, y > snowLine ? 0.97 : 0.30, y > snowLine ? 0.99 : 0.52);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(pc), 3));
+  const cone = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  cone.position.y = 44;
+  g.add(cone);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(15, 20, 12),
+    new THREE.MeshLambertMaterial({ color: 0xf2f7fc }));
+  cap.position.y = 80;
+  g.add(cap);
+  return g;
+}
 function tsunami() {
   scare();
-  const g = new THREE.Group();
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(560, 20, 30),
-    new THREE.MeshLambertMaterial({ color: 0x1f5f8a, transparent: true, opacity: 0.88 }));
-  wall.position.y = 11;
-  g.add(wall);
-  const foam = new THREE.Mesh(new THREE.BoxGeometry(560, 5, 30),
-    new THREE.MeshLambertMaterial({ color: 0xeaf8ff, transparent: true, opacity: 0.95 }));
-  foam.position.set(0, 21, 5);
-  g.add(foam);
+  const g = buildGreatWave();
   scene.add(g);
   tsunamiWall = g;
+  tsunamiFuji = makeFuji();
+  tsunamiFuji.position.set(40, 2, -380);
+  scene.add(tsunamiFuji);
   tsunamiState = { z: -300, done: false, rebuildT: 0 };
   msg('Tsunami warning — giant wave approaching from the north!');
 }
@@ -1169,7 +1296,10 @@ function updateTsunami(dt) {
   const s = tsunamiState;
   if (!s) return;
   s.z += 46 * dt;
-  if (tsunamiWall) tsunamiWall.position.set(0, 0, s.z);
+  if (tsunamiWall) {
+    tsunamiWall.position.set(0, Math.sin(s.z * 0.05) * 0.5, s.z);
+    tsunamiWall.rotation.z = Math.sin(s.z * 0.03) * 0.006;
+  }
   shake(0.5, 0.2);
   const zFrom = Math.max(-OFF, Math.floor(s.z - 30)), zTo = Math.min(OFF - 1, Math.floor(s.z));
   for (let z = zFrom; z <= zTo; z++) {
@@ -1186,6 +1316,7 @@ function updateTsunami(dt) {
   if (s.z > 320 && !s.done) {
     s.done = true;
     scene.remove(tsunamiWall); tsunamiWall = null;
+    if (tsunamiFuji) { scene.remove(tsunamiFuji); tsunamiFuji = null; }
     tsunamiState = null;
     rebuild();
     msg('The wave has receded.');
