@@ -85,6 +85,10 @@ canvas { display:block; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20l4-9 4 5 3-7 5 11"/><circle cx="7" cy="4" r="2"/></svg>
       <span>Terraform</span>
     </button>
+    <button class="wbtn disaster" data-d="godzilla" title="Godzilla">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h20M5 19l1-5 2 2 2-6 2 4 2-7 2 5 3-2 2 9"/><circle cx="19" cy="6" r="1"/></svg>
+      <span>Godzilla</span>
+    </button>
   </div>
 </div>
 
@@ -211,7 +215,8 @@ const oceanUni = {
   uSky: { value: skyUni.uBot.value },
   uSunDir: { value: sunDir },
   uSunI: { value: 1.3 },
-  uFlash: { value: 0 }
+  uFlash: { value: 0 },
+  uRipples: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) }
 };
 const oceanGeo = new THREE.PlaneGeometry(3200, 3200, 1200, 1200);
 oceanGeo.deleteAttribute('uv');
@@ -221,6 +226,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   uniforms: oceanUni,
   vertexShader: `
     uniform float uTime, uAmp, uSpd;
+    uniform vec4 uRipples[8];
     varying vec3 vWorld;
     varying float vWave;
     void main(){
@@ -232,6 +238,14 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       w += sin(dot(p.xz, vec2(0.155, 0.135)) + t * 2.6) * 0.14;
       w += sin(dot(p.xz, vec2(-0.2, 0.185)) + t * 3.3) * 0.08;
       w += sin(dot(p.xz, vec2(0.26, -0.235)) + t * 4.1) * 0.05;
+      for (int i = 0; i < 8; i++){
+        vec4 rp = uRipples[i];
+        if (rp.z > 0.5){
+          float dd = distance(p.xz, rp.xy);
+          float rw = sin(dd * 0.35 - rp.w * 1.4) * exp(-abs(dd - rp.w) * 0.09) * max(0.0, 1.0 - rp.w * 0.016);
+          p.y += rw * 2.4;
+        }
+      }
       vWave = w;
       p.y += w * uAmp;
       vec4 wp = modelMatrix * vec4(p, 1.0);
@@ -291,6 +305,8 @@ function islandHeight(x, z){
 /* current ground height (reflects babel ruins / terraform morph) */
 let terraP = 0;
 let baseHeightFn = islandHeight;
+const cityBuildings = [], cityStacks = [];
+let cityRoads = null;
 function terraTargetHeight(x, z){
   const r = Math.hypot(x, z);
   if (r < 108) return 3;
@@ -1138,6 +1154,288 @@ function updateBabel(d, dt){
   if (d.halo) d.halo.material.opacity = 0.28 + 0.1 * Math.sin(elapsed * 5);
 }
 
+/* --- Godzilla --- */
+const rippleSlots = new Array(8).fill(null);
+function addRipple(x, z){
+  let idx = rippleSlots.findIndex(s => !s);
+  if (idx < 0){ idx = 0; for (let i = 1; i < 8; i++) if (rippleSlots[i].t > rippleSlots[idx].t) idx = i; }
+  rippleSlots[idx] = { x, z, t: 0 };
+}
+function updateRipples(dt){
+  for (let i = 0; i < 8; i++){
+    const s = rippleSlots[i];
+    if (!s) continue;
+    s.t += dt;
+    if (s.t > 11){ rippleSlots[i] = null; oceanUni.uRipples.value[i].set(0, 0, 0, 0); }
+    else oceanUni.uRipples.value[i].set(s.x, s.z, 1, 6 + s.t * 34);
+  }
+}
+const debris = [];
+function throwChunks(x, z, w, h, colors, n){
+  const dirA = Math.atan2(x, z);
+  for (let i = 0; i < n; i++){
+    const cs = rand(1.2, Math.max(2.4, w * 0.32));
+    const c = new THREE.Mesh(new THREE.BoxGeometry(cs, rand(1.2, 3.2), rand(1.2, 3)), new THREE.MeshStandardMaterial({ color: colors[i % colors.length], flatShading: true, roughness: 1 }));
+    c.position.set(x + rand(-w * 0.4, w * 0.4), groundHeight(x, z) + rand(1, h * 0.75), z + rand(-w * 0.4, w * 0.4));
+    c.castShadow = true;
+    const a = dirA + rand(-0.7, 0.7);
+    const sp = rand(12, 28);
+    debris.push({ m: c, vx: Math.sin(a) * sp, vz: Math.cos(a) * sp, vy: rand(7, 19), splashed: false, restT: 0, spin: rand(1.5, 4) });
+    scene.add(c);
+  }
+}
+function makeSplash(x, z){
+  addRipple(x, z);
+  const n = 36;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3);
+  const vel = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++){
+    pos[i * 3] = x; pos[i * 3 + 1] = 0.6; pos[i * 3 + 2] = z;
+    const a = rand(0, Math.PI * 2), r0 = rand(0.3, 1);
+    vel[i * 3] = Math.cos(a) * r0 * rand(4, 14);
+    vel[i * 3 + 1] = rand(9, 22);
+    vel[i * 3 + 2] = Math.sin(a) * r0 * rand(4, 14);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xeaf6ff, size: 1.7, transparent: true, opacity: 0.9, depthWrite: false });
+  const pts = new THREE.Points(geo, mat);
+  scene.add(pts);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.5, z);
+  ring.scale.setScalar(2);
+  scene.add(ring);
+  const eff = { t: 0, update(dt){
+    this.t += dt;
+    const p = geo.attributes.position.array;
+    for (let i = 0; i < n; i++){
+      vel[i * 3 + 1] -= 22 * dt;
+      p[i * 3] += vel[i * 3] * dt;
+      p[i * 3 + 1] += vel[i * 3 + 1] * dt;
+      p[i * 3 + 2] += vel[i * 3 + 2] * dt;
+    }
+    geo.attributes.position.needsUpdate = true;
+    mat.opacity = Math.max(0, 0.9 * (1 - this.t / 2.0));
+    ring.scale.setScalar(Math.min(60, 4 + this.t * 26));
+    ring.material.opacity = Math.max(0, 0.7 * (1 - this.t / 2.2));
+    return this.t < 2.2;
+  }, onEnd(){
+    scene.remove(pts); geo.dispose(); mat.dispose();
+    scene.remove(ring); ring.geometry.dispose(); ring.material.dispose();
+  } };
+  effects.push(eff);
+}
+function updateDebris(dt){
+  for (let i = debris.length - 1; i >= 0; i--){
+    const dc = debris[i];
+    if (dc.restT > 0){
+      dc.restT += dt;
+      dc.m.scale.multiplyScalar(1 - 0.55 * dt);
+      if (dc.restT > 1.6){ scene.remove(dc.m); dc.m.geometry.dispose(); dc.m.material.dispose(); debris.splice(i, 1); }
+      continue;
+    }
+    dc.vy -= 26 * dt;
+    dc.m.position.x += dc.vx * dt;
+    dc.m.position.y += dc.vy * dt;
+    dc.m.position.z += dc.vz * dt;
+    dc.m.rotation.x += dc.spin * dt;
+    dc.m.rotation.z += dc.spin * 0.7 * dt;
+    const gh = groundHeight(dc.m.position.x, dc.m.position.z);
+    if (dc.m.position.y < gh + 0.4){
+      if (gh < 1.2 && Math.hypot(dc.m.position.x, dc.m.position.z) > 100){
+        dc.splashed = true;
+        makeSplash(dc.m.position.x, dc.m.position.z);
+        dc.vy = -2; dc.vx *= 0.15; dc.vz *= 0.15;
+      } else {
+        dc.restT = 0.001;
+        dc.m.position.y = gh + 0.4;
+      }
+    } else if (dc.splashed){
+      dc.m.position.y -= 1.4 * dt;
+      if (dc.m.position.y < -5){ scene.remove(dc.m); dc.m.geometry.dispose(); dc.m.material.dispose(); debris.splice(i, 1); }
+    }
+  }
+}
+function buildGodzilla(){
+  const g = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0x3d5a35, flatShading: true, roughness: 1 });
+  const spineMat = new THREE.MeshStandardMaterial({ color: 0xe8e4d8, emissive: 0xd8d0b0, emissiveIntensity: 0.35, flatShading: true, roughness: 0.8 });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(13, 15, 17), skin);
+  torso.position.y = 19;
+  torso.castShadow = true;
+  g.add(torso);
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 12), skin);
+  chest.position.set(0, 26, 4);
+  chest.castShadow = true;
+  g.add(chest);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(6, 5.5, 8), skin);
+  head.position.set(0, 32, 7);
+  head.castShadow = true;
+  g.add(head);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.2, 4), skin);
+  snout.position.set(0, 30.5, 12);
+  g.add(snout);
+  for (const ex of [-1.8, 1.8]){
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.55, 6, 4), new THREE.MeshStandardMaterial({ color: 0xffd23c, emissive: 0xffa500, emissiveIntensity: 0.9 }));
+    eye.position.set(ex, 33.2, 10.5);
+    g.add(eye);
+  }
+  for (let i = 0; i < 5; i++){
+    const s = 3.4 - Math.abs(i - 2) * 0.55;
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(s * 0.5, s * 1.6, 4), spineMat);
+    sp.position.set(0, 27.5 - i * 3.1, 3.5 - i * 3.6);
+    sp.rotation.x = -0.25;
+    g.add(sp);
+  }
+  for (const ax of [-6.5, 6.5]){
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.4, 7, 2.6), skin);
+    arm.position.set(ax, 20, 6);
+    arm.rotation.x = -0.5;
+    g.add(arm);
+  }
+  const legL = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.2, 12, 7), skin);
+  legL.position.set(-4.2, 5.5, 0);
+  legL.castShadow = true;
+  g.add(legL);
+  const legR = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.2, 12, 7), skin);
+  legR.position.set(4.2, 5.5, 0);
+  legR.castShadow = true;
+  g.add(legR);
+  let tz = -8.5, ty = 14;
+  for (let i = 0; i < 4; i++){
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(4.5 - i * 0.8, 4 - i * 0.7, 6.5), skin);
+    seg.position.set(0, ty, tz);
+    tz -= 5.5; ty -= 1.6;
+    g.add(seg);
+  }
+  return { g, legL, legR, spineMat };
+}
+function destroyTarget(t){
+  t.alive = false;
+  if (t.kind === 'building'){
+    t.ref.m.visible = false; t.ref.alive = false;
+    throwChunks(t.x, t.z, Math.max(t.ref.w, t.ref.d), t.h, [0xb0aca4, 0x6f93a8, 0x8a867e], 6 + Math.floor(t.h / 14));
+    playNoiseBurst(1.0, 180, 50, 0.6);
+  } else if (t.kind === 'stack'){
+    t.ref.m.visible = false; t.ref.alive = false;
+    if (cityStacks.length && cityStacks.every(s => !s.alive) && smokeUni) smokeUni.uOp.value = 0;
+    throwChunks(t.x, t.z, 5, 30, [0x6a4a3a], 7);
+    playNoiseBurst(1.0, 180, 50, 0.6);
+  } else if (t.kind === 'roads'){
+    cityRoads.visible = false; cityRoads = null;
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) throwChunks(Math.cos(a) * 66, Math.sin(a) * 66, 9, 3, [0x3f3d3a], 5);
+    playNoiseBurst(1.2, 160, 45, 0.7);
+  } else if (t.kind === 'struct'){
+    t.ref.visible = false;
+    const vi = villageStructures.indexOf(t.ref);
+    if (vi >= 0) villageStructures.splice(vi, 1);
+    throwChunks(t.x, t.z, 4, 5, [0xc9a86a, 0x7c5a34], 5);
+    playNoiseBurst(0.8, 200, 60, 0.5);
+  } else if (t.kind === 'tree'){
+    t.ref.m.visible = false;
+    const ti = trees.indexOf(t.ref);
+    if (ti >= 0) trees.splice(ti, 1);
+    throwChunks(t.x, t.z, 2.5, 6, [0x8a6a45, 0x3f8f3f], 4);
+    playNoiseBurst(0.6, 250, 80, 0.4);
+  }
+  shakeAmp = Math.max(shakeAmp, 1.0);
+}
+function startGodzilla(){
+  const targets = [];
+  for (const b of cityBuildings) if (b.alive) targets.push({ kind: 'building', x: b.x, z: b.z, r: Math.max(b.w, b.d) / 2, h: b.h, alive: true, ref: b });
+  for (const s of cityStacks) if (s.alive) targets.push({ kind: 'stack', x: s.x, z: s.z, r: 6, h: 30, alive: true, ref: s });
+  if (cityRoads) targets.push({ kind: 'roads', x: 0, z: 0, r: 40, h: 3, alive: true });
+  if (!targets.length){
+    for (const s of villageStructures) targets.push({ kind: 'struct', x: s.position.x, z: s.position.z, r: 6, h: 5, alive: true, ref: s });
+    for (const t of trees) targets.push({ kind: 'tree', x: t.m.position.x, z: t.m.position.z, r: 3, h: 9, alive: true, ref: t });
+  }
+  const gz = buildGodzilla();
+  let sx = 0, sz = 160;
+  if (targets.length){
+    const a = Math.atan2(targets[0].z, targets[0].x);
+    sx = Math.cos(a) * 168; sz = Math.sin(a) * 168;
+  }
+  gz.g.position.set(sx, -3, sz);
+  scene.add(gz.g);
+  disaster = { type: 'godzilla', t: 0, dur: 1e9, epicenter: new THREE.Vector3(), label: 'GODZILLA', shock: 0,
+    gz, targets, phase: 'walk', phaseT: 0, walkT: 0, lastS: 0, target: null, hit: false, exitDir: 0 };
+  sfxRoar();
+}
+function updateGodzilla(d, dt){
+  if (d.phase === 'done') return;
+  d.phaseT += dt;
+  const gz = d.gz, g = gz.g;
+  d.epicenter.set(g.position.x, 0, g.position.z);
+  gz.spineMat.emissiveIntensity = 0.35 + 0.15 * Math.sin(elapsed * 2.5);
+
+  if (d.phase === 'walk' || d.phase === 'attack'){
+    if (!d.target || !d.target.alive){
+      let best = null, bd = 1e9;
+      for (const t of d.targets){
+        if (!t.alive) continue;
+        const dist = Math.hypot(t.x - g.position.x, t.z - g.position.z);
+        if (dist < bd){ bd = dist; best = t; }
+      }
+      d.target = best;
+      if (!best){
+        d.phase = 'exit';
+        d.phaseT = 0;
+        const l = Math.hypot(g.position.x, g.position.z) || 1;
+        d.exitDir = { x: g.position.x / l, z: g.position.z / l };
+        return;
+      }
+    }
+  }
+  if (d.phase === 'walk'){
+    const t = d.target;
+    const dx = t.x - g.position.x, dz = t.z - g.position.z;
+    const dist = Math.hypot(dx, dz);
+    g.rotation.y = Math.atan2(dx, dz);
+    const reach = (t.r || 12) + 13;
+    if (dist <= reach){
+      d.phase = 'attack'; d.phaseT = 0; d.hit = false;
+      sfxRoar();
+      shakeAmp = Math.max(shakeAmp, 0.8);
+    } else {
+      const step = 16 * dt;
+      g.position.x += (dx / dist) * step;
+      g.position.z += (dz / dist) * step;
+      d.walkT += dt;
+      const s = Math.sin(d.walkT * 6);
+      gz.legL.rotation.x = s * 0.55;
+      gz.legR.rotation.x = -s * 0.55;
+      if (s * d.lastS <= 0){ sfxStomp(); shakeAmp = Math.max(shakeAmp, 0.25); }
+      d.lastS = s;
+      g.position.y = Math.max(groundHeight(g.position.x, g.position.z), -4.5) + Math.abs(s) * 0.5;
+    }
+  } else if (d.phase === 'attack'){
+    const t = d.target;
+    g.rotation.y = Math.atan2(t.x - g.position.x, t.z - g.position.z);
+    const lunge = Math.sin(Math.min(1, d.phaseT / 0.5) * Math.PI) * 3.5;
+    const dx = t.x - g.position.x, dz = t.z - g.position.z;
+    const dl = Math.hypot(dx, dz) || 1;
+    g.position.x += (dx / dl) * lunge * dt * 6;
+    g.position.z += (dz / dl) * lunge * dt * 6;
+    g.rotation.x = -Math.sin(Math.min(1, d.phaseT / 0.5) * Math.PI) * 0.18;
+    if (d.phaseT > 0.55 && !d.hit){ d.hit = true; destroyTarget(d.target); }
+    if (d.phaseT > 1.2){ d.phase = 'walk'; d.phaseT = 0; d.target = null; }
+  } else if (d.phase === 'exit'){
+    g.position.x += d.exitDir.x * 15 * dt;
+    g.position.z += d.exitDir.z * 15 * dt;
+    d.walkT += dt;
+    gz.legL.rotation.x = Math.sin(d.walkT * 6) * 0.55;
+    gz.legR.rotation.x = -Math.sin(d.walkT * 6) * 0.55;
+    g.position.y = Math.max(groundHeight(g.position.x, g.position.z), -6) + Math.abs(Math.sin(d.walkT * 6)) * 0.5;
+    if (d.phaseT > 12){
+      scene.remove(g);
+      d.phase = 'done';
+      disaster.dur = disaster.t;
+      return;
+    }
+  }
+}
+
 /* --- Terraform --- */
 const STACK_POS = [[70, -38], [80, -48], [90, -38], [80, -28]];
 let terraDone = false, smogT = 0, smokeUni = null, smokePts = null;
@@ -1217,6 +1515,9 @@ function startTerraform(){
   }
   while (scorches.length){ const s = scorches.pop(); scene.remove(s); s.geometry.dispose(); s.material.dispose(); }
   if (pierGroup){ scene.remove(pierGroup); pierGroup = null; }
+  cityBuildings.length = 0;
+  cityStacks.length = 0;
+  cityRoads = null;
   treesFallen = false;
   disaster = { type: 'terraform', t: 0, dur: 1e9, epicenter: new THREE.Vector3(0, 0, 0), label: 'TERRAFORM', shock: 0,
     phase: 'reclaim', phaseT: 0, startY, startCols, targetCols, specs, buildings: [], stacks: [], roads: null };
@@ -1245,6 +1546,7 @@ function buildingMesh(s){
   mesh.scale.y = 0.001;
   mesh.castShadow = true;
   scene.add(mesh);
+  cityBuildings.push({ m: mesh, x: s.x, z: s.z, w: s.w, d: s.d, h: s.h, alive: true });
   return mesh;
 }
 function updateTerraform(d, dt){
@@ -1294,6 +1596,7 @@ function updateTerraform(d, dt){
       const ring = colorize(new THREE.TorusGeometry(66, 3.4, 6, 56), 0x3f3d3a, 0.95); place(ring, 0, 3.15, 0, -Math.PI / 2, 0, 0); rp.push(ring);
       d.roads = new THREE.Mesh(mergeGeometries(rp), propMat);
       scene.add(d.roads);
+      cityRoads = d.roads;
       STACK_POS.forEach((sp, i) => {
         const st = colorize(new THREE.CylinderGeometry(2.2, 3.2, 30, 10), 0x6a4a3a, rand(0.9, 1.05));
         place(st, 0, 15, 0);
@@ -1303,6 +1606,7 @@ function updateTerraform(d, dt){
         m.castShadow = true;
         scene.add(m);
         d.stacks.push({ m, delay: i * 0.5, started: false });
+        cityStacks.push({ m, x: sp[0], z: sp[1], alive: true });
       });
     }
     d.stacks.forEach(s => {
@@ -1373,6 +1677,7 @@ btns.forEach(b => {
     else if (d === 'ufo') startUFO();
     else if (d === 'babel') startBabel();
     else if (d === 'terraform') startTerraform();
+    else if (d === 'godzilla') startGodzilla();
     b.classList.add('active');
   });
 });
@@ -1432,6 +1737,23 @@ function playNoiseBurst(dur, f0, f1, gain){
 const sfxThunder = () => playNoiseBurst(2.2, 400, 60, 0.9);
 const sfxBoom = () => playNoiseBurst(4.5, 220, 30, 1.4);
 const sfxZap = () => playNoiseBurst(0.8, 2600, 300, 0.5);
+function sfxRoar(){
+  if (!audioCtx || muted) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(70, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 1.3);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = 300;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 1.4);
+  playNoiseBurst(1.2, 200, 50, 0.6);
+}
+const sfxStomp = () => playNoiseBurst(0.25, 110, 45, 0.45);
 const muteBtn = document.getElementById('mute');
 const ICON_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>';
 const ICON_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6M16 9l6 6"/></svg>';
@@ -1507,6 +1829,9 @@ function animate(){
     if (disaster.type === 'ufo') updateUFO(disaster, dt);
     if (disaster.type === 'babel') updateBabel(disaster, dt);
     if (disaster.type === 'terraform') updateTerraform(disaster, dt);
+    if (disaster.type === 'godzilla') updateGodzilla(disaster, dt);
+    updateRipples(dt);
+    updateDebris(dt);
     if (disaster.t > disaster.dur){
       const btn = document.querySelector(`[data-d="${disaster.type}"]`);
       if (btn) btn.classList.remove('active');
