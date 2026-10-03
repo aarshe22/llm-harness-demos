@@ -2,7 +2,7 @@ window.DC = window.DC || {};
 
 DC.Render = (function () {
   const PX = 2;
-  const RACK_W = 128, GAP = 48, U = 24, RACK_U = 42;
+  const RACK_W = 160, GAP = 56, U = 18, RACK_U = 42;
   const RACK_H = RACK_U * U;
   const FLOOR_H = 240;
   const CEIL_H = 130;
@@ -388,15 +388,15 @@ DC.Render = (function () {
     ctx.lineWidth = PX;
     ctx.strokeRect(bx, y + 2, bw, h - 4);
     ctx.lineWidth = 1;
-    pxText(ctx, eq.name, bx + 6, y + 14, 8, on ? PAL.text : PAL.textDim);
+    pxText(ctx, eq.name, bx + 6, y + 13, 8, on ? PAL.text : PAL.textDim);
     if (on) {
       for (let p = 0; p < 10; p++) {
         const on2 = Math.sin(time * 6 + p * 1.3) > -0.3;
         ctx.fillStyle = on2 ? (p % 4 === 0 ? PAL.ledCyan : PAL.ledGreen) : "#1b1445";
-        ctx.fillRect(bx + 6 + p * 7, y + h - 12, 5, 6);
+        ctx.fillRect(bx + 64 + p * 7, y + h / 2 - 3, 5, 6);
       }
     } else if (blink) {
-      pxText(ctx, "DOWN", bx + 40, y + h - 8, 8, PAL.ledRed);
+      pxText(ctx, "DOWN", bx + 84, y + 13, 8, PAL.ledRed);
     }
   }
 
