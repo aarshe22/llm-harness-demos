@@ -137,18 +137,9 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 		bases.append(p)
 		heights.append(h)
 		radii.append(r)
-		pines.append(local.randf() > (0.18 if pine_heavy else 0.62))
-		if i < int(n * 0.45):
-			var body = StaticBody3D.new()
-			var col = CollisionShape3D.new()
-			var shp = CylinderShape3D.new()
-			shp.radius = r
-			shp.height = h
-			col.shape = shp
-			body.add_child(col)
-			body.position = p + Vector3(0, h * 0.5, 0)
-			body.add_to_group("hard")
-			node.add_child(body)
+		var is_pine: bool = local.randf() > (0.18 if pine_heavy else 0.62)
+		pines.append(is_pine)
+		_add_tree_collider(node, p, h, r, is_pine)
 	var layers = 5
 	var cone = ConeMesh.new()
 	cone.bottom_radius = 1.0
@@ -193,6 +184,31 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 			fi += 1
 	if fi > 0:
 		foliage.visible_instance_count = fi
+
+
+func _add_tree_collider(node: Node3D, base: Vector3, h: float, trunk_r: float, is_pine: bool) -> void:
+	var body = StaticBody3D.new()
+	var col = CollisionShape3D.new()
+	if is_pine:
+		var cone = ConvexPolygonShape3D.new()
+		var br: float = GlowRules.tree_collider_radius(true, trunk_r)
+		var pts: PackedVector3Array = PackedVector3Array()
+		pts.append(Vector3(0, h * 0.5, 0))
+		var sides := 8
+		for i in sides:
+			var a: float = TAU * float(i) / float(sides)
+			pts.append(Vector3(cos(a) * br, -h * 0.5, sin(a) * br))
+		cone.points = pts
+		col.shape = cone
+	else:
+		var cyl = CylinderShape3D.new()
+		cyl.radius = GlowRules.tree_collider_radius(false, trunk_r)
+		cyl.height = h
+		col.shape = cyl
+	body.add_child(col)
+	body.position = base + Vector3(0, h * 0.5, 0)
+	body.add_to_group("hard")
+	node.add_child(body)
 
 
 func _plants(node: Node3D, origin: Vector3, biome: String, cfg) -> void:

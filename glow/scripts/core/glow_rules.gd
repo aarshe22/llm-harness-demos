@@ -45,3 +45,19 @@ static func moth_track_wave(distance: float, t: float, amp: float = 0.42) -> flo
 
 static func moth_flight_y(cruise_alt: float, distance: float, t: float, amp: float) -> float:
 	return clampf(cruise_alt + GlowRules.moth_track_wave(distance, t, amp), MOTH_MIN_Y, MOTH_MAX_Y)
+
+
+const TREE_CONE_BASE := 2.4
+const TREE_CYL_BASE := 1.9
+
+
+static func tree_collider_radius(pine: bool, trunk_r: float) -> float:
+	return trunk_r * (TREE_CONE_BASE if pine else TREE_CYL_BASE)
+
+
+static func tree_hit_radius(shape: String, base_radius: float, height: float, y: float) -> float:
+	if y < 0.0 or y > height:
+		return 0.0
+	if shape == "cone":
+		return base_radius * (1.0 - y / maxf(height, 0.0001))
+	return base_radius

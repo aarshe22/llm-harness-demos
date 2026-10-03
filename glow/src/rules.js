@@ -130,11 +130,37 @@ export function wildlifeAltitude(kind) {
   return map[kind] ?? 4;
 }
 
-/** Near/far tree instance split for LOD. Near keeps collision. */
+/** Near/far tree instance split for LOD. Collision uses all trees (cone or cylinder). */
 export function lodTreeSplit(count, farRatio = 0.55) {
   const far = Math.floor(count * farRatio);
   const near = Math.max(0, count - far);
   return { near, far, total: count };
+}
+
+/** Pine = pointy cone; fern = upright cylinder. Radii are trunk-scale multiples. */
+export const TREE_CONE_BASE = 2.4;
+export const TREE_CYL_BASE = 1.9;
+export const MOTH_HIT_R = 0.16;
+
+export function treeCollider(pine, trunkR, height) {
+  return {
+    shape: pine ? "cone" : "cylinder",
+    radius: trunkR * (pine ? TREE_CONE_BASE : TREE_CYL_BASE),
+    height,
+  };
+}
+
+/** Hit radius in XZ at height y (0 = ground). 0 means the moth is above/below the volume. */
+export function treeHitRadius(shape, baseRadius, height, y) {
+  if (y < 0 || y > height) return 0;
+  if (shape === "cone") return baseRadius * (1 - y / Math.max(height, 1e-6));
+  return baseRadius;
+}
+
+export function hitsTree(dx, dz, hitRadius, mothR = MOTH_HIT_R) {
+  if (hitRadius <= 0) return false;
+  const lim = hitRadius + mothR;
+  return dx * dx + dz * dz < lim * lim;
 }
 
 export function pickBiome(wx, wz, seed, weights) {

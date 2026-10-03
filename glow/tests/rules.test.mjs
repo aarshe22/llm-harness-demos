@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude, clampFidelity, fidelityProfile, stepCruiseAltitude, mothTrackWave, mothFlightY } from "../src/rules.js";
+import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude, clampFidelity, fidelityProfile, stepCruiseAltitude, mothTrackWave, mothFlightY, treeCollider, treeHitRadius, hitsTree, MOTH_HIT_R } from "../src/rules.js";
 import { defaultConfig, SLIDER_DEFS, applySliderPatch, readSliderValue } from "../src/config.js";
 test("moth holds cruise altitude; pitch does not sink", () => {
   const start = 8;
@@ -114,6 +114,24 @@ test("x1 forest meshes are defined; x8 is denser", () => {
   assert.ok(rich.floorSeg > cheap.floorSeg);
   assert.ok(rich.barkDetail > cheap.barkDetail);
   assert.ok(rich.bloomBoost > cheap.bloomBoost);
+});
+
+test("tree colliders are cones for pine and cylinders for fern, height-aware", () => {
+  const pine = treeCollider(true, 0.5, 12);
+  const fern = treeCollider(false, 0.5, 10);
+  assert.equal(pine.shape, "cone");
+  assert.equal(fern.shape, "cylinder");
+  assert.equal(pine.height, 12);
+  assert.ok(pine.radius > fern.radius);
+  assert.equal(treeHitRadius("cone", 4, 10, -0.1), 0);
+  assert.equal(treeHitRadius("cone", 4, 10, 11), 0);
+  assert.equal(treeHitRadius("cone", 4, 10, 0), 4);
+  assert.ok(Math.abs(treeHitRadius("cone", 4, 10, 5) - 2) < 1e-9);
+  assert.equal(treeHitRadius("cylinder", 1.5, 8, 4), 1.5);
+  assert.equal(treeHitRadius("cylinder", 1.5, 8, 9), 0);
+  assert.ok(hitsTree(0, 0, 1, MOTH_HIT_R));
+  assert.equal(hitsTree(4, 0, 1, MOTH_HIT_R), false);
+  assert.equal(hitsTree(0.2, 0, 0, MOTH_HIT_R), false);
 });
 
 test("biome pick is deterministic", () => {
