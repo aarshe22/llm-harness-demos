@@ -1,0 +1,56 @@
+:root {
+  --bg: #05070c;
+  --ink: #e8f4ff;
+  --muted: #8aa6bf;
+  --line: #1c2a38;
+  --glow: #9be7ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.45 "Avenir Next", system-ui, sans-serif; }
+#view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+.safe { position: fixed; inset: 0; pointer-events: none; padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
+.safe * { pointer-events: auto; }
+.hidden { display: none !important; }
+.hud-top { display: flex; gap: 14px; align-items: center; }
+.flies { font-size: 28px; letter-spacing: 0.08em; text-shadow: 0 0 18px #9be7ff; }
+.energy { width: 72px; height: 7px; background: #12202c; border-radius: 99px; overflow: hidden; }
+.energy i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #6cf, #fff); transform-origin: left; }
+.debug { position: absolute; top: 56px; left: 18px; color: #9cb; font: 12px/1.4 ui-monospace, monospace; text-shadow: 0 1px 4px #000; pointer-events: none; }
+.panel {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(420px, 92vw); padding: 28px 26px;
+  background: rgba(6, 10, 16, 0.78); border: 1px solid var(--line); border-radius: 18px;
+  backdrop-filter: blur(10px); box-shadow: 0 20px 60px #000a;
+}
+h1 { margin: 0 0 6px; letter-spacing: 0.28em; font-weight: 500; font-size: 42px; text-shadow: 0 0 28px #9be7ff88; }
+h2 { margin: 0 0 12px; letter-spacing: 0.16em; font-weight: 500; }
+.tag { color: var(--glow); letter-spacing: 0.18em; font-size: 12px; margin: 0 0 12px; }
+.blurb, .help { color: var(--muted); }
+.help { font-size: 12px; }
+button {
+  display: block; width: 100%; margin: 8px 0; padding: 12px 14px;
+  border: 1px solid #2a4158; background: #101820; color: var(--ink);
+  border-radius: 10px; letter-spacing: 0.12em; cursor: pointer;
+}
+button:hover { border-color: var(--glow); box-shadow: 0 0 16px #9be7ff33; }
+button.ghost { background: transparent; }
+label { display: block; margin: 8px 0; color: var(--muted); font-size: 12px; letter-spacing: 0.08em; }
+input[type=range] { width: 100%; }
+.warn { color: #f6c; font-size: 12px; min-height: 1.2em; }
+#stats { color: var(--ink); font: 13px/1.6 ui-monospace, monospace; }
+.touch { position: absolute; inset: 0; pointer-events: none; }
+.touch .joy, .touch .steer, .touch .btns { pointer-events: auto; }
+.joy {
+  position: absolute; left: 18px; bottom: 28px; width: 120px; height: 120px;
+  border-radius: 50%; background: #9be7ff22; border: 1px solid #9be7ff44;
+}
+.steer {
+  position: absolute; right: 10px; top: 28%; width: 42vw; height: 40vh;
+  background: #fff4; border-radius: 16px;
+}
+.btns { position: absolute; right: 12px; bottom: 22px; display: grid; gap: 8px; }
+.btns button { width: 92px; padding: 10px 8px; font-size: 11px; opacity: 0.7; }
+@media (orientation: portrait) {
+  h1 { font-size: 36px; }
+  .panel { top: 42%; }
+}
