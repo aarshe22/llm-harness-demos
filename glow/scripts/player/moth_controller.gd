@@ -13,6 +13,8 @@ var yaw: float = 0.0
 var pitch: float = 0.0
 var bank: float = 0.0
 var bob_t: float = 0.0
+var cruise_alt: float = 6.0
+var wave_t: float = 0.0
 var web_slow: float = 0.0
 var distance_flown: float = 0.0
 var max_alt: float = 0.0
@@ -21,6 +23,7 @@ var min_alt: float = 8.0
 func _ready() -> void:
 	floor_snap_length = 0.0
 	motion_mode = MOTION_MODE_FLOATING
+	cruise_alt = global_position.y
 	_apply_fidelity()
 
 
@@ -96,9 +99,15 @@ func _physics_process(dt: float) -> void:
 		wish_dir = forward * 0.15
 
 	var target: Vector3 = wish_dir * max_s
-	target.y = InputManager.rise * cfg.vertical_speed + (-pitch * cfg.vertical_speed * 0.65)
+	target.y = 0.0
 	velocity = velocity.lerp(target, 1.0 - exp(-accel * dt * 0.2))
 	velocity *= 1.0 - cfg.drag * dt * 0.12
+	velocity.y = 0.0
+
+	cruise_alt = GlowRules.step_cruise_altitude(cruise_alt, InputManager.rise, dt, cfg.vertical_speed)
+	wave_t += dt
+	var desired_y: float = GlowRules.moth_flight_y(cruise_alt, distance_flown, wave_t, cfg.track_wave_amount)
+	velocity.y = (desired_y - global_position.y) / maxf(dt, 0.0001)
 
 	var before = global_position
 	move_and_slide()
@@ -115,7 +124,7 @@ func _physics_process(dt: float) -> void:
 	distance_flown += before.distance_to(global_position)
 	max_alt = maxf(max_alt, global_position.y)
 	min_alt = minf(min_alt, global_position.y)
-	global_position.y = clampf(global_position.y, 0.6, 42.0)
+	global_position.y = desired_y
 
 	bank = lerpf(bank, -wish.x * cfg.bank_strength, 1.0 - exp(-6.0 * dt))
 	bob_t += dt * (8.0 + velocity.length() * 0.35)

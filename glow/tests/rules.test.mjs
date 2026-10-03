@@ -1,7 +1,40 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude, clampFidelity, fidelityProfile } from "../src/rules.js";
+import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude, clampFidelity, fidelityProfile, stepCruiseAltitude, mothTrackWave, mothFlightY } from "../src/rules.js";
 import { defaultConfig, SLIDER_DEFS, applySliderPatch, readSliderValue } from "../src/config.js";
+test("moth holds cruise altitude; pitch does not sink", () => {
+  const start = 8;
+  assert.equal(stepCruiseAltitude(start, 0, 1 / 60, 10), start);
+  assert.equal(stepCruiseAltitude(start, 0, 2, 10), start);
+  const up = stepCruiseAltitude(start, 1, 0.5, 10);
+  const down = stepCruiseAltitude(start, -1, 0.5, 10);
+  assert.ok(up > start);
+  assert.ok(down < start);
+  assert.equal(stepCruiseAltitude(0, -1, 1, 10), 0.6);
+  assert.equal(stepCruiseAltitude(80, 1, 1, 10), 42);
+});
+
+test("flight track wave is mean-zero and undulates", () => {
+  assert.equal(mothTrackWave(0, 0, 0), 0);
+  const amp = 0.42;
+  let sum = 0;
+  let lo = Infinity;
+  let hi = -Infinity;
+  const n = 240;
+  for (let i = 0; i < n; i++) {
+    const w = mothTrackWave(i * 0.4, i / 60, amp);
+    sum += w;
+    lo = Math.min(lo, w);
+    hi = Math.max(hi, w);
+  }
+  assert.ok(hi > amp * 0.5);
+  assert.ok(lo < -amp * 0.5);
+  assert.ok(Math.abs(sum / n) < amp * 0.2);
+  const y0 = mothFlightY(8, 0, 0, amp);
+  const y1 = mothFlightY(8, 3, 1, amp);
+  assert.notEqual(y0, y1);
+  assert.ok(Math.abs(y0 - 8) <= amp * 1.4);
+});
 
 test("detection falls off with distance", () => {
   const near = detectionScore(8, 34, 1, 1, 1.3, true, 1);

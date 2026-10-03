@@ -14,7 +14,7 @@ godot --path glow
 godot --headless --path glow --script res://scripts/core/headless_test.gd
 ```
 
-Controls: WASD fly, mouse steer, Space/Ctrl rise/descend, Shift boost, E or RMB dim, C camera, Esc pause, Alt+Enter fullscreen, F3 debug.
+Controls: WASD fly, mouse look (altitude holds; no gravity sink), Space/Ctrl climb/descend, Shift boost, E or RMB dim, C camera, Esc pause, Alt+Enter fullscreen, F3 debug.
 
 ## Browser
 

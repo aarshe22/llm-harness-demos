@@ -30,6 +30,29 @@ export function clampFidelity(v) {
   return Math.min(8, Math.max(1, Math.round(n)));
 }
 
+export const MOTH_MIN_Y = 0.6;
+export const MOTH_MAX_Y = 42;
+
+/** Cruise altitude only changes on explicit rise/descend. Pitch does not sink the moth. */
+export function stepCruiseAltitude(cruiseAlt, rise, dt, verticalSpeed) {
+  return clamp(Number(cruiseAlt) + Number(rise) * Number(verticalSpeed) * Number(dt), MOTH_MIN_Y, MOTH_MAX_Y);
+}
+
+/**
+ * Mean-zero undulation along the flown track (distance) plus a slow time beat.
+ * The glow trail should snake; this is not gravity.
+ */
+export function mothTrackWave(distance, t, amp = 0.42) {
+  const a = Number(amp) || 0;
+  const d = Number(distance) || 0;
+  const time = Number(t) || 0;
+  return Math.sin(d * 0.55 + time * 2.15) * a + Math.sin(d * 0.22 + time * 0.85) * a * 0.38;
+}
+
+export function mothFlightY(cruiseAlt, distance, t, amp) {
+  return clamp(cruiseAlt + mothTrackWave(distance, t, amp), MOTH_MIN_Y, MOTH_MAX_Y);
+}
+
 /** Mesh / silhouette knobs. Level 1 matches the cheap prototype look. */
 export function fidelityProfile(level) {
   const f = clampFidelity(level);

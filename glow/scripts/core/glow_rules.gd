@@ -29,3 +29,19 @@ static func clamp_fidelity(v: Variant) -> int:
 	if is_nan(n) or is_inf(n):
 		return 1
 	return clampi(int(round(n)), 1, 8)
+
+
+const MOTH_MIN_Y := 0.6
+const MOTH_MAX_Y := 42.0
+
+
+static func step_cruise_altitude(cruise_alt: float, rise: float, dt: float, vertical_speed: float) -> float:
+	return clampf(cruise_alt + rise * vertical_speed * dt, MOTH_MIN_Y, MOTH_MAX_Y)
+
+
+static func moth_track_wave(distance: float, t: float, amp: float = 0.42) -> float:
+	return sin(distance * 0.55 + t * 2.15) * amp + sin(distance * 0.22 + t * 0.85) * amp * 0.38
+
+
+static func moth_flight_y(cruise_alt: float, distance: float, t: float, amp: float) -> float:
+	return clampf(cruise_alt + GlowRules.moth_track_wave(distance, t, amp), MOTH_MIN_Y, MOTH_MAX_Y)
