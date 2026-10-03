@@ -26,14 +26,14 @@ function mat(key, make) {
 
 export function createWorld(scene, cfg, fidelity = 1) {
   const profile = fidelityProfile(fidelity);
-  const trunkNear = new THREE.CylinderGeometry(0.85, 1.2, 1, profile.treeNearSeg);
-  const trunkFar = new THREE.CylinderGeometry(0.9, 1.18, 1, profile.treeFarSeg);
+  const trunkNear = new THREE.CylinderGeometry(0.32, 1.22, 1, profile.treeNearSeg);
+  const trunkFar = new THREE.CylinderGeometry(0.38, 1.18, 1, profile.treeFarSeg);
   const groundGeo = new THREE.PlaneGeometry(1, 1, profile.floorSeg, profile.floorSeg);
   const plantGeo = new THREE.SphereGeometry(1, profile.plantSeg, profile.plantRings);
   const capGeo = new THREE.SphereGeometry(1, profile.plantSeg, Math.max(6, profile.plantRings - 1));
   const stemGeo = new THREE.CylinderGeometry(0.1, 0.16, 1, Math.max(8, profile.plantSeg - 2));
-  const canopyGeo = new THREE.SphereGeometry(1, Math.max(10, profile.treeNearSeg - 4), Math.max(8, profile.treeFarSeg));
-  const puffGeo = new THREE.SphereGeometry(1, Math.max(8, profile.treeFarSeg), Math.max(6, profile.treeFarSeg - 2));
+  const foliageLayers = Math.max(4, Math.min(7, 4 + Math.floor(profile.level / 2)));
+  const coneGeo = new THREE.ConeGeometry(1, 1, Math.max(10, profile.treeNearSeg - 2), 3);
   const flyGeo = new THREE.SphereGeometry(0.09, profile.flySeg, Math.max(8, profile.flySeg - 2));
   const chunks = new Map();
   const group = new THREE.Group();
@@ -83,9 +83,11 @@ export function createWorld(scene, cfg, fidelity = 1) {
       const h = 8 + rng() * 16 * (biomeId === "ancient_grove" ? 1.35 : 1);
       const r = 0.28 + rng() * 0.45;
       const p = origin.clone().add(new THREE.Vector3(rng() * cfg.chunk_size, h / 2, rng() * cfg.chunk_size));
+      const pineHeavy = biomeId === "blackwood" || biomeId === "moonlit_grove" || biomeId === "thornwood" || biomeId === "mist_basin" || biomeId === "fallen_forest";
+      const pine = pineHeavy ? rng() > 0.18 : rng() > 0.62;
       dummy.position.copy(p);
       dummy.scale.set(r, h, r);
-      dummy.rotation.set((rng() - 0.5) * 0.06, rng() * Math.PI * 2, (rng() - 0.5) * 0.05);
+      dummy.rotation.set((rng() - 0.5) * 0.05, rng() * Math.PI * 2, (rng() - 0.5) * 0.04);
       dummy.updateMatrix();
       if (i < split.near) {
         nearInst.setMatrixAt(ni++, dummy.matrix);
@@ -93,7 +95,7 @@ export function createWorld(scene, cfg, fidelity = 1) {
       } else {
         farInst.setMatrixAt(fi++, dummy.matrix);
       }
-      root.userData.trees.push({ pos: p.clone(), radius: r * 1.15, height: h });
+      root.userData.trees.push({ pos: p.clone(), radius: r * 1.15, height: h, pine });
     }
     nearInst.instanceMatrix.needsUpdate = true;
     farInst.instanceMatrix.needsUpdate = true;
@@ -101,49 +103,55 @@ export function createWorld(scene, cfg, fidelity = 1) {
     root.userData.nearInst = nearInst;
     root.userData.farInst = farInst;
 
-    const cMat = mat("can-" + biomeId + profile.level, () =>
+    const pineMat = mat("pine-" + biomeId + profile.level, () =>
       new THREE.MeshStandardMaterial({
-        color: 0x04100a,
+        color: 0x041208,
         emissive: biome.glow,
-        emissiveIntensity: 0.38,
-        roughness: 0.72,
+        emissiveIntensity: 0.42,
+        roughness: 0.68,
+        side: THREE.DoubleSide,
       })
     );
-    const puffMat = mat("puff-" + biomeId + profile.level, () =>
+    const fernMat = mat("fern-" + biomeId + profile.level, () =>
       new THREE.MeshStandardMaterial({
-        color: 0x030c08,
+        color: 0x06140c,
         emissive: blend,
-        emissiveIntensity: 0.28,
-        roughness: 0.8,
+        emissiveIntensity: 0.48,
+        roughness: 0.55,
+        side: THREE.DoubleSide,
       })
     );
-    const canopy = new THREE.InstancedMesh(canopyGeo, cMat, Math.max(1, split.near));
-    const puffs = new THREE.InstancedMesh(puffGeo, puffMat, Math.max(1, split.near * 2));
-    canopy.count = split.near;
-    puffs.count = split.near * 2;
-    canopy.frustumCulled = true;
-    puffs.frustumCulled = true;
-    let ci = 0;
-    let puffI = 0;
+    const maxFoliage = Math.max(1, n * foliageLayers);
+    const pineMesh = new THREE.InstancedMesh(coneGeo, pineMat, maxFoliage);
+    const fernMesh = new THREE.InstancedMesh(coneGeo, fernMat, maxFoliage);
+    pineMesh.frustumCulled = true;
+    fernMesh.frustumCulled = true;
+    let pineI = 0;
+    let fernI = 0;
     for (const t of root.userData.trees) {
-      if (ci >= split.near) break;
-      dummy.position.set(t.pos.x, t.pos.y + t.height * 0.38, t.pos.z);
-      dummy.scale.set(t.radius * 3.8, t.height * 0.22, t.radius * 3.8);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      canopy.setMatrixAt(ci++, dummy.matrix);
-      dummy.position.set(t.pos.x + t.radius * 1.1, t.pos.y + t.height * 0.48, t.pos.z + t.radius * 0.4);
-      dummy.scale.set(t.radius * 2.4, t.height * 0.14, t.radius * 2.4);
-      dummy.updateMatrix();
-      puffs.setMatrixAt(puffI++, dummy.matrix);
-      dummy.position.set(t.pos.x - t.radius * 0.9, t.pos.y + t.height * 0.32, t.pos.z - t.radius * 0.6);
-      dummy.scale.set(t.radius * 2.1, t.height * 0.12, t.radius * 2.1);
-      dummy.updateMatrix();
-      puffs.setMatrixAt(puffI++, dummy.matrix);
+      const baseY = t.pos.y - t.height * 0.5;
+      for (let layer = 0; layer < foliageLayers; layer++) {
+        const u = foliageLayers <= 1 ? 0 : layer / (foliageLayers - 1);
+        dummy.rotation.set(0, layer * 0.53, 0);
+        if (t.pine) {
+          dummy.position.set(t.pos.x, baseY + t.height * (0.2 + u * 0.76), t.pos.z);
+          dummy.scale.set(t.radius * (4.2 - u * 3.3), t.height * (0.24 - u * 0.05), t.radius * (4.2 - u * 3.3));
+          dummy.updateMatrix();
+          pineMesh.setMatrixAt(pineI++, dummy.matrix);
+        } else {
+          dummy.position.set(t.pos.x, baseY + t.height * (0.16 + u * 0.64), t.pos.z);
+          dummy.scale.set(t.radius * (5.4 - u * 2.1), t.height * 0.1, t.radius * (5.4 - u * 2.1));
+          dummy.rotation.set((layer % 2) * 0.07, layer * 0.71, (layer % 2) * -0.05);
+          dummy.updateMatrix();
+          fernMesh.setMatrixAt(fernI++, dummy.matrix);
+        }
+      }
     }
-    canopy.instanceMatrix.needsUpdate = true;
-    puffs.instanceMatrix.needsUpdate = true;
-    root.add(canopy, puffs);
+    pineMesh.count = Math.max(1, pineI);
+    fernMesh.count = Math.max(1, fernI);
+    pineMesh.instanceMatrix.needsUpdate = true;
+    fernMesh.instanceMatrix.needsUpdate = true;
+    root.add(pineMesh, fernMesh);
 
     const plants = Math.floor(8 * cfg.mushroom_density + 6 * cfg.flower_density + 4 * (cfg.fern_density || 1));
     const pMat = mat("p-" + biomeId + profile.level, () =>
