@@ -91,12 +91,13 @@ DC.Network = (function () {
       DC.Events.resolve(state, srv.id, "Reimaged");
       DC.Events.alarm(state, "info", srv.name + " reimaged, booting", srv.id);
     } else if (kind === "recover") {
-      eq.badPatch = false;
-      DC.Events.resolve(state, eq.id, "Patch recovered");
-      DC.Events.alarm(state, "info", eq.name + " recovered to last-known-good state", eq.id);
-    } else if (kind === "reboot-request" || kind === "pull-logs" || kind === "patch-check" || kind === "reseat" || kind === "pwreset") {
-      if (kind === "reseat") eq.netState = "ok";
-      DC.Events.alarm(state, "info", eq.name + " task complete", eq.id);
+      srv.badPatch = false;
+      DC.Events.resolve(state, srv.id, "Patch recovered");
+      DC.Events.alarm(state, "info", srv.name + " recovered to last-known-good state", srv.id);
+    } else if (kind === "reboot-request" || kind === "pull-logs" || kind === "patch-check" || kind === "reseat" || kind === "pwreset" || kind === "mount-share") {
+      if (kind === "reseat") srv.netState = "ok";
+      if (DC.FieldRequests) DC.FieldRequests.notifyBusyDone(state, srv, kind);
+      DC.Events.alarm(state, "info", srv.name + " task complete", srv.id);
     } else if (kind === "stop-proc") {
       srv.runaway = null;
       srv.load = Math.max(10, srv.load - 30);

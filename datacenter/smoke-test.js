@@ -113,17 +113,61 @@ for (const b of state.blades) {
 }
 console.log("blades OK:", state.blades.length);
 
-// field requests: spawn a request, complete it via eq.done
+// field requests: correct action completes, wrong action does not
 state.requests = [];
 state.requestTimer = 999;
 DC.FieldRequests.spawn(state);
 if (!state.requests.length) throw new Error("no request spawned");
 const req = state.requests[0];
+if (!req.busyKind && req.targetId !== "UPS-1") throw new Error("instant kind must target UPS");
 const reqEq = state.eqById[req.targetId];
-reqEq.done = req.id;
-DC.FieldRequests.tick(state, 0.1);
-if (state.requests.length !== 0) throw new Error("request not completed via eq.done");
-console.log("field requests OK (spawn -> done -> cleared)");
+
+if (req.busyKind) {
+  // wrong action first: run a different busy kind, ticket must survive
+  const otherKind = req.busyKind === "reboot-request" ? "pull-logs" : "reboot-request";
+  reqEq.busy = { kind: otherKind, t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (!state.requests.includes(req)) throw new Error("wrong busy kind completed the ticket");
+  // now the correct action via start()
+  reqEq.busy = null;
+  if (!DC.FieldRequests.start(state, req)) throw new Error("start() refused valid request");
+  if (!reqEq.busy || reqEq.busy.kind !== req.busyKind) throw new Error("start() did not set expected busy kind " + req.busyKind);
+  reqEq.busy.t = 0.01;
+  DC.Network.tick(state, 0.02);
+  if (state.requests.includes(req)) throw new Error("ticket not completed after correct task finished");
+  console.log("field requests OK (start -> busy -> finishServerBusy -> complete, wrong-kind ignored)");
+} else {
+  if (!DC.FieldRequests.start(state, req)) throw new Error("ups-check start refused");
+  if (reqEq.done !== req.id) throw new Error("ups-check start did not mark done");
+  DC.FieldRequests.tick(state, 0.1);
+  if (state.requests.includes(req)) throw new Error("ups ticket not completed");
+  console.log("field requests OK (ups-check instant complete via panel)");
+}
+
+// ups-check: deterministic instant-complete path
+const upsEq = state.eqById["UPS-1"];
+if (upsEq) {
+  const upsReq = { id: "FRUP", kind: "ups-check", name: "UPS BATTERY CHECK", action: "RUN BATTERY CHECK", busyKind: null, t: 0, exp: 70, crit: false, targetId: "UPS-1", born: 0, started: false };
+  state.requests.push(upsReq);
+  if (!DC.FieldRequests.start(state, upsReq)) throw new Error("ups start refused");
+  DC.FieldRequests.tick(state, 0.1);
+  if (state.requests.includes(upsReq)) throw new Error("ups ticket not completed");
+  console.log("ups-check lifecycle OK");
+}
+
+// pwreset kind coverage: force-spawn one and run it through
+const pwReq = { id: "FRPW", kind: "pwreset", name: "PASSWORD RESET", action: "PASSWORD RESET", busyKind: "pwreset", t: 3, exp: 45, crit: true, targetId: null, born: 0, started: false };
+const srvOn = DC.Util.allEq(state, "server").find((s) => s.state === "online" && !s.busy);
+if (srvOn) {
+  pwReq.targetId = srvOn.id;
+  state.requests.push(pwReq);
+  if (!DC.FieldRequests.start(state, pwReq)) throw new Error("pwreset start refused");
+  if (srvOn.busy.kind !== "pwreset") throw new Error("pwreset busy kind wrong: " + srvOn.busy.kind);
+  srvOn.busy.t = 0.01;
+  DC.Network.tick(state, 0.02);
+  if (state.requests.includes(pwReq)) throw new Error("pwreset not completed by finishServerBusy");
+  console.log("pwreset lifecycle OK");
+}
 
 // storage capacity: fill -> warn -> full degrades service -> install relieves
 const stor0 = DC.Util.allEq(state, "storage").find((s) => !s.isClusterStorage && state.services.some((sv) => sv.deps.indexOf(s.id) !== -1));

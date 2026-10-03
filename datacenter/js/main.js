@@ -100,6 +100,7 @@ DC.Game = (function () {
     if (state.metrics && state.metrics.growthPct === undefined) state.metrics.growthPct = 0;
     if (!state.requests) state.requests = [];
     ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
+    if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
     bootRun();
   }
 

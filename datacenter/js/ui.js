@@ -180,14 +180,31 @@ DC.UI = (function () {
     return '<div class="statrow"><span class="k">' + k + '</span><span class="v ' + (cls || "") + '"' + (pk ? ' data-pk="' + pk + '"' : "") + ">" + v + "</span></div>";
   }
 
+  function ticketHtml(req, eq) {
+    let html = '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + "</span></div>";
+    let label = req.action, disabled = false;
+    if (req.busyKind === null) {
+      label = "RUN CHECK";
+    } else if (eq.busy && eq.busy.kind === req.busyKind) {
+      label = "WORKING " + Math.ceil(eq.busy.t) + "s";
+      disabled = true;
+    } else if (eq.busy) {
+      label = req.action + " (BUSY)";
+      disabled = true;
+    } else if (eq.state !== "online") {
+      disabled = true;
+    }
+    html += '<div style="margin-top:6px"><button id="req-act"' + (disabled ? " disabled" : "") + ">" + label + "</button></div>";
+    return html;
+  }
+
   function eqSig(eq) {
     if (!eq) return "";
     const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
     if (eq.type === "storage") eq.drives.forEach((d) => parts.push(d.state));
-    if (eq.type === "blade" || eq.type === "server") {
-      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
-      parts.push(req ? req.id + ":" + Math.ceil(req.exp / 5) : "none", !!eq.done);
-    }
+    const anyReq = state.requests && state.requests.find((r) => r.targetId === eq.id);
+    parts.push("req:" + (anyReq ? anyReq.id + ":" + Math.ceil(anyReq.exp / 5) : "none"));
+    if (eq.type === "blade" || eq.type === "server") parts.push(!!eq.done);
     return parts.join("|");
   }
 
@@ -227,6 +244,12 @@ DC.UI = (function () {
       set("fans", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
       set("state", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
       set("maint", eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b");
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      const reqBtn = body.querySelector("#req-act");
+      if (reqBtn && req) {
+        if (eq.busy && eq.busy.kind === req.busyKind) reqBtn.textContent = "WORKING " + Math.ceil(eq.busy.t) + "s";
+        else if (!reqBtn.disabled) reqBtn.textContent = req.action;
+      }
     } else if (eq.type === "storage") {
       const as = DC.Storage.arrayState(eq);
       set("array", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r");
@@ -293,7 +316,7 @@ DC.UI = (function () {
       html += statRow("TASK", eq.maint ? eq.maint.name + " " + Math.ceil(eq.maint.t) + "s" : eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
       if (eq.clRole) html += statRow("CLUSTER", "NODE " + eq.clRole + " — " + Math.round(DC.Cluster.assignedLoad(DC.Cluster.clusterOf(state, eq.id), eq.clRole)) + "% workload", "b");
       const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
-      if (req) html += '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + '</span></div><div style="margin-top:6px"><button id="req-done">DONE — CLEAR TICKET</button></div>';
+      if (req) html += ticketHtml(req, eq);
       if (eq.state === "online") {
         actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
         actions.push(["NET", () => { DC.Network.toggleNet(state, eq); }]);
@@ -329,7 +352,7 @@ DC.UI = (function () {
       html += statRow("STATE", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a", "state");
       html += statRow("TASK", eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
       const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
-      if (req) html += '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + '</span></div><div style="margin-top:6px"><button id="req-done">DONE — CLEAR TICKET</button></div>';
+      if (req) html += ticketHtml(req, eq);
       if (eq.state === "online") {
         actions.push(["REBOOT", () => { eq.busy = { kind: "reboot-request", t: 8 }; select(null); }]);
         actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
@@ -380,6 +403,8 @@ DC.UI = (function () {
     } else if (eq.type === "ups") {
       html += statRow("CHARGE", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g", "ups-charge");
       html += statRow("STATE", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a", "ups-state");
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      if (req) html += ticketHtml(req, eq);
       if (eq.batteries) {
         html += '<div class="drives">';
         eq.batteries.forEach((b, i) => {
@@ -395,13 +420,12 @@ DC.UI = (function () {
       if (eq.state === "standby" || eq.state === "fault") actions.push(["START", () => { DC.Power.startGenerator(state, eq); select(null); }]);
     }
     body.innerHTML = html;
-    const doneBtn = body.querySelector("#req-done");
-    if (doneBtn) {
-      doneBtn.onclick = (e) => {
+    const actBtn = body.querySelector("#req-act");
+    if (actBtn && !actBtn.disabled) {
+      actBtn.onclick = (e) => {
         e.stopPropagation();
-        DC.Audio.click();
-        eq.done = (state.requests.find((r) => r.targetId === eq.id) || {}).id;
-        renderPanel();
+        const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+        if (req && DC.FieldRequests.start(state, req)) select(eq);
       };
     }
     body.querySelectorAll(".drive").forEach((dEl) => {

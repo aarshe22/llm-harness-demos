@@ -94,7 +94,7 @@ DC.Facility = (function () {
   }
 
   function makeUPS(rng) {
-    return { id: nextId("UPS"), type: "ups", rack: -1, uh: 4, name: "UPS MAIN", charge: 100, state: "standby", capacity: 1, busy: null };
+    return { id: "UPS-1", type: "ups", rack: -1, uh: 4, name: "UPS MAIN", charge: 100, state: "standby", capacity: 1, busy: null };
   }
 
   function makeCRAC(rng, hall) {
