@@ -1,3 +1,4 @@
 .godot/
 *.translation
 .import/
+godot-html/*.import

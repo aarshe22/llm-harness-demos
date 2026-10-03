@@ -8,6 +8,8 @@ import { createMoth, updateMoth, collectFirefly, hit, collectRadius } from "./mo
 import { createWorld, collideMoth } from "./world.js";
 import { updatePredator } from "./predators.js";
 import { createUI } from "./ui.js";
+import { createBloom } from "./bloom.js";
+import { tickBark } from "./bark.js";
 
 const SAVE_KEY = "glow-save-v1";
 
@@ -36,7 +38,7 @@ try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.18;
 } catch (err) {
   console.error(err);
   const ctx = canvas.getContext("2d");
@@ -119,10 +121,13 @@ let camBlend = camMode === "first" ? 0 : 1;
 let debugOn = false;
 let lastNear = 0;
 
+const bloom = renderer ? createBloom(renderer) : { enabled: false, resize() {}, render() {} };
+
 function resize() {
   const w = innerWidth;
   const h = innerHeight;
   renderer?.setSize(w, h, false);
+  bloom.resize?.(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -392,7 +397,8 @@ function tick() {
     camera.lookAt(moth.root.position);
   }
   moon.rotation.y += dt * 0.01;
-  renderer?.render(scene, camera);
+  tickBark(performance.now() * 0.001);
+  if (!bloom.render?.(scene, camera, settings.reduced_flash)) renderer?.render(scene, camera);
   if (debugOn) {
     const b = world.currentBiome(moth.root.position);
     ui.debug(

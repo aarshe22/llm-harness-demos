@@ -20,8 +20,11 @@ Controls: WASD fly, mouse steer, Space/Ctrl rise/descend, Shift boost, E or RMB 
 
 Open `/glow/` from the gallery server, or `npx --yes serve glow`. Node tests: `node --test glow/tests/rules.test.mjs`.
 
-Godot HTML5 export (optional, does not replace the gallery `index.html`):
+Godot HTML5 export (does not replace the gallery `index.html`):
 
 ```bash
-./tools/export-web.sh   # writes glow/godot-html/ after templates are installed
+# Official 4.3 templates → ~/.local/share/godot/export_templates/4.3.stable/
+./tools/export-web.sh   # writes real WASM to glow/godot-html/
 ```
+
+The committed `glow/godot-html/index.wasm` is a Godot 4.3 **nothreads** release build. Re-export after GDScript changes.

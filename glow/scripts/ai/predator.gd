@@ -12,6 +12,16 @@ var interest: float = 0.0
 var trail_target: Vector3
 var escaped_flag: bool = false
 
+func recycle(pos: Vector3) -> void:
+	home = pos
+	global_position = pos
+	velocity = Vector3.ZERO
+	t = 0.0
+	interest = 0.0
+	escaped_flag = false
+	state = State.PERCH if kind == "owl" else State.ROAM
+
+
 func _ready() -> void:
 	home = global_position
 	add_to_group("predator")

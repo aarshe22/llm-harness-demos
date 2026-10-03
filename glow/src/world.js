@@ -1,6 +1,8 @@
 import * as THREE from "../vendor/three.module.js";
 import { BIOMES, pickBiome, hash2, lodTreeSplit, wildlifeAltitude } from "./rules.js";
 import { createPredator } from "./predators.js";
+import { barkMaterial } from "./bark.js";
+import { createPredatorPool } from "./pool.js";
 
 function mulberry(seed) {
   let a = seed >>> 0;
@@ -33,6 +35,7 @@ export function createWorld(scene, cfg) {
   const mist = makeMist(cfg);
   scene.add(mist);
   const events = { stars: [], bloomUntil: 0, weather: "clear" };
+  const pool = createPredatorPool(createPredator);
 
   function key(cx, cz) {
     return `${cx},${cz}`;
@@ -65,14 +68,7 @@ export function createWorld(scene, cfg) {
 
     const n = Math.floor(16 * cfg.tree_density * biome.trees);
     const split = lodTreeSplit(n);
-    const tMat = mat("t-" + biomeId, () =>
-      new THREE.MeshStandardMaterial({
-        color: 0x050403,
-        roughness: 1,
-        emissive: biome.glow,
-        emissiveIntensity: biomeId === "blackwood" ? 0.01 : 0.05,
-      })
-    );
+    const tMat = barkMaterial(biome.glow);
     const nearInst = new THREE.InstancedMesh(trunkNear, tMat, Math.max(1, split.near));
     const farInst = new THREE.InstancedMesh(trunkFar, tMat, Math.max(1, split.far));
     nearInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -176,8 +172,7 @@ export function createWorld(scene, cfg) {
       if (rng() > Math.min(0.72, 0.18 * w)) continue;
       const y = wildlifeAltitude(kind);
       const p = origin.clone().add(new THREE.Vector3(rng() * cfg.chunk_size, y, rng() * cfg.chunk_size));
-      const pred = createPredator(kind, p);
-      root.add(pred.root);
+      const pred = pool.acquire(kind, p, root);
       root.userData.preds.push(pred);
     }
   }
@@ -196,6 +191,7 @@ export function createWorld(scene, cfg) {
     }
     for (const [k, node] of chunks) {
       if (!need.has(k)) {
+        for (const pred of node.userData.preds || []) pool.release(pred);
         group.remove(node);
         chunks.delete(k);
       }
@@ -258,14 +254,15 @@ export function createWorld(scene, cfg) {
     events.bloomUntil = Math.max(0, events.bloomUntil - dt);
     if (Math.random() < dt * 0.008 * (cfg.bat_swarm_frequency || 1)) {
       const p = mothPos.clone().add(new THREE.Vector3(18, 10, -8));
-      const pred = createPredator("bat", p);
-      group.add(pred.root);
       const any = [...chunks.values()][0];
-      if (any) any.userData.preds.push(pred);
+      if (any) {
+        const pred = pool.acquire("bat", p, any);
+        any.userData.preds.push(pred);
+      }
     }
   }
 
-  return { chunks, stream, currentBiome, all, group, updateLod, tickEvents, events, mist };
+  return { chunks, stream, currentBiome, all, group, updateLod, tickEvents, events, mist, pool };
 }
 
 function makeMist(cfg) {
