@@ -89,6 +89,10 @@ canvas { display:block; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h20M5 19l1-5 2 2 2-6 2 4 2-7 2 5 3-2 2 9"/><circle cx="19" cy="6" r="1"/></svg>
       <span>Godzilla</span>
     </button>
+    <button class="wbtn disaster" data-d="ice" title="Ice age">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4 7l16 10M20 7 4 17M12 2l-2.5 2.5M12 2l2.5 2.5M12 22l-2.5-2.5M12 22l2.5-2.5M4 7l3.2.8M4 7l-.8 3.2M20 17l-3.2-.8M20 17l.8-3.2M20 7l-3.2.8M20 7l.8 3.2M4 17l3.2-.8M4 17l-.8-3.2"/></svg>
+      <span>Ice Age</span>
+    </button>
   </div>
 </div>
 
@@ -216,6 +220,7 @@ const oceanUni = {
   uSunDir: { value: sunDir },
   uSunI: { value: 1.3 },
   uFlash: { value: 0 },
+  uFreezeR: { value: 1e6 },
   uRipples: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) }
 };
 const oceanGeo = new THREE.PlaneGeometry(3200, 3200, 1200, 1200);
@@ -225,10 +230,11 @@ oceanGeo.rotateX(-Math.PI / 2);
 const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
   uniforms: oceanUni,
   vertexShader: `
-    uniform float uTime, uAmp, uSpd;
+    uniform float uTime, uAmp, uSpd, uFreezeR;
     uniform vec4 uRipples[8];
     varying vec3 vWorld;
     varying float vWave;
+    varying float vFz;
     void main(){
       vec3 p = position;
       float t = uTime * uSpd;
@@ -247,6 +253,9 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
         }
       }
       vWave = w;
+      float fz = smoothstep(uFreezeR + 10.0, uFreezeR - 10.0, length(p.xz));
+      vFz = fz;
+      w *= (1.0 - 0.97 * fz);
       p.y += w * uAmp;
       vec4 wp = modelMatrix * vec4(p, 1.0);
       vWorld = wp.xyz;
@@ -257,6 +266,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     uniform float uSunI, uTime, uFlash, uShore;
     varying vec3 vWorld;
     varying float vWave;
+    varying float vFz;
     void main(){
       float d = length(vWorld.xz);
       vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
@@ -281,8 +291,12 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       col += vec3(1.0, 0.95, 0.8) * pow(max(dot(R, uSunDir), 0.0), 120.0) * uSunI * 0.9;
       float foam = smoothstep(uShore + 10.0, uShore - 8.0, d) * (0.3 + 0.3 * sin(uTime * 2.0 + d * 0.625 - vWave * 2.5));
       foam += smoothstep(1.45, 1.9, vWave) * 0.3;
+      foam *= (1.0 - vFz);
       col = mix(col, vec3(1.0), clamp(foam, 0.0, 1.0) * 0.55);
-      col = mix(col, uSky, smoothstep(800.0, 2200.0, d));
+      float crackle = smoothstep(0.75, 1.0, sin(d * 0.11) * sin(atan(vWorld.z, vWorld.x) * 7.0 + d * 0.05) * 0.5 + 0.5) * 0.08;
+      col = mix(col, vec3(0.86, 0.93, 0.97), vFz * 0.92);
+      col += vec3(1.0) * crackle * vFz;
+      col = mix(col, uSky, smoothstep(800.0, 2200.0, d) * (1.0 - vFz));
       col += vec3(0.9, 0.95, 1.0) * uFlash * 0.6;
       gl_FragColor = vec4(col, 1.0);
     }`
@@ -680,6 +694,53 @@ const rain = new THREE.Points(rainGeo, new THREE.ShaderMaterial({
 }));
 rain.frustumCulled = false;
 scene.add(rain);
+
+/* ---------- snow ---------- */
+const SNOW_N = 3500;
+const snowGeo = new THREE.BufferGeometry();
+{
+  const p = new Float32Array(SNOW_N * 3);
+  for (let i = 0; i < SNOW_N; i++){
+    p[i * 3] = rand(-220, 220);
+    p[i * 3 + 1] = rand(0, 160);
+    p[i * 3 + 2] = rand(-220, 220);
+  }
+  snowGeo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const seeds = new Float32Array(SNOW_N);
+  for (let i = 0; i < SNOW_N; i++) seeds[i] = Math.random();
+  snowGeo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+}
+const snowUni = { uTime: { value: 0 }, uOp: { value: 0 } };
+const snow = new THREE.Points(snowGeo, new THREE.ShaderMaterial({
+  uniforms: snowUni,
+  transparent: true, depthWrite: false,
+  vertexShader: `
+    uniform float uTime;
+    attribute float aSeed;
+    varying float vA;
+    void main(){
+      vec3 p = position;
+      float fall = 5.0 + aSeed * 4.0;
+      p.y = mod(p.y - uTime * fall, 160.0);
+      p.x += sin(uTime * 0.6 + aSeed * 40.0) * 6.0 + (160.0 - p.y) * 0.04;
+      p.z += cos(uTime * 0.5 + aSeed * 31.0) * 5.0;
+      vA = 0.5 + aSeed * 0.5;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = (60.0 + aSeed * 50.0) / -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    uniform float uOp;
+    varying float vA;
+    void main(){
+      if (uOp < 0.01) discard;
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = smoothstep(0.5, 0.1, length(uv));
+      gl_FragColor = vec4(1.0, 1.0, 1.0, d * vA * uOp);
+    }`
+}));
+snow.frustumCulled = false;
+scene.add(snow);
 
 /* ---------- lightning ---------- */
 const boltMat = new THREE.MeshBasicMaterial({ color: 0xdfeaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -1436,6 +1497,85 @@ function updateGodzilla(d, dt){
   }
 }
 
+/* --- Ice Age --- */
+let iceDone = false, frozenAll = false, iceShell = null, iceShellMat = null, iceCrackT = 0;
+function sfxCrackle(){
+  playNoiseBurst(0.4, 3400, 900, 0.28);
+  setTimeout(() => playNoiseBurst(0.3, 2600, 700, 0.2), 180);
+}
+function sfxGroan(){
+  if (!audioCtx || muted) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(32, t);
+  o.frequency.exponentialRampToValueAtTime(21, t + 3.2);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.4, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 3.4);
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = 120;
+  o.connect(f); f.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 3.4);
+}
+function startIceAge(){
+  if (iceDone) return;
+  frozenAll = false;
+  const pos = islandGeo.attributes.position;
+  const col = islandGeo.attributes.color;
+  disaster = { type: 'ice', t: 0, dur: 1e9, epicenter: new THREE.Vector3(0, 0, 0), label: 'ICE AGE', shock: 0,
+    phase: 'freeze', phaseT: 0, baseCols: new Float32Array(col.array), cracks: 0 };
+  sfxGroan();
+}
+function updateIceAge(d, dt){
+  if (d.phase === 'done') return;
+  d.phaseT += dt;
+  if (d.phase === 'freeze' || d.phase === 'glaciate'){
+    const front = Math.min(150, d.phaseT * 11);
+    oceanUni.uFreezeR.value = front;
+    const col = islandGeo.attributes.color, base = d.baseCols;
+    const arr = col.array;
+    const ice = [0.87, 0.93, 0.97];
+    for (let i = 0; i < islandGeo.attributes.position.count; i++){
+      const x = islandGeo.attributes.position.getX(i), z = islandGeo.attributes.position.getZ(i);
+      const f = THREE.MathUtils.smoothstep(front + 6, front - 6, Math.hypot(x, z)) * 0.92;
+      arr[i * 3] = base[i * 3] + (ice[0] - base[i * 3]) * f;
+      arr[i * 3 + 1] = base[i * 3 + 1] + (ice[1] - base[i * 3 + 1]) * f;
+      arr[i * 3 + 2] = base[i * 3 + 2] + (ice[2] - base[i * 3 + 2]) * f;
+    }
+    col.needsUpdate = true;
+    if (d.phase === 'freeze' && front >= 150){
+      d.phase = 'glaciate'; d.phaseT = 0;
+      frozenAll = true;
+      mode = 'ice'; target = W.ice;
+      if (smokeUni) smokeUni.uOp.value = 0;
+      sfxGroan();
+    }
+  }
+  if (d.phase === 'glaciate' && d.phaseT > 6){
+    d.phase = 'berg'; d.phaseT = 0;
+    iceShellMat = new THREE.MeshPhysicalMaterial({ color: 0xdcf0fa, metalness: 0, roughness: 0.38, transmission: 0.85, thickness: 55, ior: 1.31, transparent: true, opacity: 0, clearcoat: 0.4, clearcoatRoughness: 0.5, depthWrite: false });
+    iceShell = new THREE.Mesh(new THREE.IcosahedronGeometry(152, 2), iceShellMat);
+    iceShell.scale.set(1, 0.55, 1);
+    iceShell.position.y = -10;
+    scene.add(iceShell);
+    sfxCrackle();
+  }
+  if (d.phase === 'berg'){
+    iceShellMat.opacity = Math.min(0.8, iceShellMat.opacity + dt * 0.11);
+    iceShell.rotation.y += dt * 0.01;
+    iceCrackT += dt;
+    if (iceCrackT > 2.6){ iceCrackT = 0; sfxCrackle(); }
+    if (d.phaseT > 9){
+      d.phase = 'done';
+      iceDone = true;
+      Object.assign(W.sunny, W.ice);
+      disaster.dur = disaster.t;
+      return;
+    }
+  }
+}
+
 /* --- Terraform --- */
 const STACK_POS = [[70, -38], [80, -48], [90, -38], [80, -28]];
 let terraDone = false, smogT = 0, smokeUni = null, smokePts = null;
@@ -1646,11 +1786,12 @@ function updateTerraform(d, dt){
 
 /* ---------- weather state machine ---------- */
 const W = {
-  sunny:    { skyT: 0x2f7fd0, skyB: 0xd8f0ff, fog: 0xbfe0f5, fogD: 0.00018, sunI: 1.3, hemiI: 0.8, amp: 0.5, spd: 0.9, deep: 0x0d6f92, shal: 0x36c2b8, rain: 0, wind: 6,  cloudOp: 0.92, cloudY: 0,  label: 'Sunny · 29°C' },
-  rain:     { skyT: 0x4a6a86, skyB: 0x9fb8c8, fog: 0x8fa8b8, fogD: 0.0005, sunI: 0.45, hemiI: 0.55, amp: 1.1, spd: 1.3, deep: 0x11566e, shal: 0x2c8f8f, rain: 0.55, wind: 16, cloudOp: 0.97, cloudY: 5, label: 'Rain · 25°C' },
-  storm:    { skyT: 0x1d2733, skyB: 0x50617a, fog: 0x4a5568, fogD: 0.0007, sunI: 0.18, hemiI: 0.4, amp: 1.8, spd: 1.8, deep: 0x0d3d52, shal: 0x24666e, rain: 1.0, wind: 30, cloudOp: 1.0, cloudY: 9, label: 'Thunderstorm · 23°C' },
-  hurricane:{ skyT: 0x141a22, skyB: 0x3c4a5c, fog: 0x3a4658, fogD: 0.0009, sunI: 0.1, hemiI: 0.34, amp: 3.0, spd: 2.4, deep: 0x0a2f42, shal: 0x1d5666, rain: 1.0, wind: 90, cloudOp: 1.0, cloudY: 12, label: 'Hurricane · 22°C' },
-  smog:     { skyT: 0x4a4038, skyB: 0x9a8f7a, fog: 0x8a7f6a, fogD: 0.0014, sunI: 0.25, hemiI: 0.45, amp: 0.8, spd: 1.2, deep: 0x3a5a52, shal: 0x5a7a66, rain: 0.35, wind: 12, cloudOp: 1.0, cloudY: 6, label: 'Smog · 24°C' }
+  sunny:    { skyT: 0x2f7fd0, skyB: 0xd8f0ff, fog: 0xbfe0f5, fogD: 0.00018, sunI: 1.3, hemiI: 0.8, amp: 0.5, spd: 0.9, deep: 0x0d6f92, shal: 0x36c2b8, rain: 0, wind: 6,  cloudOp: 0.92, cloudY: 0,  snow: 0, label: 'Sunny · 29°C' },
+  rain:     { skyT: 0x4a6a86, skyB: 0x9fb8c8, fog: 0x8fa8b8, fogD: 0.0005, sunI: 0.45, hemiI: 0.55, amp: 1.1, spd: 1.3, deep: 0x11566e, shal: 0x2c8f8f, rain: 0.55, wind: 16, cloudOp: 0.97, cloudY: 5, snow: 0, label: 'Rain · 25°C' },
+  storm:    { skyT: 0x1d2733, skyB: 0x50617a, fog: 0x4a5568, fogD: 0.0007, sunI: 0.18, hemiI: 0.4, amp: 1.8, spd: 1.8, deep: 0x0d3d52, shal: 0x24666e, rain: 1.0, wind: 30, cloudOp: 1.0, cloudY: 9, snow: 0, label: 'Thunderstorm · 23°C' },
+  hurricane:{ skyT: 0x141a22, skyB: 0x3c4a5c, fog: 0x3a4658, fogD: 0.0009, sunI: 0.1, hemiI: 0.34, amp: 3.0, spd: 2.4, deep: 0x0a2f42, shal: 0x1d5666, rain: 1.0, wind: 90, cloudOp: 1.0, cloudY: 12, snow: 0, label: 'Hurricane · 22°C' },
+  smog:     { skyT: 0x4a4038, skyB: 0x9a8f7a, fog: 0x8a7f6a, fogD: 0.0014, sunI: 0.25, hemiI: 0.45, amp: 0.8, spd: 1.2, deep: 0x3a5a52, shal: 0x5a7a66, rain: 0.35, wind: 12, cloudOp: 1.0, cloudY: 6, snow: 0, label: 'Smog · 24°C' },
+  ice:      { skyT: 0x7a9ab8, skyB: 0xdce9f2, fog: 0xcfe0ea, fogD: 0.0008, sunI: 0.55, hemiI: 0.6, amp: 0.1, spd: 0.5, deep: 0x3a6a80, shal: 0x7aa8b8, rain: 0, wind: 8, cloudOp: 0.95, cloudY: 4, snow: 1, label: 'Deep Freeze · -12°C' }
 };
 let target = W.sunny, mode = 'sunny';
 const curDeep = new THREE.Color(W.sunny.deep), curShal = new THREE.Color(W.sunny.shal);
@@ -1678,6 +1819,7 @@ btns.forEach(b => {
     else if (d === 'babel') startBabel();
     else if (d === 'terraform') startTerraform();
     else if (d === 'godzilla') startGodzilla();
+    else if (d === 'ice') startIceAge();
     b.classList.add('active');
   });
 });
@@ -1830,6 +1972,7 @@ function animate(){
     if (disaster.type === 'babel') updateBabel(disaster, dt);
     if (disaster.type === 'terraform') updateTerraform(disaster, dt);
     if (disaster.type === 'godzilla') updateGodzilla(disaster, dt);
+    if (disaster.type === 'ice') updateIceAge(disaster, dt);
     updateRipples(dt);
     updateDebris(dt);
     if (disaster.t > disaster.dur){
@@ -1897,8 +2040,11 @@ function animate(){
     ring.rotation.y += dt * (0.05 + ri * 0.02) * (0.5 + (cur.wind + windExtra) / 60);
   });
 
+  // inhabitants
+  const frozen = frozenAll;
+
   // palms sway / bend with wind + shockwaves
-  const windN = Math.min(1, (cur.wind + windExtra) / 90);
+  const windN = frozen ? 0 : Math.min(1, (cur.wind + windExtra) / 90);
   if (treesFallen){
     trees.forEach(t => { t.m.rotation.z = t.fallenDir * 1.35; t.m.rotation.x = 0.12; });
   } else trees.forEach(t => {
@@ -1907,11 +2053,11 @@ function animate(){
   });
 
   // inhabitants
-  const babelBuild = disaster && disaster.type === 'babel' && disaster.phase === 'build';
-  const terraWork = disaster && disaster.type === 'terraform' && (disaster.phase === 'reclaim' || disaster.phase === 'construct');
+  const babelBuild = !frozen && disaster && disaster.type === 'babel' && disaster.phase === 'build';
+  const terraWork = !frozen && disaster && disaster.type === 'terraform' && (disaster.phase === 'reclaim' || disaster.phase === 'construct');
   const panicMult = panicEpic ? 4 : 1;
-  const beamed = (disaster && disaster.type === 'ufo' && disaster.phase === 'beam' && disaster.target) ? disaster.target.obj : null;
-  villagers.forEach(v => {
+  const beamed = (!frozen && disaster && disaster.type === 'ufo' && disaster.phase === 'beam' && disaster.target) ? disaster.target.obj : null;
+  if (!frozen) villagers.forEach(v => {
     if (v === beamed) return;
     if (babelBuild){ v.tx = v.gx; v.tz = v.gz; moveWanderer(v, dt, 0, 2.5, 6); return; }
     if (terraWork){ v.tx = v.gx; v.tz = v.gz; moveWanderer(v, dt, 0, 2.2, 40); return; }
@@ -1921,7 +2067,7 @@ function animate(){
     }
     moveWanderer(v, dt, 0, panicMult, panicEpic ? 60 : 14);
   });
-  animals.forEach(a => {
+  if (!frozen) animals.forEach(a => {
     if (a === beamed) return;
     if (babelBuild){ a.tx = a.gx; a.tz = a.gz; moveWanderer(a, dt, 0, 2.5, 8); return; }
     if (terraWork){ a.tx = a.gx; a.tz = a.gz; moveWanderer(a, dt, 0, 2.2, 50); return; }
@@ -1931,7 +2077,7 @@ function animate(){
     }
     moveWanderer(a, dt, 0, panicMult, panicEpic ? 90 : 30);
   });
-  birds.forEach(b => {
+  if (!frozen) birds.forEach(b => {
     if (b === beamed) return;
     const spd = b.spd * (panicEpic ? 2.5 : 1);
     b.ang += spd * dt;
@@ -1939,7 +2085,6 @@ function animate(){
     b.g.rotation.y = -b.ang;
     b.g.children[0].rotation.y = Math.sin(elapsed * 10 + b.flap) * 0.4;
   });
-
   // lightning
   const stormy = mode === 'storm' ? 1 : (hurricaneOn ? 1.6 : 0);
   if (stormy > 0){
@@ -1972,6 +2117,8 @@ function animate(){
     smokeUni.uTime.value = elapsed;
     smokeUni.uWind.value = cur.wind;
   }
+  snowUni.uTime.value = elapsed;
+  snowUni.uOp.value = (cur.snow || 0) * (0.75 + 0.25 * Math.sin(elapsed * 0.4));
 
   // HUD
   condEl.textContent = disaster ? disaster.label : target.label;
