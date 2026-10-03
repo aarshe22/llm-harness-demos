@@ -87,6 +87,7 @@ export function defaultConfig() {
     turn_speed: 2.4,
     bank_strength: 0.55,
     hover_bob_amount: 0.12,
+    track_wave_amount: 0.42,
     mouse_sensitivity: 0.0024,
     owl_population: 1,
     crow_population: 1,

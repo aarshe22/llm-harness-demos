@@ -166,6 +166,9 @@ func _play() -> void:
 	if moth:
 		moth.global_position = Vector3(24, 6, 24)
 		moth.velocity = Vector3.ZERO
+		moth.cruise_alt = 6.0
+		moth.wave_t = 0.0
+		moth.distance_flown = 0.0
 		moth.health.integrity = 1.0
 		moth.health.state = 0
 	var glow = moth.glow if moth else null

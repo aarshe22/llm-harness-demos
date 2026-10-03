@@ -40,6 +40,7 @@ extends Resource
 @export var turn_speed: float = 2.4
 @export var bank_strength: float = 0.55
 @export var hover_bob_amount: float = 0.12
+@export var track_wave_amount: float = 0.42
 @export var mouse_sensitivity: float = 0.0024
 @export var gamepad_sensitivity: float = 2.2
 

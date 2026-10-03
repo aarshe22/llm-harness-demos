@@ -17,6 +17,10 @@ func _init() -> void:
 	failed += _check(Rules.clamp_fidelity(0) == 1, "fidelity min")
 	failed += _check(Rules.clamp_fidelity(9) == 8, "fidelity max")
 	failed += _check(Rules.clamp_fidelity(4.6) == 5, "fidelity round")
+	failed += _check(Rules.step_cruise_altitude(8.0, 0.0, 1.0, 10.0) == 8.0, "altitude hold")
+	failed += _check(Rules.step_cruise_altitude(8.0, 1.0, 0.5, 10.0) > 8.0, "explicit climb")
+	failed += _check(absf(Rules.moth_track_wave(0.0, 0.0, 0.0)) < 0.0001, "zero wave amp")
+	failed += _check(Rules.moth_flight_y(8.0, 1.0, 0.4, 0.42) != 8.0, "track undulates")
 	print("GLOW headless tests failed=", failed)
 	quit(failed)
 

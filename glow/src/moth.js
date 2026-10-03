@@ -1,5 +1,5 @@
 import * as THREE from "../vendor/three.module.js";
-import { clamp, overglowReady, fidelityProfile } from "./rules.js";
+import { clamp, overglowReady, fidelityProfile, mothFlightY, stepCruiseAltitude } from "./rules.js";
 
 function wingGeometry(profile) {
   if (profile.mothWingGeo === "plane") return new THREE.PlaneGeometry(0.42, 0.22);
@@ -157,6 +157,8 @@ export function createMoth(scene, fidelity = 1) {
     pitch: 0,
     bank: 0,
     bob: 0,
+    cruiseAlt: 6,
+    waveT: 0,
     glow: 1,
     energy: 1,
     overglow: 0,
@@ -178,6 +180,8 @@ export function copyMothState(from, to) {
   to.pitch = from.pitch;
   to.bank = from.bank;
   to.bob = from.bob;
+  to.cruiseAlt = from.cruiseAlt;
+  to.waveT = from.waveT;
   to.glow = from.glow;
   to.energy = from.energy;
   to.overglow = from.overglow;
@@ -228,13 +232,20 @@ export function updateMoth(m, input, cfg, dt, look) {
     m.web = Math.max(0, m.web - dt);
   }
   const target = wish.multiplyScalar(maxS);
-  target.y = input.rise * cfg.vertical_speed + -m.pitch * cfg.vertical_speed * 0.65;
+  target.y = 0;
   m.vel.lerp(target, 1 - Math.exp(-cfg.acceleration * dt * 0.2));
   m.vel.multiplyScalar(1 - cfg.drag * dt * 0.12);
+  m.vel.y = 0;
+
+  if (m.cruiseAlt == null) m.cruiseAlt = m.root.position.y;
+  m.cruiseAlt = stepCruiseAltitude(m.cruiseAlt, input.rise, dt, cfg.vertical_speed);
+  m.waveT = (m.waveT || 0) + dt;
 
   const before = m.root.position.clone();
   m.root.position.addScaledVector(m.vel, dt);
-  m.root.position.y = clamp(m.root.position.y, 0.6, 42);
+  const y = mothFlightY(m.cruiseAlt, m.distance, m.waveT, cfg.track_wave_amount ?? 0.42);
+  m.vel.y = (y - before.y) / Math.max(dt, 1e-4);
+  m.root.position.y = y;
   m.distance += before.distanceTo(m.root.position);
 
   m.bank += (-input.move.x * cfg.bank_strength - m.bank) * (1 - Math.exp(-6 * dt));

@@ -42,7 +42,7 @@ export function createUI(root, api) {
         <button id="danger" class="ghost">DANGER PRESET</button>
         <button id="customBtn" class="ghost">CUSTOM GAME</button>
         <button id="settingsBtn" class="ghost">SETTINGS</button>
-        <p class="help">WASD fly · mouse steer · Shift boost · E / RMB dim · C camera · Esc pause · F3 debug</p>
+        <p class="help">WASD fly · mouse look (no sink) · Space / Ctrl altitude · Shift boost · E / RMB dim · C camera · Esc pause · F3 debug</p>
       </div>
       <div class="panel scroll hidden" id="custom">
         <h2>CUSTOM GAME</h2>
