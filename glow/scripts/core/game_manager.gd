@@ -38,6 +38,7 @@ func start_run() -> void:
 	phase = Phase.PLAY
 	get_tree().paused = false
 	InputManager.capture_mouse(true)
+	AudioManager.start_night_forest()
 
 
 func pause_game(on: bool) -> void:

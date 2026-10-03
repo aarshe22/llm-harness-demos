@@ -16,6 +16,8 @@ godot --headless --path glow --script res://scripts/core/headless_test.gd
 
 Controls: WASD fly, mouse look (altitude holds; no gravity sink), Space/Ctrl climb/descend, Shift boost, E or RMB dim, C camera, Esc pause, Alt+Enter fullscreen, F3 debug.
 
+Night-forest ambience (wind, cricket chorus, rustle, distant frogs/owls) starts on first click or key, or when you enter the forest. Master volume in Settings scales it.
+
 ## Browser
 
 Open `/glow/` from the gallery server, or `npx --yes serve glow`. Node tests: `node --test glow/tests/rules.test.mjs`.
