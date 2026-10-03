@@ -1,5 +1,5 @@
 import * as THREE from "../vendor/three.module.js";
-import { BIOMES, pickBiome, hash2, lodTreeSplit, wildlifeAltitude, fidelityProfile } from "./rules.js";
+import { BIOMES, pickBiome, hash2, lodTreeSplit, wildlifeAltitude, fidelityProfile, treeCollider, treeHitRadius, hitsTree, MOTH_HIT_R } from "./rules.js";
 import { createPredator } from "./predators.js";
 import { barkMaterial } from "./bark.js";
 import { forestFloorMaterial } from "./floor.js";
@@ -89,9 +89,16 @@ export function createWorld(scene, cfg, fidelity = 1) {
       dummy.scale.set(r, h, r);
       dummy.rotation.set((rng() - 0.5) * 0.05, rng() * Math.PI * 2, (rng() - 0.5) * 0.04);
       dummy.updateMatrix();
+      const hit = treeCollider(pine, r, h);
+      root.userData.solids.push({
+        pos: new THREE.Vector3(p.x, 0, p.z),
+        radius: hit.radius,
+        height: hit.height,
+        shape: hit.shape,
+        kind: "hard",
+      });
       if (i < split.near) {
         nearInst.setMatrixAt(ni++, dummy.matrix);
-        root.userData.solids.push({ pos: new THREE.Vector3(p.x, 0, p.z), radius: r * 1.2, kind: "hard" });
       } else {
         farInst.setMatrixAt(fi++, dummy.matrix);
       }
@@ -375,18 +382,19 @@ function makeMist(cfg) {
 export function collideMoth(moth, world) {
   const p = moth.root.position;
   for (const s of world.all("solids")) {
+    const hr = treeHitRadius(s.shape, s.radius, s.height, p.y);
+    if (!hitsTree(p.x - s.pos.x, p.z - s.pos.z, hr, MOTH_HIT_R)) continue;
     const dx = p.x - s.pos.x;
     const dz = p.z - s.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d < s.radius + 0.16 && p.y < 20) {
-      const nx = dx / (d || 1);
-      const nz = dz / (d || 1);
-      p.x += nx * (s.radius + 0.18 - d);
-      p.z += nz * (s.radius + 0.18 - d);
-      moth.vel.x += nx * 6;
-      moth.vel.z += nz * 6;
-      return "hard";
-    }
+    const lim = hr + MOTH_HIT_R;
+    const nx = dx / (d || 1);
+    const nz = dz / (d || 1);
+    p.x += nx * (lim + 0.02 - d);
+    p.z += nz * (lim + 0.02 - d);
+    moth.vel.x += nx * 6;
+    moth.vel.z += nz * 6;
+    return "hard";
   }
   for (const w of world.all("webs")) {
     if (p.distanceTo(w.position) < 1.4) return "web";

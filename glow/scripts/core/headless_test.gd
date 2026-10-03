@@ -21,6 +21,9 @@ func _init() -> void:
 	failed += _check(Rules.step_cruise_altitude(8.0, 1.0, 0.5, 10.0) > 8.0, "explicit climb")
 	failed += _check(absf(Rules.moth_track_wave(0.0, 0.0, 0.0)) < 0.0001, "zero wave amp")
 	failed += _check(Rules.moth_flight_y(8.0, 1.0, 0.4, 0.42) != 8.0, "track undulates")
+	failed += _check(Rules.tree_collider_radius(true, 0.5) > Rules.tree_collider_radius(false, 0.5), "pine cone wider")
+	failed += _check(Rules.tree_hit_radius("cone", 4.0, 10.0, 5.0) == 2.0, "cone tapers")
+	failed += _check(Rules.tree_hit_radius("cylinder", 1.5, 8.0, 9.0) == 0.0, "cyl height")
 	print("GLOW headless tests failed=", failed)
 	quit(failed)
 
