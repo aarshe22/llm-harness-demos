@@ -149,8 +149,72 @@ DC.Facility = (function () {
     return rack;
   }
 
+  function freeForServer(rack) {
+    let used = 2;
+    for (const e of rack.equipment) used += e.uh;
+    return 40 - used;
+  }
+
+  function hallFull(state, hallIdx) {
+    const racks = state.racks.filter((r) => r.hall === hallIdx);
+    if (!racks.length) return false;
+    return racks.every((r) => freeForServer(r) < 2);
+  }
+
+  function createHall(state) {
+    const rng = DC.Rng.make(state.seedStr + ":hall:" + state.halls.length);
+    const hallIdx = state.halls.length;
+    const hall = { name: "HALL " + String.fromCharCode(65 + hallIdx), cracs: [], temp: 21.5 };
+    state.halls.push(hall);
+    const n = rng.i(3, 4);
+    const newRacks = [];
+    for (let i = 0; i < n; i++) {
+      const rid = state.nextRackId++;
+      const rack = buildRack(rng, rid, state.dna, hallIdx, { compute: rng.chance(0.7) });
+      rack.name = "RACK " + String(rid + 1).padStart(2, "0");
+      rack.fresh = true;
+      rack.freshT = 0;
+      state.racks.push(rack);
+      newRacks.push(rack);
+    }
+    nameServers(state);
+    for (const rack of state.racks) for (const eq of rack.equipment) { eq.rack = state.racks.indexOf(rack); if (!state.eqById[eq.id]) state.eqById[eq.id] = eq; }
+    const cr = makeCRAC(rng, hallIdx);
+    cr.hallName = hall.name;
+    state.coolingUnits.push(cr);
+    hall.cracs.push(cr.id);
+    state.eqById[cr.id] = cr;
+    const t = rng.pick(DC.SERVICE_TYPES);
+    const servers = newRacks.flatMap((r) => r.equipment.filter((e) => e.type === "server"));
+    const stor = newRacks.flatMap((r) => r.equipment.filter((e) => e.type === "storage"));
+    const sw = newRacks.flatMap((r) => r.equipment.filter((e) => e.type === "switch"));
+    const svc = {
+      id: "SVCH" + hallIdx + "_" + Math.floor(rng.f(0, 9999)),
+      name: t.key,
+      type: t,
+      customers: Math.round(rng.f(t.customers[0], t.customers[1]) * (DC.CFG.startCustomerLoad || 1)),
+      crit: t.crit * state.dna.criticality,
+      deps: [],
+      state: "healthy",
+      outageSince: 0, outageTotal: 0, openTickets: 0, degradedSince: 0
+    };
+    if (servers.length) svc.deps = rng.shuffle(servers).slice(0, Math.min(3, servers.length)).map((s) => s.id);
+    if (stor.length && rng.chance(0.6)) svc.deps.push(rng.pick(stor).id);
+    if (sw.length) svc.deps.push(rng.pick(sw).id);
+    state.services.push(svc);
+    state.metrics.customers += svc.customers;
+    return { hall, newRacks };
+  }
+
   function nameServers(state) {
     const counters = {};
+    for (const rack of state.racks) {
+      for (const eq of rack.equipment) {
+        if (!eq.name) continue;
+        let m;
+        if ((m = eq.name.match(/^([A-Z]{2,4})-(\d+)$/))) counters[m[1]] = Math.max(counters[m[1]] || 0, parseInt(m[2], 10));
+      }
+    }
     for (const rack of state.racks) {
       for (const eq of rack.equipment) {
         if (eq.name) continue;
@@ -159,10 +223,11 @@ DC.Facility = (function () {
           counters[tag] = (counters[tag] || 0) + 1;
           eq.name = tag + "-" + String(counters[tag]).padStart(2, "0");
         } else if (eq.type === "storage") {
-          let c = (counters.STG || 0) + 1; counters.STG = c;
-          eq.name = "STOR-" + String(c).padStart(2, "0");
+          counters.STOR = (counters.STOR || 0) + 1;
+          eq.name = "STOR-" + String(counters.STOR).padStart(2, "0");
         } else if (eq.type === "switch") {
-          if (!eq.name) { let c = (counters.SW || 0) + 1; counters.SW = c; eq.name = "SW-" + String(c).padStart(2, "0"); }
+          counters.SW = (counters.SW || 0) + 1;
+          eq.name = "SW-" + String(counters.SW).padStart(2, "0");
         }
       }
     }
@@ -284,10 +349,12 @@ DC.Facility = (function () {
       cr.hallName = "HALL A";
       state.coolingUnits.push(cr);
       state.halls[0].cracs.push(cr.id);
+      state.eqById[cr.id] = cr;
     }
     if (rng.chance(dna.powerRedundancy)) {
       const g = { id: nextId("GEN"), type: "generator", name: "GEN-01", state: "standby", fuel: 100, health: 100, startup: 0 };
       state.powerUnits.push(g);
+      state.eqById[g.id] = g;
     }
     state.services = generateServices(rng, state.racks, dna, state.eqById, cfg);
     state.clusters = [];
@@ -301,7 +368,7 @@ DC.Facility = (function () {
       uptime: 0, score: 0, sla: 99.99, rep: 62, demand: 20,
       customers: state.services.reduce((a, s) => a + s.customers, 0),
       temp: 21.5, powerPct: 0, coolPct: 0, netPct: 100, dataPct: 100, sec: "NORMAL", incidents: 0,
-      serversOnline: 0, serversTotal: 0
+      serversOnline: 0, serversTotal: 0, growthPct: 0
     };
     state.power = { utility: "ok", utilityTimer: 0, upsDischarge: 0, generatorRunning: false };
     state.director = { state: "CALM", timer: rng.f(20, 40), intensity: 0 };
@@ -356,6 +423,7 @@ DC.Facility = (function () {
       cr.hallName = "HALL " + String.fromCharCode(65 + hallIdx);
       state.coolingUnits.push(cr);
       if (state.halls[hallIdx]) state.halls[hallIdx].cracs.push(cr.id);
+      state.eqById[cr.id] = cr;
     }
     const addCust = Math.round(option.customers * (DC.CFG.startCustomerLoad || 1));
     const svc = {
@@ -408,5 +476,5 @@ DC.Facility = (function () {
     });
   }
 
-  return { generate, applyExpansion, generateExpansionOptions, makeServer, makeStorage, makeSwitch, makePDU, nameServers };
+  return { generate, applyExpansion, generateExpansionOptions, makeServer, makeStorage, makeSwitch, makePDU, nameServers, freeForServer, hallFull, createHall };
 })();

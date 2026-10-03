@@ -86,7 +86,45 @@ DC.Render = (function () {
     });
 
     ctx.restore();
+    const panelOpen = !!(state && window.DC.Game && DC.Game.selectedId);
+    drawThermometer(ctx, w, h, state.metrics.growthPct || 0, time, panelOpen);
     drawCRT(ctx, w, h, time);
+  }
+
+  function drawThermometer(ctx, w, h, pct, time, panelOpen) {
+    const x = w - 46 - (panelOpen ? 324 : 0);
+    const bulbR = 15;
+    const top = 78;
+    const tubeH = DC.Util.clamp(h - top - 190, 90, 250);
+    const bot = top + tubeH;
+    ctx.fillStyle = "#0b0820";
+    ctx.fillRect(x - 9, top, 18, tubeH);
+    ctx.strokeStyle = PAL.rackEdge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(x - 9, top, 18, tubeH);
+    ctx.lineWidth = 1;
+    ctx.fillStyle = PAL.rivet;
+    for (let i = 0; i <= 10; i++) {
+      const ty = Math.round(bot - (tubeH * i) / 10);
+      ctx.fillRect(x + 11, ty, i % 5 === 0 ? 8 : 4, PX);
+    }
+    const col = pct > 85 ? PAL.ledAmber : pct > 60 ? PAL.ledGreen : PAL.ledCyan;
+    const fillH = Math.max(PX, Math.round((tubeH - 4) * DC.Util.clamp(pct, 0, 100) / 100));
+    ctx.fillStyle = col;
+    ctx.fillRect(x - 6, bot - 2 - fillH, 12, fillH);
+    if (pct > 85 && Math.sin(time * 6) > 0) {
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x - 12, top, 24, tubeH);
+      ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(x, bot + bulbR, bulbR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = PAL.rackEdge;
+    ctx.stroke();
+    pxText(ctx, "GROWTH", x - 24, bot + bulbR * 2 + 20, 8, PAL.textDim);
+    pxText(ctx, Math.round(pct) + "%", x - 14, top - 10, 8, col);
   }
 
   function drawWall(ctx, worldW, floorY, time) {
@@ -315,6 +353,14 @@ DC.Render = (function () {
     else if (eq.type === "pdu") drawPDU(ctx, eq, bx, bw, y, h, time, blink);
   }
 
+  function freshFlash(ctx, eq, bx, y, bw, h) {
+    if (!eq.fresh || eq.freshT >= 1) return;
+    ctx.globalAlpha = (1 - eq.freshT) * 0.55;
+    ctx.fillStyle = PAL.ledCyan;
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    ctx.globalAlpha = 1;
+  }
+
   function drawServer(ctx, eq, x, bx, bw, y, h, time, blink) {
     const online = eq.state === "online";
     ctx.fillStyle = online ? "#141038" : "#0b0820";
@@ -355,6 +401,7 @@ DC.Render = (function () {
       }
       if (eq.badPatch && blink) pxText(ctx, "BAD!", bx + 6, y + 27, 8, PAL.ledPink);
       if (eq.clRole) pxText(ctx, eq.clRole, bx + bw - 12, y + h - 6, 8, PAL.ledPink);
+      freshFlash(ctx, eq, bx, y, bw, h);
     } else {
       const states = { "booting": ["BOOT", PAL.ledCyan], "shutdown": ["HALT", PAL.ledAmber], "thermal-shutdown": ["HOT!", PAL.ledRed], "offline": ["OFF", PAL.textDark] };
       const [txt, col] = states[eq.state] || ["OFF", PAL.textDark];
@@ -399,6 +446,7 @@ DC.Render = (function () {
       ctx.fillStyle = PAL.ledBlue;
       ctx.fillRect(bx + 44, y + h - 12, Math.floor((bw - 52) * p / PX) * PX, 6);
     }
+    freshFlash(ctx, eq, bx, y, bw, h);
   }
 
   function drawSwitch(ctx, eq, bx, bw, y, h, time, blink) {

@@ -83,6 +83,51 @@ for (let i = 0; i < 100; i++) DC.Maintenance.tick(state, 0.1);
 if (ups.batteries[0].health < 99) throw new Error("battery not replaced");
 console.log("battery grid OK");
 
+// growth thermometer: fills with good performance
+for (let i = 0; i < 200; i++) { state.metrics.rep = 90; DC.Growth.tick(state, 0.1); }
+if (state.metrics.growthPct === undefined || state.metrics.growthPct <= 0) throw new Error("thermometer not filling");
+console.log("thermometer fill OK:", state.metrics.growthPct.toFixed(1) + "%");
+
+// growth event: customers bump + installs
+const cBefore = state.metrics.customers;
+const eqBefore = DC.Util.allEq(state).length;
+DC.Growth.growthEvent(state);
+if (state.metrics.customers <= cBefore) throw new Error("no customer growth");
+const eqAfter = DC.Util.allEq(state).length;
+console.log("growth event OK: customers", cBefore, "->", state.metrics.customers, " eq", eqBefore, "->", eqAfter);
+
+// hall creation
+const halls0 = state.halls.length, racks0 = state.racks.length;
+const res = DC.Facility.createHall(state);
+if (state.halls.length !== halls0 + 1 || state.racks.length !== racks0 + res.newRacks.length) throw new Error("hall creation failed");
+if (!DC.Facility.hallFull(state, 0) === false) {} // noop
+console.log("hall creation OK:", state.halls.map(h => h.name).join(","), "racks:", state.racks.length);
+if (DC.Facility.freeForServer(state.racks[0]) < 0) throw new Error("freeU underflow");
+
+// CRAC repair flow: fault -> busy -> finish -> no fault
+const crac = state.coolingUnits[0];
+if (!state.eqById[crac.id]) throw new Error("CRAC not in eqById (repair click would fail)");
+crac.fault = { key: "breaker", desc: "breaker tripped", repair: 1 };
+crac.busy = { kind: "repair", t: 1 };
+DC.Thermal.tick(state, 1.5);
+if (crac.fault) throw new Error("CRAC repair did not reset condition");
+if (crac.busy) throw new Error("CRAC busy not cleared");
+console.log("CRAC repair OK");
+
+// generator refuel flow
+const gen = state.powerUnits[0];
+if (gen) {
+  if (!state.eqById[gen.id]) throw new Error("generator not in eqById (refuel would fail)");
+  gen.fuel = 10;
+  DC.Maintenance.refuel(state, gen.id);
+  if (!gen.maint && !gen.busy) { /* refuel runs through maintenance pipeline */ }
+  for (let i = 0; i < 120; i++) DC.Maintenance.tick(state, 0.1);
+  if (gen.fuel < 99) throw new Error("generator refuel did not complete: " + gen.fuel);
+  console.log("generator refuel OK");
+}
+
+
+
 
 const alarms = [];
 DC.Events.on("alarm", (s, sev, msg) => { if (alarms.length < 30) alarms.push(sev + ": " + msg); });

@@ -8,6 +8,7 @@ DC.Game = (function () {
   let keys = {};
   let raf = null, lastT = 0, simAcc = 0, uiAcc = 0, saveAcc = 0;
   let inMenu = true;
+  let selectedId = null;
 
   const SIM_DT = 0.1;
 
@@ -96,6 +97,7 @@ DC.Game = (function () {
     if (!state.clusters) state.clusters = [];
     if (!state.maintenance && DC.Maintenance) DC.Maintenance.initState(state);
     if (!state.upgrades) state.upgrades = [];
+    if (state.metrics && state.metrics.growthPct === undefined) state.metrics.growthPct = 0;
     ["patches", "badPatches", "batteriesReplaced", "migrations"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     bootRun();
   }
@@ -213,6 +215,9 @@ DC.Game = (function () {
     }
     for (const rack of state.racks) {
       if (rack.fresh && rack.freshT < 1) { rack.freshT = Math.min(1, rack.freshT + dt / 2.5); if (rack.freshT >= 1) rack.fresh = false; }
+      for (const eq of rack.equipment) {
+        if (eq.fresh && eq.freshT < 1) { eq.freshT = Math.min(1, eq.freshT + dt / 1.5); if (eq.freshT >= 1) eq.fresh = false; }
+      }
     }
     if (state.gameOver && !state.gameOverShown) { state.gameOverShown = true; gameOverScreen(); }
   }
@@ -410,7 +415,7 @@ DC.Game = (function () {
     };
   }
 
-  return { init, running, newGame, togglePause, jumpTo, setSelected: (e) => {}, animateExpansion, get state() { return state; }, get cam() { return cam; }, showMenu };
+  return { init, running, newGame, togglePause, jumpTo, setSelected: (e) => { selectedId = e ? e.id : null; }, animateExpansion, get state() { return state; }, get cam() { return cam; }, get selectedId() { return selectedId; }, showMenu };
 })();
 
 window.addEventListener("DOMContentLoaded", () => DC.Game.init());

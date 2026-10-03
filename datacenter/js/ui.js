@@ -16,6 +16,7 @@ DC.UI = (function () {
         <div class="chip clickable" id="${chipId("tickets")}"><div class="lbl">TICKETS</div><div class="val">0</div></div>
         <div class="chip" id="${chipId("sla")}"><div class="lbl">SLA</div><div class="val">—</div></div>
         <div class="chip" id="${chipId("rep")}"><div class="lbl">REP</div><div class="val">—</div></div>
+        <div class="chip" id="${chipId("growth")}"><div class="lbl">GROWTH</div><div class="val">0%</div></div>
         <div class="chip" id="${chipId("customers")}"><div class="lbl">CUSTOMERS</div><div class="val">0</div></div>
         <div class="chip" id="${chipId("temp")}"><div class="lbl">TEMP</div><div class="val">—</div></div>
         <div class="chip" id="${chipId("power")}"><div class="lbl">POWER</div><div class="val">—</div></div>
@@ -121,6 +122,8 @@ DC.UI = (function () {
     set("tickets", String(t), t <= 5 ? "g" : t <= 20 ? "a" : t <= 50 ? "o" : "r", t > 50);
     set("sla", m.sla.toFixed(2) + "%", m.sla > 99.5 ? "g" : m.sla > 97 ? "a" : "r");
     set("rep", Math.round(m.rep) + "%", m.rep > 60 ? "g" : m.rep > 30 ? "a" : "r");
+    const gp = m.growthPct || 0;
+    set("growth", Math.round(gp) + "%", gp > 85 ? "a" : "g", gp > 85);
     set("customers", m.customers.toLocaleString());
     set("temp", m.temp.toFixed(1) + "C", m.temp > 32 ? "r" : m.temp > 27 ? "a" : "g");
     set("power", m.powerPct + "%", m.powerPct > 95 ? "r" : m.powerPct > 80 ? "a" : "g");
@@ -397,6 +400,7 @@ DC.UI = (function () {
   }
 
   function showCooling() {
+    for (const cr of state.coolingUnits) state.eqById[cr.id] = cr;
     let rows = "";
     for (const cr of state.coolingUnits) {
       rows += '<div class="optcard"><div class="opt-title">' + cr.name + " — HALL A</div>";
@@ -503,6 +507,8 @@ DC.UI = (function () {
   }
 
   function showPower() {
+    for (const g of state.powerUnits) state.eqById[g.id] = g;
+    for (const cr of state.coolingUnits) state.eqById[cr.id] = cr;
     const p = state.power;
     let html = '<div class="statrow"><span class="k">UTILITY</span><span class="v ' + (p.utility === "ok" ? "g" : "r") + '">' + (p.utility === "ok" ? "OK" : "OUT — " + Math.ceil(p.utilityTimer) + "s to restore") + "</span></div>";
     html += '<div class="statrow"><span class="k">LOAD</span><span class="v ' + (state.metrics.powerPct > 90 ? "r" : state.metrics.powerPct > 75 ? "a" : "g") + '">' + state.metrics.powerPct + "%</span></div>";
@@ -598,7 +604,7 @@ DC.UI = (function () {
       <h3>UPS & POWER</h3>
       <p>The UPS has a grid of 8 battery strings. Batteries age, die under stress, and shrink runtime — replace worn strings from the POWER panel. Generators need refuelling and periodic service; neglected units may fail to start.</p>
       <h3>GROWTH</h3>
-      <p>Good performance raises REPUTATION, which raises DEMAND. At the threshold you choose an expansion: new racks physically appear and the facility grows. UPGRADES offer permanent facility improvements with tradeoffs.</p>
+      <p>Watch the GROWTH thermometer (right edge of the screen, or the GROWTH chip). It fills as the business thrives and drains during crises. At 100% new customers onboard and new hardware is installed into free rack space. When a hall's racks are completely full, the next hall is constructed. When the entire facility is full, you choose a major expansion.</p>
       <h3>SCORING</h3>
       <p>Score accrues from uptime, customers, and reputation. Preventing failures beats fixing them. Data loss, ticket storms, and outages hurt. If SLA, reputation, or temperature collapse completely, the run ends.</p>
       </div>

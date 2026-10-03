@@ -68,9 +68,79 @@ DC.Growth = (function () {
       state.gameOverReason = collapseReason(state);
     }
 
+    updateThermometer(state, dt, clean, outageWeight);
     checkExpansion(state);
     checkUpgrades(state, dt);
     checkAchievements(state);
+  }
+
+  function updateThermometer(state, dt, clean, outageWeight) {
+    const m = state.metrics;
+    let rate = (0.3 + m.rep * 0.006) * cfg().demandGrowth;
+    if (!clean) rate *= 0.2;
+    rate -= outageWeight * 0.35;
+    if (state.tickets.open > 30) rate -= 0.3;
+    if (state.tickets.open > 80) rate -= 0.5;
+    rate = Math.max(-1.5, Math.min(rate, 3));
+    m.growthPct = DC.Util.clamp((m.growthPct || 0) + rate * dt, 0, 100);
+    if (m.growthPct >= 100) {
+      m.growthPct = 0;
+      growthEvent(state);
+    }
+  }
+
+  function growthEvent(state) {
+    const rr = { f: (a, b) => a + Math.random() * (b - a), pick: (a) => a[Math.floor(Math.random() * a.length)], chance: (p) => Math.random() < p };
+    const bump = 1.05 + rr.f(0, 0.06);
+    for (const s of state.services) s.customers = Math.round(s.customers * bump);
+    state.metrics.customers = state.services.reduce((a, s) => a + s.customers, 0);
+    if (state.metrics.customers > state.growth.customersPeak) state.growth.customersPeak = state.metrics.customers;
+    let installed = 0;
+    for (const rack of state.racks) {
+      if (installed >= 4) break;
+      const free = DC.Facility.freeForServer(rack);
+      if (free < 2) continue;
+      const idx = state.racks.indexOf(rack);
+      let eq;
+      if (free >= 4 && rr.chance(0.25)) {
+        eq = DC.Facility.makeStorage(rr, idx);
+        eq.age = 0.05;
+      } else {
+        eq = DC.Facility.makeServer(rr, rr.pick(Object.keys(DC.ROLES)), idx, state.dna);
+        if (state.services.length && rr.chance(0.6)) {
+          const svc = rr.pick(state.services);
+          if (svc.deps.indexOf(eq.id) === -1) svc.deps.push(eq.id);
+        }
+      }
+      rack.equipment.push(eq);
+      state.eqById[eq.id] = eq;
+      eq.fresh = true;
+      eq.freshT = 0;
+      installed++;
+    }
+    DC.Facility.nameServers(state);
+    state.metrics.score += 500;
+    DC.Events.emit("toast", state, "GROWTH — new customers onboarded" + (installed ? " · new hardware installed" : ""), "good");
+    DC.Audio.fanfare();
+    const lastHall = state.halls.length - 1;
+    if (lastHall >= 0 && DC.Facility.hallFull(state, lastHall) && state.racks.length < DC.CFG.maxRacks) {
+      const res = DC.Facility.createHall(state);
+      DC.Events.emit("toast", state, res.hall.name + " CONSTRUCTED — " + res.newRacks.length + " racks online", "good");
+      DC.Game.animateExpansion(res.newRacks, false);
+      DC.Audio.fanfare();
+    }
+  }
+
+  function checkExpansion(state) {
+    const g = state.growth;
+    if (g.expansionPending || state.gameOver) return;
+    const anyRoom = state.racks.some((r) => DC.Facility.freeForServer(r) >= 2);
+    if (!anyRoom && state.racks.length < cfg().maxRacks) {
+      g.expansionPending = DC.Facility.generateExpansionOptions(state);
+      state.director.timer = Math.max(state.director.timer, 45);
+      DC.Events.emit("expansion", state);
+      DC.Audio.fanfare();
+    }
   }
 
   function collapseReason(state) {
@@ -160,5 +230,5 @@ DC.Growth = (function () {
     if (m.rep >= 80 && m.customers > 30000) unlock("CUSTOMER_FAVORITE", "CUSTOMER FAVORITE", "High reputation with a huge customer base.");
   }
 
-  return { tick, applyUpgrade, generateUpgradeOffers };
+  return { tick, applyUpgrade, generateUpgradeOffers, growthEvent };
 })();
