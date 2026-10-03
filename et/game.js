@@ -167,7 +167,7 @@
     diffLeftA: false,
     diffRightA: false,
     fireHeld: false,
-    et: { x: 65, y: 30, motion: 0x0f, frac: 0, neck: 0, pit: 0, anim: 2, run: false, carried: false },
+    et: { x: 65, y: 30, motion: 0x0f, frac: 0, neck: 0, pit: 0, anim: 2, run: false, carried: false, face: 0 },
     hold: { x: 0, y: 0, screen: 0 },
     energyHi: 0x99,
     energyLo: 0x99,
@@ -859,10 +859,10 @@
   }
 
   function moveObject(dirBits, obj) {
-    if ((dirBits & 1) === 0) obj.y -= 1;
-    if ((dirBits & 2) === 0) obj.y += 1;
-    if ((dirBits & 4) === 0) obj.x -= 1;
-    if ((dirBits & 8) === 0) obj.x += 1;
+    if ((dirBits & 1) === 0) { obj.y -= 1; if (obj === G.et) obj.face = 0; }
+    if ((dirBits & 2) === 0) { obj.y += 1; if (obj === G.et) obj.face = Math.PI; }
+    if ((dirBits & 4) === 0) { obj.x -= 1; if (obj === G.et) obj.face = -Math.PI / 2; }
+    if ((dirBits & 8) === 0) { obj.x += 1; if (obj === G.et) obj.face = Math.PI / 2; }
   }
 
   function signedWrapY() {
@@ -1340,8 +1340,15 @@
   }
 
   function draw() {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const view3d = G.world === 2 && G.screen !== ID.TITLE && G.screen !== ID.HOME
+      && window.ET_VIEW3D && typeof THREE !== "undefined"
+      && document.getElementById("view3d") && !document.getElementById("view3d").hidden;
+    if (view3d) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     ctx.fillStyle = ntsc(0x52);
     ctx.fillRect(0, 0, FIELD_W * SCALE, 24 * SCALE);
@@ -1362,9 +1369,9 @@
       ctx.font = `${12 * SCALE}px monospace`;
       ctx.fillText("PRESS FIRE", 36 * SCALE, 140 * SCALE);
       const worldEl = document.getElementById("world");
-      const movie = worldEl && worldEl.value === "1";
+      const wv = worldEl ? worldEl.value : "0";
       ctx.font = `${6 * SCALE}px monospace`;
-      ctx.fillText(movie ? "MOVIE SITES" : "1982 CART", 48 * SCALE, 152 * SCALE);
+      ctx.fillText(wv === "1" ? "MOVIE SITES" : wv === "2" ? "3D CART" : "1982 CART", 48 * SCALE, 152 * SCALE);
       drawDigit(G.selection, 76, 170);
       drawIcon(6, 20, 4, ntsc(0x9c));
       return;
@@ -1389,77 +1396,81 @@
       }
     }
 
-    drawPF(G.screen);
+    if (!view3d) {
+      drawPF(G.screen);
 
-    if (G.candyY < 64 && G.screen < ID.FOREST) {
-      ctx.fillStyle = ntsc(0x4e);
-      const cx = 16 + Math.round(G.candyX * (128 / 120));
-      ctx.fillRect(cx * SCALE, (24 + G.candyY * 2) * SCALE, 4 * SCALE, 4 * SCALE);
-    }
-    if (G.world === 1 && G.camp) {
-      const kindColor = { plant: 0x3a, candy: 0x4e, toy: 0x2e, part: 0x9e, frog: 0xce, orb: 0x9e };
-      for (const it of G.camp.items) {
-        if (it.got) continue;
-        ctx.fillStyle = ntsc(kindColor[it.kind] || 0x4e);
-        const ix = 16 + Math.round(it.x * (128 / 120));
-        ctx.fillRect(ix * SCALE, (24 + it.y * 2) * SCALE, 5 * SCALE, 5 * SCALE);
+      if (G.candyY < 64 && G.screen < ID.FOREST) {
+        ctx.fillStyle = ntsc(0x4e);
+        const cx = 16 + Math.round(G.candyX * (128 / 120));
+        ctx.fillRect(cx * SCALE, (24 + G.candyY * 2) * SCALE, 4 * SCALE, 4 * SCALE);
       }
-      if (G.camp.beer && !G.camp.beerGot) {
-        ctx.fillStyle = ntsc(0x2e);
-        const bx = 16 + Math.round(G.camp.beer.x * (128 / 120));
-        ctx.fillRect(bx * SCALE, (24 + G.camp.beer.y * 2) * SCALE, 6 * SCALE, 8 * SCALE);
+      if (G.world === 1 && G.camp) {
+        const kindColor = { plant: 0x3a, candy: 0x4e, toy: 0x2e, part: 0x9e, frog: 0xce, orb: 0x9e };
+        for (const it of G.camp.items) {
+          if (it.got) continue;
+          ctx.fillStyle = ntsc(kindColor[it.kind] || 0x4e);
+          const ix = 16 + Math.round(it.x * (128 / 120));
+          ctx.fillRect(ix * SCALE, (24 + it.y * 2) * SCALE, 5 * SCALE, 5 * SCALE);
+        }
+        if (G.camp.beer && !G.camp.beerGot) {
+          ctx.fillStyle = ntsc(0x2e);
+          const bx = 16 + Math.round(G.camp.beer.x * (128 / 120));
+          ctx.fillRect(bx * SCALE, (24 + G.camp.beer.y * 2) * SCALE, 6 * SCALE, 8 * SCALE);
+        }
+        if (G.camp.flower) {
+          const fr = G.camp.flower.healed ? 3 : 0;
+          const spr = window.ET_GFX.sprites[`Flower_A${fr}`] || window.ET_GFX.sprites.Flower_A0;
+          drawSprite(spr, G.camp.flower.x, G.camp.flower.y, ntsc(G.camp.flower.healed ? 0x3e : 0x22));
+        }
       }
-      if (G.camp.flower) {
-        const fr = G.camp.flower.healed ? 3 : 0;
-        const spr = window.ET_GFX.sprites[`Flower_A${fr}`] || window.ET_GFX.sprites.Flower_A0;
-        drawSprite(spr, G.camp.flower.x, G.camp.flower.y, ntsc(G.camp.flower.healed ? 0x3e : 0x22));
+      if (G.hiddenPhoneY < 64) {
+        ctx.fillStyle = ntsc(0x1e);
+        const hx = 16 + Math.round(G.hiddenPhoneX * (128 / 120));
+        ctx.fillRect(hx * SCALE, (24 + G.hiddenPhoneY * 2) * SCALE, 8 * SCALE, 4 * SCALE);
       }
-    }
-    if (G.hiddenPhoneY < 64) {
-      ctx.fillStyle = ntsc(0x1e);
-      const hx = 16 + Math.round(G.hiddenPhoneX * (128 / 120));
-      ctx.fillRect(hx * SCALE, (24 + G.hiddenPhoneY * 2) * SCALE, 8 * SCALE, 4 * SCALE);
-    }
 
-    if (G.screen === ID.PIT && G.objInPit >= 0) {
-      const id = G.objInPit & 0x0f;
-      const s = window.ET_GFX.sprites;
-      let spr = s.Flower_A3;
-      if (id === OBJ.H) spr = s.H_PhonePiece_0;
-      if (id === OBJ.S) spr = s.S_PhonePiece_0;
-      if (id === OBJ.W) spr = s.W_PhonePiece_0;
-      if (id === OBJ.FLOWER) {
-        const fr = (G.flower >> 4) & 3;
-        spr = s[`Flower_A${fr}`] || s.Flower_A0;
+      if (G.screen === ID.PIT && G.objInPit >= 0) {
+        const id = G.objInPit & 0x0f;
+        const s = window.ET_GFX.sprites;
+        let spr = s.Flower_A3;
+        if (id === OBJ.H) spr = s.H_PhonePiece_0;
+        if (id === OBJ.S) spr = s.S_PhonePiece_0;
+        if (id === OBJ.W) spr = s.W_PhonePiece_0;
+        if (id === OBJ.FLOWER) {
+          const fr = (G.flower >> 4) & 3;
+          spr = s[`Flower_A${fr}`] || s.Flower_A0;
+        }
+        drawSprite(spr, 41, 50, ntsc(id === OBJ.FLOWER ? 0x3a : 0x2e));
       }
-      drawSprite(spr, 41, 50, ntsc(id === OBJ.FLOWER ? 0x3a : 0x2e));
-    }
 
-    const drawHuman = (h) => {
-      if ((G.frame & 3) === 0) h.anim = (h.anim + 1) % 8;
-      const col = h.id === 0 ? 0x0e : h.id === 1 ? 0x2a : 0x0e;
-      drawSprite(humanSprite(h), h.x, h.y, ntsc(col), false, 2);
-    };
-    if (G.screen === ID.HOME) drawHuman(G.humans[1]);
-    else if (G.screen === ID.CAMP) {
-      G.humans.forEach((h) => { if (h.screen === ID.CAMP) drawHuman(h); });
-    } else if (G.currentObj >= 0 && G.currentObj <= 2 && G.humans[G.currentObj].screen === G.screen) {
-      drawHuman(G.humans[G.currentObj]);
-    }
+      const drawHuman = (h) => {
+        if ((G.frame & 3) === 0) h.anim = (h.anim + 1) % 8;
+        const col = h.id === 0 ? 0x0e : h.id === 1 ? 0x2a : 0x0e;
+        drawSprite(humanSprite(h), h.x, h.y, ntsc(col), false, 2);
+      };
+      if (G.screen === ID.HOME) drawHuman(G.humans[1]);
+      else if (G.screen === ID.CAMP) {
+        G.humans.forEach((h) => { if (h.screen === ID.CAMP) drawHuman(h); });
+      } else if (G.currentObj >= 0 && G.currentObj <= 2 && G.humans[G.currentObj].screen === G.screen) {
+        drawHuman(G.humans[G.currentObj]);
+      }
 
-    if (G.mothership & 0x80) {
-      const sy = G.shipY & 255;
-      if (sy < 64) drawSprite(window.ET_GFX.sprites.MotherShip, G.shipX, sy, (row) => ntsc(0x48 + (row & 6)), false, 2);
-    }
+      if (G.mothership & 0x80) {
+        const sy = G.shipY & 255;
+        if (sy < 64) drawSprite(window.ET_GFX.sprites.MotherShip, G.shipX, sy, (row) => ntsc(0x48 + (row & 6)), false, 2);
+      }
 
-    let etSpr = window.ET_GFX.sprites[`ETWalkSprite_A${G.et.anim}`];
-    if (G.playerDead) etSpr = window.ET_GFX.sprites.ETDead_0;
-    else if (G.et.neck & 0x80) {
-      const n = Math.min(3, G.et.neck & 3);
-      etSpr = window.ET_GFX.sprites[`ETExtensionSprite_A${n}`];
+      let etSpr = window.ET_GFX.sprites[`ETWalkSprite_A${G.et.anim}`];
+      if (G.playerDead) etSpr = window.ET_GFX.sprites.ETDead_0;
+      else if (G.et.neck & 0x80) {
+        const n = Math.min(3, G.et.neck & 3);
+        etSpr = window.ET_GFX.sprites[`ETExtensionSprite_A${n}`];
+      }
+      const ey = G.et.y & 255;
+      if (ey < 64) drawSprite(etSpr, G.et.x, ey, (row) => ntsc(ET_COLORS[Math.min(row, ET_COLORS.length - 1)]));
+    } else if ((G.frame & 3) === 0 && G.currentObj >= 0 && G.currentObj <= 2) {
+      G.humans[G.currentObj].anim = (G.humans[G.currentObj].anim + 1) % 8;
     }
-    const ey = G.et.y & 255;
-    if (ey < 64) drawSprite(etSpr, G.et.x, ey, (row) => ntsc(ET_COLORS[Math.min(row, ET_COLORS.length - 1)]));
 
     ctx.fillStyle = ntsc(0x9a);
     ctx.fillRect(0, 152 * SCALE, FIELD_W * SCALE, 40 * SCALE);
@@ -1498,6 +1509,7 @@
 
   function loop() {
     tick();
+    if (window.ET_VIEW3D) window.ET_VIEW3D.sync();
     draw();
     refreshWorldMap();
     requestAnimationFrame(loop);
@@ -1579,7 +1591,9 @@
     const site = G.screen === ID.TITLE ? -1 : G.screen;
     const pitParent = G.screen === ID.PIT ? G.hold.screen : -1;
     if (hereEl) {
-      if (site < 0) hereEl.textContent = "Title — six-site cart";
+      if (site < 0) hereEl.textContent = Number(document.getElementById("world").value) === 2
+        ? "Title — 3D cart (same six sites)"
+        : "Title — six-site cart";
       else if (G.screen === ID.PIT) hereEl.textContent = "Well under " + (CART_HERE[pitParent] || "a pit screen");
       else hereEl.textContent = CART_HERE[G.screen] || "Cart";
     }
@@ -1623,13 +1637,17 @@
     });
     document.getElementById("world").addEventListener("change", () => {
       const hint = document.getElementById("hint");
-      if (hint && document.getElementById("world").value !== "1") {
-        hint.textContent = "Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.";
+      const wv = document.getElementById("world").value;
+      if (hint) {
+        if (wv === "1") { /* campaign load sets hint */ }
+        else if (wv === "2") hint.textContent = "3D cart: same 1982 rules. Split view — left first person (click to look), right above and behind E.T. Move with arrows/WASD.";
+        else hint.textContent = "Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.";
       }
       refreshWorldMap();
     });
   })();
   buildMovieMap();
+  window.ET_GAME = { G, ID, pfBit, ntsc, BG_COLORS, PF_COLORS };
   G.screen = ID.TITLE;
   requestAnimationFrame(loop);
 })();

@@ -21,6 +21,47 @@ html, body {
   flex: 0 0 auto;
   width: min(100%, 640px);
 }
+.stage {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(100%, 640px);
+}
+.stage canvas {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+}
+#view3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  background: #000;
+}
+#game.hud-overlay {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  pointer-events: none;
+}
+.view3d-labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 14%;
+  display: flex;
+  z-index: 2;
+  pointer-events: none;
+}
+.view3d-labels span {
+  width: 50%;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: #9fe07a;
+  text-shadow: 0 1px 2px #000;
+}
 header { text-align: center; margin-bottom: 8px; }
 h1 {
   margin: 0;

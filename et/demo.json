@@ -4,5 +4,5 @@
   "harness": "Cursor",
   "maxContextWindow": null,
   "updated": "2026-10-03",
-  "notes": "1982 six-site cart remake plus 34 movie-sequence sites and a live world map. ROM/PDF not in git."
+  "notes": "1982 six-site cart, 34 movie sites, live world map, and a Three.js 3D cart view (FPS + chase). ROM/PDF not in git."
 }

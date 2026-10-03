@@ -10,10 +10,17 @@
   <div class="wrap">
     <header>
       <h1>E.T. the Extra-Terrestrial</h1>
-      <p class="sub">Atari 2600 remake — 1982 cart, or every sequence from the film</p>
+      <p class="sub">Atari 2600 remake — 1982 cart, movie sequences, or 3D first-person + chase</p>
     </header>
     <div class="play-row">
-      <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
+      <div class="stage" id="stage">
+        <canvas id="view3d" width="640" height="768" hidden aria-label="E.T. 3D view"></canvas>
+        <div class="view3d-labels" id="view3dLabels" hidden>
+          <span>First person</span>
+          <span>Above / behind</span>
+        </div>
+        <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
+      </div>
       <aside class="world-map" id="worldMap" aria-label="World map">
         <h2>World map</h2>
         <p class="map-here" id="mapHere">Title</p>
@@ -79,6 +86,7 @@
           <select id="world">
             <option value="0">1982 cart (six sites)</option>
             <option value="1">Movie — 34 sequences</option>
+            <option value="2">3D cart — first person + chase</option>
           </select>
         </label>
         <label>Sequence
@@ -105,11 +113,13 @@
         </label>
         <button id="startBtn" type="button">Reset / Start</button>
       </div>
-      <p class="hint" id="hint">Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.</p>
+      <p class="hint" id="hint">Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat. 3D cart: same 1982 rules, split Three.js view. Click the 3D view to look around.</p>
     </div>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
   <script src="gfx.js"></script>
   <script src="campaign.js"></script>
+  <script src="view3d.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
