@@ -368,8 +368,8 @@ DC.Render = (function () {
     ctx.fillRect(bx, y + 2, bw, h - 4);
     let edge = PAL.rackEdge;
     if (online && eq.temp > 72) edge = PAL.ledRed;
-    else if (online && eq.temp > 58) edge = PAL.hot;
-    else if (online && eq.temp > 46) edge = PAL.ledAmber;
+    else if (online && eq.temp > 65) edge = PAL.hot;
+    else if (online && eq.temp > 60) edge = PAL.ledAmber;
     if (eq.runaway && blink) edge = PAL.ledPink;
     ctx.strokeStyle = edge;
     ctx.lineWidth = PX;
@@ -384,7 +384,7 @@ DC.Render = (function () {
       ctx.fillRect(bx + 6, y + h - 14, bw - 40, 6);
       ctx.fillStyle = eq.load > 90 ? PAL.ledPink : eq.load > 75 ? PAL.ledAmber : PAL.ledGreen;
       ctx.fillRect(bx + 6, y + h - 14, lw, 6);
-      const leds = [[PAL.ledGreen, blink], [eq.netState === "ok" ? PAL.ledCyan : PAL.textDark, blink && Math.random() > 0.3], [eq.temp > 58 ? PAL.ledRed : eq.temp > 46 ? PAL.ledAmber : PAL.cold, true]];
+      const leds = [[PAL.ledGreen, blink], [eq.netState === "ok" ? PAL.ledCyan : PAL.textDark, blink && Math.random() > 0.3], [eq.temp > 68 ? PAL.ledRed : eq.temp > 60 ? PAL.ledAmber : PAL.cold, true]];
       leds.forEach(([col, on], i) => {
         if (!on) col = "#1b1445";
         ctx.fillStyle = col;
@@ -426,7 +426,8 @@ DC.Render = (function () {
     ctx.fillRect(bx, y + 2, bw, h - 4);
     let edge = online ? PAL.ledPink : PAL.ledRed;
     if (online && eq.temp > 72) edge = PAL.ledRed;
-    else if (online && eq.temp > 58) edge = PAL.hot;
+    else if (online && eq.temp > 65) edge = PAL.hot;
+    else if (online && eq.temp > 60) edge = PAL.ledAmber;
     if (eq.runaway && blink) edge = PAL.ledPink;
     ctx.strokeStyle = edge;
     ctx.lineWidth = PX;
@@ -447,7 +448,7 @@ DC.Render = (function () {
       const led2 = blink ? PAL.ledGreen : "#1b1445";
       ctx.fillStyle = led2;
       ctx.fillRect(bx + bw - 28, y + 8, 6, 6);
-      ctx.fillStyle = eq.temp > 58 ? PAL.ledRed : PAL.cold;
+      ctx.fillStyle = eq.temp > 68 ? PAL.ledRed : eq.temp > 60 ? PAL.ledAmber : PAL.cold;
       ctx.fillRect(bx + bw - 28, y + 18, 6, 6);
       ctx.fillStyle = "#0a0722";
       for (let i = 0; i < 5; i++) ctx.fillRect(bx + 8 + i * 7, y + h - 5, 4, PX);

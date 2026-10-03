@@ -225,7 +225,7 @@ DC.UI = (function () {
     };
     if (eq.type === "server") {
       set("load", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g");
-      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g");
+      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 65 ? "o" : eq.temp > 60 ? "a" : "g");
       set("psu-a", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r");
       set("psu-b", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r");
       set("fans", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
@@ -238,7 +238,7 @@ DC.UI = (function () {
       else set("maint", "—", "");
     } else if (eq.type === "blade") {
       set("load", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g");
-      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g");
+      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 65 ? "o" : eq.temp > 60 ? "a" : "g");
       set("psu-a", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r");
       set("psu-b", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r");
       set("fans", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
@@ -302,7 +302,7 @@ DC.UI = (function () {
       html += statRow("CPU", eq.cpu + " cores");
       html += statRow("MEM", eq.mem + " GB");
       html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g", "load");
-      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g", "temp");
+      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 65 ? "o" : eq.temp > 60 ? "a" : "g", "temp");
       if (eq.throttle > 0.1) html += statRow("STATUS", "THERMAL THROTTLING", "r");
       html += statRow("PSU A", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r", "psu-a");
       html += statRow("PSU B", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r", "psu-b");
@@ -345,7 +345,7 @@ DC.UI = (function () {
         html += statRow("CRITICALITY", "x" + eq.tenant.crit.toFixed(1), eq.tenant.crit >= 1.4 ? "a" : "g");
       }
       html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g", "load");
-      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g", "temp");
+      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 65 ? "o" : eq.temp > 60 ? "a" : "g", "temp");
       html += statRow("PSU A", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r", "psu-a");
       html += statRow("PSU B", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r", "psu-b");
       html += statRow("FANS", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a", "fans");
