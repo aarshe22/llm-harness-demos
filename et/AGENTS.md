@@ -4,7 +4,7 @@ This file is the handoff contract for any model or human continuing this repo. R
 
 ## What this project is
 
-A browser remake of Atari’s 1982 *E.T. the Extra-Terrestrial* (2600), meant to match the original rules and six-site world as closely as practical, then **expand with new levels**. It is not an emulator. Logic lives in JavaScript; graphics were extracted from the ROM via the labeled disassembly.
+A browser remake of Atari’s 1982 *E.T. the Extra-Terrestrial* (2600), meant to match the original rules and six-site world as closely as practical, plus a **movie world** with one 2600-style site per film sequence. It is not an emulator. Logic lives in JavaScript; graphics were extracted from the ROM via the labeled disassembly.
 
 Designer: Howard Scott Warshaw. Artist: Jerome Domurat. NTSC 8K bankswitched cart.
 
@@ -24,9 +24,10 @@ Do not “simplify” energy, wrap tables, or human AI from Wikipedia. Copy cons
 
 | Path | Role |
 |------|------|
-| `index.html` | Shell, controls, variation/difficulty UI |
+| `index.html` | Shell, World / Sequence / variation / difficulty UI |
 | `style.css` | Page chrome only (not the 2600 look) |
 | `game.js` | All simulation + canvas draw (IIFE, no build step) |
+| `campaign.js` | `window.ET_CAMPAIGN` — 34 movie sites (playfields, items, win types) |
 | `gfx.js` | `window.ET_GFX` playfields, sprites, 128-byte `powerZoneMap` |
 | `pinokio.json` | Static-app metadata |
 | `README.md` | Player-facing |
@@ -48,7 +49,10 @@ No bundler, no tests yet, no `package.json`. Serve the folder (`python3 -m http.
 ```
 0 FOUR_DIAMOND   1 EIGHT_PITS   2 ARROW_PITS   3 WIDE_DIAMOND
 4 FOREST         5 DC           6 PIT          7 HOME         8 TITLE
+9 CAMP           (movie world overlay only; do not reuse as a cart screen)
 ```
+
+World 0 uses IDs 0–8 only. World 1 loads `campaign.js` scenes onto `ID.CAMP` and must not mutate wrap tables or PF for screens 0–5.
 
 **Graphics vs collision names are swapped in the ASM pointer table.** `PF_KEY` in `game.js` is the correct pairing:
 
@@ -107,7 +111,8 @@ FBI: steal one phone if E.T. has any, else clear candy to `$0A`. Scientist: carr
 ## Conventions for agents
 
 - Keep `game.js` vanilla ES; no React/build unless the user asks.
-- New levels should be **data** (playfield bytes, wrap edges, zone maps, spawn tables), not a fork of `tick()`.
+- New movie beats go in `campaign.js` as another `scenes[]` entry (pf, pal, spawn, items, win). Do not fork `tick()` per scene.
+- New cart-faithful levels should be **data** (playfield bytes, wrap edges, zone maps, spawn tables), not a fork of `tick()`.
 - When matching the original, prefer literal ASM tables over “feel.”
 - Do not commit unless the user asks. Do not destroy databases (N/A here).
 - After any visible gameplay/UI change, verify in the browser: start, walk, wrap, fall in a well, levitate, HUD energy. A screenshot is not enough.

@@ -52,25 +52,15 @@ Do this **before** large new maps so expansions inherit correct rules. Check eac
 - [ ] Deterministic seed dump (frame/second at round start) for reproducing phone/flower/zone layouts.
 - [ ] Minimal automated checks: wrap table lengths, PF 64 rows, zone map 128 bytes.
 
-## Phase C — Expand levels (user’s next goal)
+## Phase C — Movie sites (in progress)
 
-**Do not mutate screens 0–5** once B is “good enough.” Add new site IDs ≥ 9 (8 is TITLE) or a `worldId` wrapper: world 0 = original, world 1+ = expansions.
+**Do not mutate screens 0–5.** World 1 uses `ID.CAMP` (9) + `campaign.js` (34 sequences in film order).
 
-Suggested expansion contract:
+Each scene: `id`, `title`, `hint`, `pal`, `pf()`, `spawn`, optional `items` / `flower` / `beer` / `hotspots` / `keys` / `elliott` / `scientist` / `ghostFire` / `flyFire` / `wrapRightLap` / `mothershipDrop` / `phonesReady` / `drain`, plus `win` and `need`.
 
-1. Each site declares: `id`, `pf1`, `pf2`, `bg`/`pf` colors, `wrap` {N,S,E,W → screen + optional spawn x/y}, `pits` (collision recipe or PF-only), `candy` {x,y,bit}, `zoneMap` index or inline 8 bytes.
-2. `callHomeScreenId` and landing site must exist in that world.
-3. Still exactly three phone pieces unless a world explicitly sets `phoneCount`.
-4. Humans: reuse AI; optionally add spawn buildings as extra DC-like rooms.
-5. Keep energy economy unless the world sets `energyStart` / `fallCost` overrides.
-6. UI: world/level select next to variation 1–3, default world 0 = authentic cart.
+Win types: collect, collect-east, survive, stay-landing, stay-call, heal-flower, heal-elliott, touch-elliott, reach-north/south/east, land-ship, elliott-escape, laps.
 
-First expansion ideas (only after data-driven screens):
-
-- Extra well layouts (copy four-diamond math, new PF art).
-- A second forest with a different landing timer.
-- A “night Washington” with tighter human `HUMAN_YMAX`.
-- Multi-round campaign: beating HOME on world 0 unlocks world 1 without changing original scoring.
+Still to tighten: call-ship + landing on sites 25 and 34; Halloween sheet vs FBI; ditch energy so the player can still crawl out.
 
 ## Phase D — Polish / ship
 

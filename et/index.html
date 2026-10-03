@@ -10,7 +10,7 @@
   <div class="wrap">
     <header>
       <h1>E.T. the Extra-Terrestrial</h1>
-      <p class="sub">Atari 2600 remake — help E.T. phone home</p>
+      <p class="sub">Atari 2600 remake — 1982 cart, or every sequence from the film</p>
     </header>
     <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
     <div class="hud-help">
@@ -20,6 +20,15 @@
         <strong>Levitate</strong> Fire + Up in a well
       </div>
       <div class="row">
+        <label>World
+          <select id="world">
+            <option value="0">1982 cart (six sites)</option>
+            <option value="1">Movie — 34 sequences</option>
+          </select>
+        </label>
+        <label>Sequence
+          <select id="scene"></select>
+        </label>
         <label>Variation
           <select id="variation">
             <option value="1">1 — Elliott, FBI, Scientist</option>
@@ -41,10 +50,11 @@
         </label>
         <button id="startBtn" type="button">Reset / Start</button>
       </div>
-      <p class="hint">Collect 3 phone pieces, call the ship from a call-ship zone, then stand on the forest landing pad. Candy restores energy. Wells hide pieces — Fire uses the power shown at the top.</p>
+      <p class="hint" id="hint">Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.</p>
     </div>
   </div>
   <script src="gfx.js"></script>
+  <script src="campaign.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

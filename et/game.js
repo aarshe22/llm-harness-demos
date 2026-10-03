@@ -11,6 +11,7 @@
     PIT: 6,
     HOME: 7,
     TITLE: 8,
+    CAMP: 9,
   };
 
   const ZONE = {
@@ -207,9 +208,12 @@
     eatAnim: 0,
     homeElliottDir: 0,
     scoringPhase: 0,
+    world: 0,
+    camp: null,
   };
 
   function pfFor(screen) {
+    if (G.world === 1 && G.camp && G.camp.pf1) return [G.camp.pf1, G.camp.pf2];
     const gfx = window.ET_GFX.pf;
     const [a, b] = PF_KEY[Math.min(screen, 8)];
     return [gfx[a], gfx[b]];
@@ -234,6 +238,7 @@
   }
 
   function etHitsPlayfield() {
+    if (G.world === 1) return false;
     if (G.screen >= ID.FOREST) return false;
     const spr = window.ET_GFX.sprites.ETWalkSprite_A0;
     for (let row = 0; row < spr.length; row++) {
@@ -256,6 +261,12 @@
     if (G.screen === ID.PIT) {
       if (G.objInPit === (0x80 | OBJ.FLOWER) && Math.abs(G.et.x - 41) < 16) return ZONE.FLOWER;
       return ZONE.PIT;
+    }
+    if (G.world === 1 && G.camp && G.camp.hotspots) {
+      for (const h of G.camp.hotspots) {
+        if (G.et.x >= h.x && G.et.x <= h.x + h.w && G.et.y >= h.y && G.et.y <= h.y + h.h) return h.zone;
+      }
+      return ZONE.BLANK;
     }
     if (G.screen >= ID.PIT) return ZONE.BLANK;
     let idx = (G.et.x >> 3) & 0x0c;
@@ -321,7 +332,224 @@
     if (dead) G.playerDead = true;
   }
 
+  function loadCampaignScene(idx) {
+    const spec = window.ET_CAMPAIGN.scenes[idx];
+    const pf = spec.pf();
+    G.campScene = idx;
+    G.camp = {
+      spec,
+      pf1: pf.pf1,
+      pf2: pf.pf2,
+      pal: spec.pal,
+      items: spec.items ? spec.items() : [],
+      need: spec.need || 0,
+      got: 0,
+      flower: spec.flower ? Object.assign({ healed: false }, spec.flower) : null,
+      beer: spec.beer ? Object.assign({}, spec.beer) : null,
+      hotspots: spec.hotspots || null,
+      ghostFire: !!spec.ghostFire,
+      flyFire: !!spec.flyFire,
+      wrapRightLap: !!spec.wrapRightLap,
+      keys: !!spec.keys,
+      drain: spec.drain || 0,
+      win: spec.win,
+      drunk: 0,
+      flying: false,
+      ghost: false,
+      laps: 0,
+      touchedElliott: false,
+      victory: 0,
+      beerGot: false,
+      alive: 0,
+      stay: 0,
+      hitStun: 0,
+    };
+    G.screen = ID.CAMP;
+    G.et.pit = 0;
+    G.et.neck = 0;
+    G.et.carried = false;
+    G.et.run = false;
+    G.et.x = spec.spawn.x;
+    G.et.y = spec.spawn.y;
+    G.playerDead = false;
+    G.elliottRevive = false;
+    G.landingTimer = -1;
+    G.mothership = spec.mothershipDrop ? 0x84 : 0;
+    if (spec.mothershipDrop) {
+      G.et.y = 244 & 255;
+      G.shipX = 56;
+      G.shipY = 240;
+    }
+    if (spec.phonesReady) {
+      G.phones = [0x80, 0x80, 0x80];
+      G.callHome = ID.CAMP;
+    } else G.phones = [0, 0, 0];
+    G.heldCandy = 0x0a;
+    G.candyY = 127;
+    G.energyHi = MAX_ENERGY;
+    G.energyLo = MAX_ENERGY;
+    G.humans.forEach((h) => {
+      h.attr = 0xff;
+      h.screen = -1;
+    });
+    G.currentObj = -1;
+    if (spec.keys) {
+      G.humans[0].screen = ID.CAMP;
+      G.humans[0].x = 100;
+      G.humans[0].y = 20;
+      G.humans[0].attr = 0x0f;
+      G.currentObj = 0;
+    }
+    if (spec.scientist) {
+      G.humans[2].screen = ID.CAMP;
+      G.humans[2].x = 80;
+      G.humans[2].y = 18;
+      G.humans[2].attr = 0x0f;
+      G.currentObj = 2;
+    }
+    if (spec.elliott) {
+      G.humans[1].screen = ID.CAMP;
+      G.humans[1].x = 100;
+      G.humans[1].y = 40;
+      G.humans[1].attr = 0x0f;
+      G.currentObj = 1;
+    }
+    beep(220, 0.15, 0.04, "square");
+  }
+
+  function campaignAdvance() {
+    G.score += 800 + (G.camp.got || 0) * 50;
+    const next = (G.campScene || 0) + 1;
+    if (next >= window.ET_CAMPAIGN.count) {
+      G.campScene = next;
+      G.screen = ID.HOME;
+      G.scoringPhase = 0;
+      G.frame = 0;
+      return;
+    }
+    loadCampaignScene(next);
+  }
+
+  function campaignWinCheck() {
+    if (!G.camp || G.camp.victory) return;
+    const c = G.camp;
+    let ok = false;
+    if (c.win === "collect") ok = c.got >= c.need;
+    else if (c.win === "collect-east") ok = c.got >= c.need && G.et.x > 96;
+    else if (c.win === "collect-elliott") ok = c.got >= c.need && c.touchedElliott;
+    else if (c.win === "collect-flower") ok = c.got >= c.need && c.flower && c.flower.healed;
+    else if (c.win === "heal-flower") ok = !!(c.flower && c.flower.healed);
+    else if (c.win === "heal-elliott") ok = !!(c.touchedElliott && (G.et.neck & 0x80));
+    else if (c.win === "touch-elliott") ok = !!c.touchedElliott;
+    else if (c.win === "reach-north") ok = G.et.y < 8;
+    else if (c.win === "reach-south") ok = G.et.y > 50;
+    else if (c.win === "reach-east") ok = G.et.x > 100;
+    else if (c.win === "survive") ok = (c.alive || 0) >= c.need;
+    else if (c.win === "stay-landing") ok = (c.stay || 0) >= c.need;
+    else if (c.win === "stay-call") ok = (c.stay || 0) >= c.need;
+    else if (c.win === "land-ship") ok = (G.mothership & 0x40) !== 0;
+    else if (c.win === "elliott-escape") ok = c.touchedElliott && G.et.x < 18;
+    else if (c.win === "laps") ok = c.laps >= c.need;
+    if (ok) {
+      c.victory = 70;
+      beep(440, 0.25, 0.05, "square");
+    }
+  }
+
+  function campaignTick(joy) {
+    const c = G.camp;
+    if (!c) return;
+    if (c.wrapRightLap && (G.et.x & 255) >= XMAX) {
+      G.et.x = 2;
+      c.laps++;
+      beep(200, 0.08);
+    } else {
+      G.et.x = Math.max(0, Math.min(XMAX, G.et.x));
+    }
+    if ((G.et.y & 255) > ET_YMAX && G.et.y < 128) G.et.y = ET_YMAX;
+    if (c.hitStun > 0) c.hitStun--;
+    G.zone = powerZoneAt();
+    if (c.win === "stay-landing" && G.zone === ZONE.LANDING) c.stay = (c.stay || 0) + 1;
+    if (c.win === "stay-call" && G.zone === ZONE.CALL_ELLIOTT) c.stay = (c.stay || 0) + 1;
+    c.ghost = !!(c.ghostFire && joy.fire);
+    if (c.flyFire && joy.fire) {
+      c.flying = true;
+      G.et.y = Math.max(4, (G.et.y & 255) - 1);
+      G.et.x += 1;
+    } else c.flying = false;
+    if (c.drunk > 0) {
+      c.drunk--;
+      if ((G.frame & 7) === 0) {
+        G.et.x = Math.max(0, Math.min(XMAX, G.et.x + ((G.frame & 2) ? 1 : -1)));
+      }
+    }
+    if (c.drain && (G.frame & 7) === 0) decrementEnergy(0, c.drain);
+    for (const it of c.items) {
+      if (it.got) continue;
+      if (Math.abs(G.et.x + 4 - it.x) < 8 && Math.abs(G.et.y + 4 - it.y) < 8) {
+        it.got = true;
+        c.got++;
+        if (it.kind === "candy" || it.kind === "frog") {
+          if ((G.heldCandy & 0xf0) < MAX_HOLD_CANDY) G.heldCandy += 0x10;
+        }
+        if (it.kind === "part") G.phones[Math.min(2, c.got - 1)] = 0x80;
+        beep(it.kind === "frog" ? 520 : 660, 0.08);
+      }
+    }
+    if (c.beer && !c.beerGot && Math.abs(G.et.x - c.beer.x) < 10 && Math.abs(G.et.y - c.beer.y) < 10) {
+      c.beerGot = true;
+      c.drunk = 240;
+      decrementEnergy(0, 0x40);
+      beep(90, 0.2, 0.05, "triangle");
+    }
+    if (c.flower && !c.flower.healed && Math.abs(G.et.x - c.flower.x) < 12 && Math.abs(G.et.y - c.flower.y) < 12) {
+      if (G.et.neck & 0x80) {
+        c.flower.healed = true;
+        G.flower |= 0x80;
+        beep(480, 0.15);
+      }
+    }
+    if (c.spec.elliott && G.humans[1].screen === ID.CAMP && etHitsSprite(G.humans[1].x, G.humans[1].y, 8, 11)) {
+      c.touchedElliott = true;
+    }
+    if (c.win === "heal-elliott" && c.touchedElliott && (G.et.neck & 0x80) && !c.healedElliott) {
+      c.healedElliott = true;
+      incrementEnergy(0x03, 0x00);
+    }
+    if (c.win === "land-ship" || c.win === "goodbye") {
+      G.callHome = ID.CAMP;
+      if (c.win === "goodbye" && G.zone === ZONE.LANDING && G.landingTimer < 0 && (G.phones[0] & 0x80)) {
+        G.phones = [0x80, 0x80, 0x80];
+      }
+    }
+    campaignWinCheck();
+    if (c.victory > 0) {
+      c.victory--;
+      if (c.victory === 0) campaignAdvance();
+    }
+  }
+
   function startRound(newGame) {
+    G.world = Number(document.getElementById("world").value) || 0;
+    if (G.world === 1) {
+      if (newGame) {
+        G.extraCandy = 16;
+        G.lost = false;
+        G.tries = INIT_TRIES - 1;
+        G.playerDead = false;
+        G.elliottRevive = false;
+        G.collectedCandy = 0;
+        G.score = 3;
+        G.et.pit = 0;
+        G.et.neck = 0;
+        G.et.carried = false;
+        G.campScene = Number(document.getElementById("scene").value) || 0;
+      }
+      loadCampaignScene(G.campScene || 0);
+      const hint = document.getElementById("hint");
+      if (hint && G.camp && G.camp.spec.hint) hint.textContent = G.camp.spec.hint;
+      return;
+    }
     if (newGame) {
       G.extraCandy = 16;
       G.lost = false;
@@ -410,12 +638,31 @@
   }
 
   function collideHumans() {
-    if (G.screen === ID.PIT || G.screen >= ID.HOME) return;
+    if (G.screen === ID.PIT || G.screen === ID.HOME || G.screen === ID.TITLE) return;
+    if (G.world === 1 && G.camp && G.camp.ghost) return;
+    const tryHit = (h) => {
+      if (!h || h.screen !== G.screen) return;
+      if (h.attr & 0x80) return;
+      if (!etHitsSprite(h.x, h.y, 8, HUMAN_H[h.id])) return;
+      applyHumanHit(h);
+    };
+    if (G.world === 1 && G.screen === ID.CAMP) {
+      G.humans.forEach(tryHit);
+      return;
+    }
     if (G.currentObj < 0 || G.currentObj > 2) return;
-    const h = G.humans[G.currentObj];
-    if (h.screen !== G.screen) return;
-    if (h.attr & 0x80) return;
-    if (!etHitsSprite(h.x, h.y, 8, HUMAN_H[h.id])) return;
+    tryHit(G.humans[G.currentObj]);
+  }
+
+  function applyHumanHit(h) {
+    if (G.world === 1 && G.camp && (h.id === OBJ.FBI || h.id === OBJ.SCIENTIST)) {
+      if (G.camp.hitStun > 0) return;
+      G.camp.hitStun = 45;
+      decrementEnergy(0, h.id === OBJ.FBI ? 0x50 : 0x30);
+      G.et.x = Math.max(0, Math.min(XMAX, G.et.x + (h.id === OBJ.FBI ? -12 : 12)));
+      beep(100, 0.12);
+      return;
+    }
     if (h.id === OBJ.FBI) {
       takePhoneOrCandyByFBI();
       h.attr |= 0x80;
@@ -817,7 +1064,7 @@
     if (G.mothership & 0x80) {
       updateMothership();
       G.zone = powerZoneAt();
-      return;
+      if (G.world !== 1) return;
     }
 
     if ((G.frame === 0) && G.selection < 3 && G.humans[0].screen < 0 && !G.et.carried) {
@@ -935,6 +1182,8 @@
     steerHumans();
     updateHumans();
 
+    if (G.world === 1 && G.camp) campaignTick(joy);
+
     if (G.landingTimer >= 0 && (G.frame & 0x1f) === 0) {
       G.landingTimer--;
       if (G.landingTimer < 0) {
@@ -990,6 +1239,10 @@
       beep(400, 0.08);
     }
     if (G.scoringPhase === 1 && G.collectedCandy === 0 && (joy.fireEdge || joy.fire) && !G.lost) {
+      if (G.world === 1 && (G.campScene || 0) >= window.ET_CAMPAIGN.count) {
+        G.screen = ID.TITLE;
+        return;
+      }
       startRound(false);
     }
     if (G.lost && joy.fireEdge) {
@@ -1021,8 +1274,8 @@
 
   function drawPF(screen) {
     const [pf1, pf2] = pfFor(screen);
-    const bg = ntsc(BG_COLORS[Math.min(screen, 8)]);
-    const fg = ntsc(PF_COLORS[Math.min(screen, 8)]);
+    const bg = ntsc((G.world === 1 && G.camp && G.camp.pal) ? G.camp.pal.bg : BG_COLORS[Math.min(screen, 8)]);
+    const fg = ntsc((G.world === 1 && G.camp && G.camp.pal) ? G.camp.pal.pf : PF_COLORS[Math.min(screen, 8)]);
     ctx.fillStyle = bg;
     ctx.fillRect(0, 24 * SCALE, FIELD_W * SCALE, 128 * SCALE);
     ctx.fillStyle = fg;
@@ -1100,6 +1353,10 @@
       ctx.fillStyle = ntsc(0xce);
       ctx.font = `${12 * SCALE}px monospace`;
       ctx.fillText("PRESS FIRE", 36 * SCALE, 140 * SCALE);
+      const worldEl = document.getElementById("world");
+      const movie = worldEl && worldEl.value === "1";
+      ctx.font = `${6 * SCALE}px monospace`;
+      ctx.fillText(movie ? "MOVIE SITES" : "1982 CART", 48 * SCALE, 152 * SCALE);
       drawDigit(G.selection, 76, 170);
       drawIcon(6, 20, 4, ntsc(0x9c));
       return;
@@ -1131,6 +1388,25 @@
       const cx = 16 + Math.round(G.candyX * (128 / 120));
       ctx.fillRect(cx * SCALE, (24 + G.candyY * 2) * SCALE, 4 * SCALE, 4 * SCALE);
     }
+    if (G.world === 1 && G.camp) {
+      const kindColor = { plant: 0x3a, candy: 0x4e, toy: 0x2e, part: 0x9e, frog: 0xce, orb: 0x9e };
+      for (const it of G.camp.items) {
+        if (it.got) continue;
+        ctx.fillStyle = ntsc(kindColor[it.kind] || 0x4e);
+        const ix = 16 + Math.round(it.x * (128 / 120));
+        ctx.fillRect(ix * SCALE, (24 + it.y * 2) * SCALE, 5 * SCALE, 5 * SCALE);
+      }
+      if (G.camp.beer && !G.camp.beerGot) {
+        ctx.fillStyle = ntsc(0x2e);
+        const bx = 16 + Math.round(G.camp.beer.x * (128 / 120));
+        ctx.fillRect(bx * SCALE, (24 + G.camp.beer.y * 2) * SCALE, 6 * SCALE, 8 * SCALE);
+      }
+      if (G.camp.flower) {
+        const fr = G.camp.flower.healed ? 3 : 0;
+        const spr = window.ET_GFX.sprites[`Flower_A${fr}`] || window.ET_GFX.sprites.Flower_A0;
+        drawSprite(spr, G.camp.flower.x, G.camp.flower.y, ntsc(G.camp.flower.healed ? 0x3e : 0x22));
+      }
+    }
     if (G.hiddenPhoneY < 64) {
       ctx.fillStyle = ntsc(0x1e);
       const hx = 16 + Math.round(G.hiddenPhoneX * (128 / 120));
@@ -1157,7 +1433,9 @@
       drawSprite(humanSprite(h), h.x, h.y, ntsc(col), false, 2);
     };
     if (G.screen === ID.HOME) drawHuman(G.humans[1]);
-    else if (G.currentObj >= 0 && G.currentObj <= 2 && G.humans[G.currentObj].screen === G.screen) {
+    else if (G.screen === ID.CAMP) {
+      G.humans.forEach((h) => { if (h.screen === ID.CAMP) drawHuman(h); });
+    } else if (G.currentObj >= 0 && G.currentObj <= 2 && G.humans[G.currentObj].screen === G.screen) {
       drawHuman(G.humans[G.currentObj]);
     }
 
@@ -1194,6 +1472,20 @@
       drawBcdPair(G.energyHi, 48, 168);
       drawBcdPair(G.energyLo, 64, 168);
     }
+    if (G.world === 1 && G.camp && G.screen === ID.CAMP) {
+      ctx.fillStyle = ntsc(0x0e);
+      ctx.font = `${5 * SCALE}px monospace`;
+      ctx.fillText((G.camp.spec.title || "").slice(0, 22), 8 * SCALE, 160 * SCALE);
+      const g = G.camp.got || 0;
+      const n = G.camp.need || 0;
+      let prog = "";
+      if (n && G.camp.win.indexOf("collect") === 0) prog = g + "/" + n;
+      else if (G.camp.win === "laps") prog = (G.camp.laps || 0) + "/" + n;
+      else if (G.camp.win === "survive") prog = (G.camp.alive || 0) + "/" + n;
+      else if (G.camp.win.indexOf("stay") === 0) prog = (G.camp.stay || 0) + "/" + n;
+      if (G.camp.victory) prog = "CLEAR";
+      if (prog) ctx.fillText(prog, 120 * SCALE, 160 * SCALE);
+    }
   }
 
   function loop() {
@@ -1203,6 +1495,21 @@
   }
 
   document.getElementById("startBtn").addEventListener("click", () => startRound(true));
+  (function fillScenes() {
+    const sel = document.getElementById("scene");
+    if (!sel || !window.ET_CAMPAIGN) return;
+    sel.innerHTML = window.ET_CAMPAIGN.scenes.map((s, i) =>
+      `<option value="${i}">${s.title}</option>`).join("");
+    sel.addEventListener("change", () => {
+      if (Number(document.getElementById("world").value) === 1) startRound(true);
+    });
+    document.getElementById("world").addEventListener("change", () => {
+      const hint = document.getElementById("hint");
+      if (hint && document.getElementById("world").value !== "1") {
+        hint.textContent = "Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.";
+      }
+    });
+  })();
   G.screen = ID.TITLE;
   requestAnimationFrame(loop);
 })();

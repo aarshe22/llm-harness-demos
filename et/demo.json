@@ -4,5 +4,5 @@
   "harness": "Cursor",
   "maxContextWindow": null,
   "updated": "2026-10-03",
-  "notes": "Atari 2600 E.T. remake in vanilla JS/canvas from the 1982 manual and Debro disassembly. ROM/PDF not in git. Next: fidelity gaps then extra levels (see PLAN.md)."
+  "notes": "1982 six-site cart remake plus 34 movie-sequence sites (World dropdown). ROM/PDF not in git."
 }
