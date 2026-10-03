@@ -23,6 +23,43 @@ export function clamp(v, a, b) {
   return Math.min(b, Math.max(a, v));
 }
 
+/** Visual fidelity multiplier. Cheap default is 1; 8 is richest meshes. */
+export function clampFidelity(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(8, Math.max(1, Math.round(n)));
+}
+
+/** Mesh / silhouette knobs. Level 1 matches the cheap prototype look. */
+export function fidelityProfile(level) {
+  const f = clampFidelity(level);
+  return {
+    level: f,
+    mothBodySeg: f === 1 ? 12 : 8 + f * 4,
+    mothBodyRings: f === 1 ? 10 : 8 + f * 3,
+    mothWings: f <= 2 ? 2 : 4,
+    mothAntennae: f >= 3,
+    mothWingVeins: f >= 4,
+    mothWingGeo: f === 1 ? "plane" : f < 5 ? "rounded" : "shaped",
+    mothAbdomen: f >= 3,
+    mothHaloSeg: f === 1 ? 12 : 10 + f * 2,
+    treeNearSeg: f === 1 ? 8 : Math.min(24, 6 + f * 2),
+    treeFarSeg: f === 1 ? 5 : Math.min(14, 4 + f),
+    treeCanopy: f >= 4,
+    plantSeg: f === 1 ? 6 : Math.min(18, 4 + f * 2),
+    plantRings: f === 1 ? 5 : Math.min(14, 4 + f),
+    plantShapes: f >= 3,
+    flySeg: f === 1 ? 8 : Math.min(16, 6 + f),
+    predRadial: f === 1 ? 8 : Math.min(20, 6 + f * 2),
+    predWings: f >= 3,
+    predParts: f >= 4,
+    predAnim: f >= 2,
+    barkDetail: 1 + (f - 1) * 0.4,
+    moonSeg: f === 1 ? 24 : 16 + f * 4,
+    bloomBoost: 1 + (f - 1) * 0.06,
+  };
+}
+
 export const BIOMES = {
   moonlit_grove: { name: "Moonlit Grove", glow: 0x73b2ff, trees: 0.45, flies: 1.0, dark: 0.15 },
   emerald_hollow: { name: "Emerald Hollow", glow: 0x33f273, trees: 1.0, flies: 1.1, dark: 0.2 },

@@ -19,6 +19,10 @@ func _ready() -> void:
 	var s = SphereMesh.new()
 	s.radius = 0.09 if not SettingsManager.high_visibility_collectibles else 0.16
 	s.height = s.radius * 2.0
+	var fid := GlowRules.clamp_fidelity(SettingsManager.fidelity)
+	if fid > 1:
+		s.radial_segments = mini(16, 6 + fid)
+		s.rings = mini(12, 4 + fid)
 	mesh.mesh = s
 	var m = StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

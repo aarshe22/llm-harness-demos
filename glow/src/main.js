@@ -1,10 +1,10 @@
 import * as THREE from "../vendor/three.module.js";
 import { defaultConfig, applyCalm, applyDanger, performanceWarning, applySliderPatch } from "./config.js";
-import { BIOMES, finalScore } from "./rules.js";
+import { BIOMES, finalScore, clampFidelity, fidelityProfile } from "./rules.js";
 import { createInput } from "./input.js";
 import { createAudio } from "./audio.js";
 import { LogicalTrail } from "./trail.js";
-import { createMoth, updateMoth, collectFirefly, hit, collectRadius } from "./moth.js";
+import { createMoth, updateMoth, collectFirefly, hit, collectRadius, copyMothState } from "./moth.js";
 import { createWorld, collideMoth } from "./world.js";
 import { updatePredator } from "./predators.js";
 import { createUI } from "./ui.js";
@@ -60,20 +60,21 @@ const clock = new THREE.Clock();
 let cfg = Object.assign(defaultConfig(), loadSave().custom || {});
 let preset = loadSave().preset || "default";
 let settings = Object.assign(
-  { render_scale: 1, master_volume: 0.85, invert_y: false, high_vis: false, reduced_flash: false },
+  { render_scale: 1, fidelity: 1, master_volume: 0.85, invert_y: false, high_vis: false, reduced_flash: false },
   loadSave().settings || {}
 );
+settings.fidelity = clampFidelity(settings.fidelity);
 const defaults = defaultConfig();
 void defaults;
 
 const input = createInput(canvas);
 const audio = createAudio();
-const moth = createMoth(scene);
+const moth = createMoth(scene, settings.fidelity);
 const trail = new LogicalTrail();
 trail.attach(scene);
 let world;
 try {
-  world = createWorld(scene, cfg);
+  world = createWorld(scene, cfg, settings.fidelity);
   world.stream(moth.root.position);
 } catch (err) {
   console.error(err);
@@ -82,7 +83,7 @@ try {
 }
 
 const moon = new THREE.Mesh(
-  new THREE.SphereGeometry(16 * cfg.moon_size, 24, 18),
+  new THREE.SphereGeometry(16 * cfg.moon_size, fidelityProfile(settings.fidelity).moonSeg, Math.max(12, fidelityProfile(settings.fidelity).moonSeg - 6)),
   new THREE.MeshBasicMaterial({ color: 0xd6e6ff })
 );
 moon.position.set(90, 72, -190);
@@ -206,10 +207,13 @@ const ui = createUI(overlay, {
   },
   applySettings(s) {
     Object.assign(settings, s);
+    settings.fidelity = clampFidelity(settings.fidelity);
     const save = loadSave();
     save.settings = { ...settings };
     writeSave(save);
     applyAtmosphere();
+    rebuildMothVisuals();
+    rebuildWorld();
   },
   settings: () => settings,
   resume() {
@@ -250,12 +254,22 @@ const ui = createUI(overlay, {
 function rebuildWorld() {
   if (world?.group) scene.remove(world.group);
   if (world?.mist) scene.remove(world.mist);
-  world = createWorld(scene, cfg);
+  world = createWorld(scene, cfg, settings.fidelity);
   world.stream(moth.root.position);
+}
+
+function rebuildMothVisuals() {
+  const next = createMoth(scene, settings.fidelity);
+  copyMothState(moth, next);
+  scene.remove(moth.root);
+  Object.assign(moth, next);
 }
 
 function applyAtmosphere() {
   if (renderer) renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * settings.render_scale);
+  const segs = fidelityProfile(settings.fidelity).moonSeg;
+  moon.geometry?.dispose?.();
+  moon.geometry = new THREE.SphereGeometry(16 * cfg.moon_size, segs, Math.max(12, segs - 6));
   moon.scale.setScalar(cfg.moon_size);
   moonLight.intensity = 0.18 * cfg.moon_brightness;
   audio.setMaster?.(settings.master_volume);
@@ -398,11 +412,11 @@ function tick() {
   }
   moon.rotation.y += dt * 0.01;
   tickBark(performance.now() * 0.001);
-  if (!bloom.render?.(scene, camera, settings.reduced_flash)) renderer?.render(scene, camera);
+  if (!bloom.render?.(scene, camera, settings.reduced_flash, fidelityProfile(settings.fidelity).bloomBoost)) renderer?.render(scene, camera);
   if (debugOn) {
     const b = world.currentBiome(moth.root.position);
     ui.debug(
-      `FPS ${Math.round(1 / dt)}\nxyz ${moth.root.position.x.toFixed(1)} ${moth.root.position.y.toFixed(1)} ${moth.root.position.z.toFixed(1)}\nspd ${moth.vel.length().toFixed(1)}\nbiome ${BIOMES[b]?.name}\nchunks ${world.chunks.size}\nglow ${moth.glow.toFixed(2)}\nseed ${cfg.seed_value}\n${preset}`,
+      `FPS ${Math.round(1 / dt)}\nxyz ${moth.root.position.x.toFixed(1)} ${moth.root.position.y.toFixed(1)} ${moth.root.position.z.toFixed(1)}\nspd ${moth.vel.length().toFixed(1)}\nbiome ${BIOMES[b]?.name}\nchunks ${world.chunks.size}\nglow ${moth.glow.toFixed(2)}\nfidelity x${clampFidelity(settings.fidelity)}\nseed ${cfg.seed_value}\n${preset}`,
       true
     );
   } else ui.debug("", false);

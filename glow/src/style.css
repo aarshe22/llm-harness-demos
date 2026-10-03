@@ -9,9 +9,10 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.45 "Avenir Next", system-ui, sans-serif; }
 #view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
 .safe { position: fixed; inset: 0; pointer-events: none; padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
-.safe * { pointer-events: auto; }
+.safe > :not(.touch) { pointer-events: auto; }
+.safe .panel, .safe .hud-top, .safe .hud-top * { pointer-events: auto; }
 .hidden { display: none !important; }
-.hud-top { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.hud-top { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; position: relative; z-index: 5; }
 .flies { font-size: 28px; letter-spacing: 0.08em; text-shadow: 0 0 18px #9be7ff; }
 .biome { color: var(--muted); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
 .energy { width: 72px; height: 7px; background: #12202c; border-radius: 99px; overflow: hidden; }
@@ -42,18 +43,26 @@ label { display: block; margin: 8px 0; color: var(--muted); font-size: 12px; let
 input[type=range] { width: 100%; }
 .warn { color: #f6c; font-size: 12px; min-height: 1.2em; }
 #stats { color: var(--ink); font: 13px/1.6 ui-monospace, monospace; }
-.touch { position: absolute; inset: 0; pointer-events: none; }
-.touch .joy, .touch .steer, .touch .btns { pointer-events: auto; }
+.touch {
+  position: absolute; left: 0; right: 0; bottom: 0; top: auto;
+  height: min(168px, 28vh);
+  pointer-events: none;
+  z-index: 2;
+}
+.touch .joy, .touch .steer, .touch .btns, .touch .btns button { pointer-events: auto; }
 .joy {
-  position: absolute; left: 18px; bottom: 28px; width: 120px; height: 120px;
-  border-radius: 50%; background: #9be7ff22; border: 1px solid #9be7ff44;
+  position: absolute; left: 8px; bottom: 8px; width: 72px; height: 72px;
+  border-radius: 50%; background: #9be7ff1f; border: 1px solid #9be7ff44;
 }
 .steer {
-  position: absolute; right: 10px; top: 28%; width: 42vw; height: 40vh;
-  background: #fff4; border-radius: 16px;
+  position: absolute; left: 88px; bottom: 8px; width: 72px; height: 72px;
+  border-radius: 50%; background: #9be7ff14; border: 1px solid #9be7ff33;
 }
-.btns { position: absolute; right: 12px; bottom: 22px; display: grid; gap: 8px; }
-.btns button { width: 92px; padding: 10px 8px; font-size: 11px; opacity: 0.7; }
+.btns {
+  position: absolute; right: 6px; bottom: 6px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+}
+.btns button { width: 58px; margin: 0; padding: 7px 4px; font-size: 10px; opacity: 0.88; }
 @media (orientation: portrait) {
   h1 { font-size: 36px; }
   .panel { top: 42%; }

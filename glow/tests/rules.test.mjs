@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude } from "../src/rules.js";
+import { detectionScore, trailInterest, finalScore, overglowReady, pickBiome, lodTreeSplit, altitudeBand, wildlifeAltitude, clampFidelity, fidelityProfile } from "../src/rules.js";
 import { defaultConfig, SLIDER_DEFS, applySliderPatch, readSliderValue } from "../src/config.js";
 
 test("detection falls off with distance", () => {
@@ -47,6 +47,41 @@ test("custom sliders cover config and biome weights", () => {
   applySliderPatch(cfg, { tree_density: 2.5, "bw.blackwood": 2 });
   assert.equal(cfg.tree_density, 2.5);
   assert.equal(readSliderValue(cfg, "bw.blackwood"), 2);
+});
+
+test("fidelity multiplier clamps to 1–8 and defaults to 1", () => {
+  assert.equal(clampFidelity(undefined), 1);
+  assert.equal(clampFidelity(null), 1);
+  assert.equal(clampFidelity("nope"), 1);
+  assert.equal(clampFidelity(0), 1);
+  assert.equal(clampFidelity(-3), 1);
+  assert.equal(clampFidelity(1), 1);
+  assert.equal(clampFidelity(4.4), 4);
+  assert.equal(clampFidelity(4.6), 5);
+  assert.equal(clampFidelity(8), 8);
+  assert.equal(clampFidelity(9), 8);
+  assert.equal(clampFidelity("3"), 3);
+});
+
+test("x1 fidelity stays cheap; x8 is richer", () => {
+  const cheap = fidelityProfile(1);
+  const rich = fidelityProfile(8);
+  assert.equal(cheap.level, 1);
+  assert.equal(cheap.treeNearSeg, 8);
+  assert.equal(cheap.treeFarSeg, 5);
+  assert.equal(cheap.mothBodySeg, 12);
+  assert.equal(cheap.mothWings, 2);
+  assert.equal(cheap.mothWingGeo, "plane");
+  assert.equal(cheap.treeCanopy, false);
+  assert.equal(cheap.plantShapes, false);
+  assert.equal(cheap.predWings, false);
+  assert.ok(rich.treeNearSeg > cheap.treeNearSeg);
+  assert.ok(rich.mothBodySeg > cheap.mothBodySeg);
+  assert.ok(rich.mothWings > cheap.mothWings);
+  assert.equal(rich.treeCanopy, true);
+  assert.equal(rich.mothAntennae, true);
+  assert.equal(rich.predParts, true);
+  assert.ok(rich.barkDetail > cheap.barkDetail);
 });
 
 test("biome pick is deterministic", () => {

@@ -107,7 +107,7 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	cyl.top_radius = 1.0
 	cyl.bottom_radius = 1.15
 	cyl.height = 1.0
-	cyl.radial_segments = 6
+	cyl.radial_segments = 6 if GlowRules.clamp_fidelity(SettingsManager.fidelity) <= 1 else mini(24, 6 + GlowRules.clamp_fidelity(SettingsManager.fidelity) * 2)
 	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = cyl
@@ -149,6 +149,10 @@ func _plants(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	var sph = SphereMesh.new()
 	sph.radius = 1.0
 	sph.height = 2.0
+	var fid := GlowRules.clamp_fidelity(SettingsManager.fidelity)
+	if fid > 1:
+		sph.radial_segments = mini(24, 6 + fid * 2)
+		sph.rings = mini(16, 4 + fid)
 	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = sph

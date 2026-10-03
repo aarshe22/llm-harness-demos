@@ -101,6 +101,17 @@ func _build() -> void:
 		sliders[pair[0]] = sl
 	warn_label = Label.new()
 	custom.add_child(warn_label)
+	var fid_lab = Label.new()
+	fid_lab.text = "FIDELITY BOOST"
+	custom.add_child(fid_lab)
+	var fid_sl = HSlider.new()
+	fid_sl.min_value = 1
+	fid_sl.max_value = 8
+	fid_sl.step = 1
+	fid_sl.value = GlowRules.clamp_fidelity(SettingsManager.fidelity)
+	fid_sl.custom_minimum_size = Vector2(280, 16)
+	custom.add_child(fid_sl)
+	sliders["fidelity"] = fid_sl
 	_btn(custom, "APPLY", _apply_custom)
 	_btn(custom, "RESET TO DEFAULTS", func(): GameConfigManager.reset_to_defaults(); _sync_sliders())
 	_btn(custom, "CLOSE", func(): custom.visible = false)
@@ -223,6 +234,8 @@ func _refresh() -> void:
 	title.visible = GameManager.phase == GameManager.Phase.MENU
 	pause_panel.visible = GameManager.phase == GameManager.Phase.PAUSED
 	dead_panel.visible = GameManager.phase == GameManager.Phase.DEAD
+	if touch:
+		touch.visible = DisplayServer.is_touchscreen_available() and GameManager.phase == GameManager.Phase.PLAY
 	if GameManager.phase == GameManager.Phase.DEAD:
 		var s = GameManager.final_stats()
 		dead_stats.text = "FIREFLIES %d   SURVIVAL %.0fs   DISTANCE %.0f\nESCAPED %d   NEAR MISSES %d   REGIONS %d\nOVERGLOW %d   SCORE %d   BEST %d" % [
@@ -269,14 +282,19 @@ func _input(event: InputEvent) -> void:
 func _sync_sliders() -> void:
 	var cfg = GameConfigManager.current_config
 	for k in sliders.keys():
-		if k in cfg:
+		if k == "fidelity":
+			sliders[k].value = GlowRules.clamp_fidelity(SettingsManager.fidelity)
+		elif k in cfg:
 			sliders[k].value = cfg.get(k)
 
 
 func _apply_custom() -> void:
 	var cfg = GameConfigManager.user_custom_config
 	for k in sliders.keys():
-		if k in cfg:
+		if k == "fidelity":
+			SettingsManager.fidelity = GlowRules.clamp_fidelity(sliders[k].value)
+			SettingsManager.persist()
+		elif k in cfg:
 			cfg.set(k, sliders[k].value)
 	GameConfigManager.apply_user_custom()
 	GameConfigManager.persist_custom()

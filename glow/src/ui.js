@@ -1,4 +1,15 @@
 import { SLIDER_DEFS, readSliderValue } from "./config.js";
+import { clampFidelity } from "./rules.js";
+
+/** Touch chrome is play-only and only for coarse/touch pointers. */
+export function touchOverlayVisible(phase, coarse) {
+  return phase === "play" && !!coarse;
+}
+
+export function prefersCoarsePointer() {
+  if (typeof matchMedia !== "function") return false;
+  return matchMedia("(pointer: coarse)").matches;
+}
 
 export function createUI(root, api) {
   const sections = [...new Set(SLIDER_DEFS.map((s) => s.section))];
@@ -44,6 +55,10 @@ export function createUI(root, api) {
       <div class="panel hidden" id="settings">
         <h2>SETTINGS</h2>
         <label>Render scale <input type="range" id="render_scale" min="0.5" max="1.25" step="0.05"></label>
+        <label>Fidelity boost <span id="fidelityVal">x1</span>
+          <input type="range" id="fidelity" min="1" max="8" step="1">
+        </label>
+        <p class="help">x1 is the cheap default look. Higher multipliers use richer moth, predator, and forest meshes (applies now).</p>
         <label>Master volume <input type="range" id="master_volume" min="0" max="1" step="0.05"></label>
         <label class="check"><input type="checkbox" id="invert_y"> Invert look Y</label>
         <label class="check"><input type="checkbox" id="high_vis"> High-visibility fireflies</label>
@@ -98,9 +113,13 @@ export function createUI(root, api) {
     sync();
   };
   $("#closeCustom").onclick = () => show("title");
+  $("#fidelity").oninput = () => {
+    $("#fidelityVal").textContent = `x${clampFidelity($("#fidelity").value)}`;
+  };
   $("#applySettings").onclick = () => {
     api.applySettings({
       render_scale: Number($("#render_scale").value),
+      fidelity: clampFidelity($("#fidelity").value),
       master_volume: Number($("#master_volume").value),
       invert_y: $("#invert_y").checked,
       high_vis: $("#high_vis").checked,
@@ -114,17 +133,27 @@ export function createUI(root, api) {
   $("#again").onclick = () => api.again();
   $("#deadMenu").onclick = () => api.menu();
 
+  function coarseNow() {
+    return prefersCoarsePointer();
+  }
+
+  function syncTouch(phase) {
+    $("#touch").classList.toggle("hidden", !touchOverlayVisible(phase, coarseNow()));
+  }
+
   function show(name) {
     for (const id of ["title", "custom", "settings", "pause", "dead"]) {
       $("#" + id).classList.toggle("hidden", id !== name);
     }
     $("#hud").classList.toggle("hidden", name !== "play");
+    syncTouch(name);
   }
 
   function setPhase(phase) {
     if (phase === "play") {
       for (const id of ["title", "custom", "settings", "pause", "dead"]) $("#" + id).classList.add("hidden");
       $("#hud").classList.remove("hidden");
+      syncTouch("play");
     } else show(phase);
   }
 
@@ -138,6 +167,8 @@ export function createUI(root, api) {
     $("#warn").textContent = api.warning();
     const s = api.settings();
     $("#render_scale").value = s.render_scale;
+    $("#fidelity").value = clampFidelity(s.fidelity);
+    $("#fidelityVal").textContent = `x${clampFidelity(s.fidelity)}`;
     $("#master_volume").value = s.master_volume;
     $("#invert_y").checked = s.invert_y;
     $("#high_vis").checked = s.high_vis;
@@ -159,8 +190,12 @@ export function createUI(root, api) {
     $("#debug").textContent = text;
   }
 
-  const coarse = matchMedia("(pointer: coarse)").matches;
-  $("#touch").classList.toggle("hidden", !coarse);
+  syncTouch("title");
+  const mq = typeof matchMedia === "function" ? matchMedia("(pointer: coarse)") : null;
+  mq?.addEventListener?.("change", () => {
+    const playing = $("#hud") && !$("#hud").classList.contains("hidden") && $("#title").classList.contains("hidden");
+    syncTouch(playing ? "play" : "title");
+  });
   const joy = $("#joy");
   const steer = $("#steer");
   joy.addEventListener("pointerdown", (e) => {
@@ -171,6 +206,9 @@ export function createUI(root, api) {
     if (e.buttons) api.setJoy(offset(e, joy));
   });
   joy.addEventListener("pointerup", () => api.setJoy({ x: 0, y: 0 }));
+  steer.addEventListener("pointerdown", (e) => {
+    steer.setPointerCapture(e.pointerId);
+  });
   steer.addEventListener("pointermove", (e) => {
     if (e.buttons) api.addSteer(e.movementX, e.movementY);
   });
@@ -187,8 +225,8 @@ export function createUI(root, api) {
   function offset(e, el) {
     const r = el.getBoundingClientRect();
     return {
-      x: (e.clientX - r.left - r.width / 2) / 48,
-      y: -(e.clientY - r.top - r.height / 2) / 48,
+      x: (e.clientX - r.left - r.width / 2) / 32,
+      y: -(e.clientY - r.top - r.height / 2) / 32,
     };
   }
 

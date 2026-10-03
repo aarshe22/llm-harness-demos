@@ -2,6 +2,7 @@ extends Node
 
 var graphics_preset: String = "high"
 var render_scale: float = 1.0
+var fidelity: int = 1
 var master_volume: float = 0.85
 var music_volume: float = 0.55
 var env_volume: float = 0.7
@@ -26,12 +27,14 @@ func _ready() -> void:
 		for k in saved.keys():
 			if k in self:
 				set(k, saved[k])
+	fidelity = GlowRules.clamp_fidelity(fidelity)
 
 
 func persist() -> void:
 	SaveManager.save_json("settings", {
 		"graphics_preset": graphics_preset,
 		"render_scale": render_scale,
+		"fidelity": GlowRules.clamp_fidelity(fidelity),
 		"master_volume": master_volume,
 		"music_volume": music_volume,
 		"env_volume": env_volume,

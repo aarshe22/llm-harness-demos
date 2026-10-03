@@ -68,9 +68,9 @@ export function createBloom(renderer) {
     sceneRt.setSize(w, h);
   }
 
-  function render(scene, camera, reduced) {
+  function render(scene, camera, reduced, fidelityMul = 1) {
     if (!enabled || !renderer) return false;
-    const strength = reduced ? 0.35 : 0.9;
+    const strength = (reduced ? 0.35 : 0.9) * fidelityMul;
     compose.uniforms.strength.value = strength;
     renderer.setRenderTarget(sceneRt);
     renderer.render(scene, camera);

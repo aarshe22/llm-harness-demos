@@ -14,12 +14,14 @@ void main() {
 const FRAG = /* glsl */ `
 uniform vec3 glowColor;
 uniform float pulse;
+uniform float detail;
 varying vec3 vPos;
 varying vec3 vN;
 void main() {
-  float rings = sin(vPos.y * 9.0 + vPos.x * 2.4) * sin(vPos.y * 3.1 + 1.7);
+  float d = max(detail, 1.0);
+  float rings = sin(vPos.y * 9.0 * d + vPos.x * 2.4) * sin(vPos.y * 3.1 * d + 1.7);
   float veins = smoothstep(0.42, 0.92, rings * 0.5 + 0.5);
-  float moss = smoothstep(0.15, 0.55, 0.5 + 0.5 * sin(vPos.x * 14.0 + vPos.z * 11.0));
+  float moss = smoothstep(0.15, 0.55, 0.5 + 0.5 * sin(vPos.x * 14.0 * d + vPos.z * 11.0));
   vec3 bark = vec3(0.035, 0.028, 0.02);
   vec3 crack = glowColor * (0.35 + 0.65 * pulse);
   vec3 col = mix(bark, crack, veins * 0.85);
@@ -32,13 +34,15 @@ void main() {
 
 const cache = new Map();
 
-export function barkMaterial(hex) {
-  const key = hex | 0;
+export function barkMaterial(hex, detail = 1) {
+  const d = Number(detail) || 1;
+  const key = `${hex | 0}:${d.toFixed(2)}`;
   if (cache.has(key)) return cache.get(key);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       glowColor: { value: new THREE.Color(hex) },
       pulse: { value: 1 },
+      detail: { value: d },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
