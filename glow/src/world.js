@@ -57,10 +57,10 @@ export function createWorld(scene, cfg) {
       const trunk = new THREE.Mesh(
         trunkGeo,
         new THREE.MeshStandardMaterial({
-          color: 0x0a0806,
+          color: 0x050403,
           roughness: 1,
           emissive: biome.glow,
-          emissiveIntensity: biomeId === "blackwood" ? 0.02 : 0.14,
+          emissiveIntensity: biomeId === "blackwood" ? 0.01 : 0.05,
         })
       );
       trunk.scale.set(r, h, r);

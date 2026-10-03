@@ -22,12 +22,31 @@ function writeSave(d) {
   localStorage.setItem(SAVE_KEY, JSON.stringify(d));
 }
 
+window.addEventListener("error", (e) => {
+  const n = document.createElement("pre");
+  n.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:9;color:#f88;max-width:90vw;white-space:pre-wrap";
+  n.textContent = e.message + "\n" + (e.error?.stack || "");
+  document.body.appendChild(n);
+});
+
 const canvas = document.getElementById("view");
 const overlay = document.getElementById("ui");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+} catch (err) {
+  console.error(err);
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+    ctx.fillStyle = "#05070c";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070c);
@@ -45,8 +64,15 @@ const audio = createAudio();
 const moth = createMoth(scene);
 const trail = new LogicalTrail();
 trail.attach(scene);
-let world = createWorld(scene, cfg);
-world.stream(moth.root.position);
+let world;
+try {
+  world = createWorld(scene, cfg);
+  world.stream(moth.root.position);
+} catch (err) {
+  console.error(err);
+  world = { chunks: new Map(), stream() {}, currentBiome() { return "moonlit_grove"; }, all() { return []; }, group: new THREE.Group() };
+  scene.add(world.group);
+}
 
 const moon = new THREE.Mesh(
   new THREE.SphereGeometry(16 * cfg.moon_size, 24, 18),
@@ -57,7 +83,7 @@ scene.add(moon);
 const moonLight = new THREE.DirectionalLight(0x88a0cc, 0.18 * cfg.moon_brightness);
 moonLight.position.set(40, 60, -80);
 scene.add(moonLight);
-const amb = new THREE.AmbientLight(0x102030, 0.16);
+const amb = new THREE.AmbientLight(0x081018, 0.07);
 scene.add(amb);
 
 const starGroup = new THREE.Group();
@@ -91,7 +117,7 @@ let lastNear = 0;
 function resize() {
   const w = innerWidth;
   const h = innerHeight;
-  renderer.setSize(w, h, false);
+  renderer?.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -119,12 +145,20 @@ function resetRun() {
   moth.web = 0;
 }
 
+function lockPointer() {
+  try {
+    canvas.requestPointerLock?.();
+  } catch {
+    /* headless / insecure */
+  }
+}
+
 function play() {
   audio.unlock();
   resetRun();
   phase = "play";
   paused = false;
-  canvas.requestPointerLock?.();
+  lockPointer();
   ui.setPhase("play");
 }
 
@@ -156,7 +190,7 @@ const ui = createUI(overlay, {
   resume() {
     paused = false;
     phase = "play";
-    canvas.requestPointerLock?.();
+    lockPointer();
     ui.setPhase("play");
   },
   menu() {
@@ -206,7 +240,7 @@ function togglePause() {
   paused = !paused;
   phase = paused ? "pause" : "play";
   if (paused) document.exitPointerLock?.();
-  else canvas.requestPointerLock?.();
+  else lockPointer();
   ui.setPhase(paused ? "pause" : "play");
 }
 
@@ -328,7 +362,7 @@ function tick() {
     camera.lookAt(moth.root.position);
   }
   moon.rotation.y += dt * 0.01;
-  renderer.render(scene, camera);
+  renderer?.render(scene, camera);
   if (debugOn) {
     const b = world.currentBiome(moth.root.position);
     ui.debug(
