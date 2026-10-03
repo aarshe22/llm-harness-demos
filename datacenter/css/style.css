@@ -43,16 +43,21 @@ input[type=text] { border-radius: 0; }
   background: linear-gradient(180deg, #1b1445 0%, #100c26 100%);
   border-bottom: 3px solid var(--line); z-index: 20; padding: 0 8px;
   box-shadow: 0 4px 0 #04030c;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
-.tb-logo { display: flex; align-items: center; padding: 0 14px 0 4px; font-weight: bold; color: var(--cyan); font-size: 11px; text-shadow: 2px 2px 0 #04030c; border-right: 2px solid var(--line-dim); }
+#topbar::-webkit-scrollbar { display: none; }
+#topbar .chip:first-of-type { margin-left: 2px; }
+.tb-logo { display: flex; align-items: center; padding: 0 12px 0 4px; color: var(--cyan); font-size: 9px; text-shadow: 2px 2px 0 #04030c; border-right: 2px solid var(--line-dim); flex: none; }
 .chip {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  min-width: 78px; padding: 3px 8px; border-right: 2px solid var(--line-dim); cursor: default;
+  flex: 1 1 0; min-width: 56px; padding: 3px 4px; border-right: 2px solid var(--line-dim); cursor: default; overflow: hidden;
 }
-.chip .lbl { font-size: 6px; color: var(--dim); }
-.chip .val { font-size: 10px; font-weight: bold; margin-top: 4px; text-shadow: 1px 1px 0 #04030c; }
+.chip .lbl { font-size: 6px; color: var(--dim); white-space: nowrap; }
+.chip .val { font-size: 10px; font-weight: bold; margin-top: 4px; text-shadow: 1px 1px 0 #04030c; white-space: nowrap; }
 .chip.clickable { cursor: pointer; }
 .chip.clickable:hover { background: #241a55; }
+.chip.clickable .lbl { color: var(--cyan); }
+.chip.clickable:hover .lbl { text-decoration: underline; }
 .chip.g .val { color: var(--green); }
 .chip.a .val { color: var(--amber); }
 .chip.o .val { color: var(--orange); }
@@ -60,8 +65,8 @@ input[type=text] { border-radius: 0; }
 .chip.b .val { color: var(--cyan); }
 .chip.pulse .val { animation: pulse 1s steps(2) infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-#tb-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-#tb-right button { font-size: 7px; padding: 6px 8px; }
+#tb-right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; padding-left: 8px; }
+#tb-right button { font-size: 7px; padding: 6px 8px; white-space: nowrap; }
 
 #alarmbar {
   position: absolute; left: 10px; bottom: 10px; width: 360px; height: 240px;
