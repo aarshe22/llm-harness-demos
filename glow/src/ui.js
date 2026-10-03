@@ -1,5 +1,15 @@
 import { SLIDER_DEFS, readSliderValue } from "./config.js";
 
+/** Touch chrome is play-only and only for coarse/touch pointers. */
+export function touchOverlayVisible(phase, coarse) {
+  return phase === "play" && !!coarse;
+}
+
+export function prefersCoarsePointer() {
+  if (typeof matchMedia !== "function") return false;
+  return matchMedia("(pointer: coarse)").matches;
+}
+
 export function createUI(root, api) {
   const sections = [...new Set(SLIDER_DEFS.map((s) => s.section))];
   const sliderHtml = sections
@@ -114,17 +124,27 @@ export function createUI(root, api) {
   $("#again").onclick = () => api.again();
   $("#deadMenu").onclick = () => api.menu();
 
+  function coarseNow() {
+    return prefersCoarsePointer();
+  }
+
+  function syncTouch(phase) {
+    $("#touch").classList.toggle("hidden", !touchOverlayVisible(phase, coarseNow()));
+  }
+
   function show(name) {
     for (const id of ["title", "custom", "settings", "pause", "dead"]) {
       $("#" + id).classList.toggle("hidden", id !== name);
     }
     $("#hud").classList.toggle("hidden", name !== "play");
+    syncTouch(name);
   }
 
   function setPhase(phase) {
     if (phase === "play") {
       for (const id of ["title", "custom", "settings", "pause", "dead"]) $("#" + id).classList.add("hidden");
       $("#hud").classList.remove("hidden");
+      syncTouch("play");
     } else show(phase);
   }
 
@@ -159,8 +179,12 @@ export function createUI(root, api) {
     $("#debug").textContent = text;
   }
 
-  const coarse = matchMedia("(pointer: coarse)").matches;
-  $("#touch").classList.toggle("hidden", !coarse);
+  syncTouch("title");
+  const mq = typeof matchMedia === "function" ? matchMedia("(pointer: coarse)") : null;
+  mq?.addEventListener?.("change", () => {
+    const playing = $("#hud") && !$("#hud").classList.contains("hidden") && $("#title").classList.contains("hidden");
+    syncTouch(playing ? "play" : "title");
+  });
   const joy = $("#joy");
   const steer = $("#steer");
   joy.addEventListener("pointerdown", (e) => {
@@ -171,6 +195,9 @@ export function createUI(root, api) {
     if (e.buttons) api.setJoy(offset(e, joy));
   });
   joy.addEventListener("pointerup", () => api.setJoy({ x: 0, y: 0 }));
+  steer.addEventListener("pointerdown", (e) => {
+    steer.setPointerCapture(e.pointerId);
+  });
   steer.addEventListener("pointermove", (e) => {
     if (e.buttons) api.addSteer(e.movementX, e.movementY);
   });
@@ -187,8 +214,8 @@ export function createUI(root, api) {
   function offset(e, el) {
     const r = el.getBoundingClientRect();
     return {
-      x: (e.clientX - r.left - r.width / 2) / 48,
-      y: -(e.clientY - r.top - r.height / 2) / 48,
+      x: (e.clientX - r.left - r.width / 2) / 32,
+      y: -(e.clientY - r.top - r.height / 2) / 32,
     };
   }
 
