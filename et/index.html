@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>E.T. the Extra-Terrestrial</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>E.T. the Extra-Terrestrial</h1>
+      <p class="sub">Atari 2600 remake — help E.T. phone home</p>
+    </header>
+    <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
+    <div class="hud-help">
+      <div>
+        <strong>Move</strong> arrows / WASD
+        <strong>Fire</strong> Space / Z (hold + move to run, tap in a zone to use power)
+        <strong>Levitate</strong> Fire + Up in a well
+      </div>
+      <div class="row">
+        <label>Variation
+          <select id="variation">
+            <option value="1">1 — Elliott, FBI, Scientist</option>
+            <option value="2">2 — Elliott and FBI</option>
+            <option value="3">3 — Elliott only</option>
+          </select>
+        </label>
+        <label>Human speed
+          <select id="diffRight">
+            <option value="B">B slow</option>
+            <option value="A">A fast</option>
+          </select>
+        </label>
+        <label>Landing
+          <select id="diffLeft">
+            <option value="B">B Elliott OK</option>
+            <option value="A">A Elliott blocks ship</option>
+          </select>
+        </label>
+        <button id="startBtn" type="button">Reset / Start</button>
+      </div>
+      <p class="hint">Collect 3 phone pieces, call the ship from a call-ship zone, then stand on the forest landing pad. Candy restores energy. Wells hide pieces — Fire uses the power shown at the top.</p>
+    </div>
+  </div>
+  <script src="gfx.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

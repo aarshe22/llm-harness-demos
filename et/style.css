@@ -1,0 +1,54 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: #120b14;
+  color: #e8dcc8;
+  font-family: "Gill Sans", "Trebuchet MS", sans-serif;
+}
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 12px 32px;
+}
+header { text-align: center; margin-bottom: 8px; }
+h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: 0.04em;
+  color: #9fe07a;
+}
+.sub { margin: 4px 0 12px; color: #9a8b78; font-size: 0.9rem; }
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #000;
+  border: 3px solid #3a2a18;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+}
+.hud-help {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #cbbba6;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 10px 0;
+}
+label { display: flex; gap: 6px; align-items: center; }
+select, button {
+  background: #2a1d12;
+  color: #f0e6d6;
+  border: 1px solid #6a5438;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+button { cursor: pointer; }
+.hint { color: #8e8070; }
