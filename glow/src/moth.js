@@ -28,10 +28,26 @@ export function createMoth(scene) {
   const light = new THREE.PointLight(0xd8eeff, 2.2, 10, 2);
   root.add(light);
   const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(0.28, 12, 10),
-    new THREE.MeshBasicMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.16 })
+    new THREE.SphereGeometry(0.42, 12, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xe8f6ff,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
   );
-  root.add(halo);
+  const bloomHalo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, 10, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0xb8e6ff,
+      transparent: true,
+      opacity: 0.08,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  root.add(halo, bloomHalo);
   root.position.set(24, 6, 24);
   scene.add(root);
 
@@ -42,6 +58,7 @@ export function createMoth(scene) {
     wingR,
     light,
     halo,
+    bloomHalo,
     vel: new THREE.Vector3(),
     yaw: 0,
     pitch: 0,
@@ -118,7 +135,8 @@ export function updateMoth(m, input, cfg, dt, look) {
   m.light.intensity = 1.4 * m.glow;
   m.light.distance = 8 * m.glow * cfg.player_light_radius;
   m.body.material.emissiveIntensity = 2.2 * m.glow;
-  m.halo.material.opacity = 0.08 + m.glow * 0.12;
+  m.halo.material.opacity = 0.1 + m.glow * 0.18;
+  if (m.bloomHalo) m.bloomHalo.material.opacity = 0.05 + m.glow * 0.1;
   m.invuln = Math.max(0, m.invuln - dt);
 }
 

@@ -3,5 +3,5 @@
   "modelName": "Cursor Grok 4.6",
   "harness": "Cursor",
   "updated": "2026-10-03",
-  "notes": "GLOW: endless moth survival in a bioluminescent night forest. Godot 4.3 project plus browser prototype."
+  "notes": "GLOW: moth survival. Three.js gallery demo (bark/bloom/audio/pool) plus Godot 4.3 nothreads WASM in godot-html/."
 }

@@ -100,6 +100,8 @@ toggle_fullscreen={
 
 [rendering]
 renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.web="gl_compatibility"
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
 environment/defaults/default_clear_color=Color(0.02, 0.03, 0.06, 1)
 anti_aliasing/quality/msaa_3d=1

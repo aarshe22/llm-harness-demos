@@ -10,6 +10,7 @@ if [[ ! -x "$(command -v "$GODOT")" ]]; then
 fi
 OUT="$ROOT/godot-html"
 mkdir -p "$OUT"
+# Keep the human README; Godot overwrites index.html + engine files only.
 echo "Exporting Web → $OUT/index.html with $GODOT"
 "$GODOT" --headless --path "$ROOT" --export-release Web "$OUT/index.html"
 echo "done"

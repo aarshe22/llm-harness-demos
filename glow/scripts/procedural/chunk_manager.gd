@@ -3,15 +3,22 @@ extends Node3D
 
 const Biome := preload("res://scripts/procedural/biome_manager.gd")
 
+const PoolScript := preload("res://scripts/ai/predator_pool.gd")
+const BarkShader := preload("res://shaders/bark.gdshader")
+
 var chunks: Dictionary = {}
 var moth: Node3D
 var fireflies: Array[Node3D] = []
 var predators: Array[Node3D] = []
 var rng = RandomNumberGenerator.new()
+var pool
 
 func setup(p_moth: Node3D) -> void:
 	moth = p_moth
 	rng.seed = GameConfigManager.current_config.seed_value
+	if pool == null:
+		pool = PoolScript.new()
+		add_child(pool)
 
 
 func _physics_process(_dt: float) -> void:
@@ -33,7 +40,12 @@ func _physics_process(_dt: float) -> void:
 		if not needed.has(k):
 			stale.append(k)
 	for k in stale:
-		(chunks[k] as Node).queue_free()
+		var dying = chunks[k] as Node
+		for child in dying.get_children():
+			if child.is_in_group("predator"):
+				pool.release(child)
+				predators.erase(child)
+		dying.queue_free()
 		chunks.erase(k)
 
 
@@ -100,11 +112,9 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = cyl
 	mm.instance_count = maxi(n, 1)
-	var tm = StandardMaterial3D.new()
-	tm.albedo_color = Color(0.04, 0.03, 0.025)
-	tm.emission_enabled = true
-	tm.emission = Biome.color_for(biome)
-	tm.emission_energy_multiplier = 0.05 if biome != "blackwood" else 0.01
+	var tm = ShaderMaterial.new()
+	tm.shader = BarkShader
+	tm.set_shader_parameter("glow", Biome.color_for(biome))
 	var mmi = MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = tm
@@ -199,12 +209,7 @@ func _maybe_spawn(node: Node3D, origin: Vector3, local: RandomNumberGenerator, k
 	var p = origin + Vector3(local.randf() * GameConfigManager.current_config.chunk_size, y, local.randf() * GameConfigManager.current_config.chunk_size)
 	if moth and p.distance_to(moth.global_position) < 16.0:
 		return
-	var pred_script = preload("res://scripts/ai/predator.gd")
-	var n = CharacterBody3D.new()
-	n.set_script(pred_script)
-	n.kind = kind
-	n.position = p
-	node.add_child(n)
+	var n = pool.acquire(kind, p, node)
 	predators.append(n)
 
 

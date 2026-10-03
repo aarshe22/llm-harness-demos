@@ -2,11 +2,11 @@
 
 The gallery plays the Three.js prototype at `../index.html`.
 
-This folder is the target for a Godot 4.3 **Web** export (`export_presets.cfg` → `godot-html/index.html`) so the GDScript project can be shipped as WASM without overwriting the gallery demo.
+This folder holds a **real Godot 4.3 Web (WASM) export** of the GDScript project. It does not replace the gallery demo.
+
+Preset: Web, `variant/thread_support=false` (official `web_nothreads_release` template), `vram_texture_compression/for_mobile=false` (ETC2/ASTC is not imported, which previously made `--export-release Web` fail with an empty configuration-error string).
 
 ```bash
-# Install Godot 4.3 export templates, then:
-./tools/export-web.sh
+# Official 4.3 templates in ~/.local/share/godot/export_templates/4.3.stable/
+./tools/export-web.sh   # overwrites glow/godot-html/index.* (keeps this README)
 ```
-
-Until templates are installed on the machine, `index.html` here is a launcher into the playable gallery prototype.
