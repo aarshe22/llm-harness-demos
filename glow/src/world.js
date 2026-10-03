@@ -124,7 +124,7 @@ export function createWorld(scene, cfg, fidelity = 1) {
     canopy.frustumCulled = true;
     puffs.frustumCulled = true;
     let ci = 0;
-    let pi = 0;
+    let puffI = 0;
     for (const t of root.userData.trees) {
       if (ci >= split.near) break;
       dummy.position.set(t.pos.x, t.pos.y + t.height * 0.38, t.pos.z);
@@ -135,11 +135,11 @@ export function createWorld(scene, cfg, fidelity = 1) {
       dummy.position.set(t.pos.x + t.radius * 1.1, t.pos.y + t.height * 0.48, t.pos.z + t.radius * 0.4);
       dummy.scale.set(t.radius * 2.4, t.height * 0.14, t.radius * 2.4);
       dummy.updateMatrix();
-      puffs.setMatrixAt(pi++, dummy.matrix);
+      puffs.setMatrixAt(puffI++, dummy.matrix);
       dummy.position.set(t.pos.x - t.radius * 0.9, t.pos.y + t.height * 0.32, t.pos.z - t.radius * 0.6);
       dummy.scale.set(t.radius * 2.1, t.height * 0.12, t.radius * 2.1);
       dummy.updateMatrix();
-      puffs.setMatrixAt(pi++, dummy.matrix);
+      puffs.setMatrixAt(puffI++, dummy.matrix);
     }
     canopy.instanceMatrix.needsUpdate = true;
     puffs.instanceMatrix.needsUpdate = true;
