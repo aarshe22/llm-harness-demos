@@ -11,16 +11,6 @@ export function prefersCoarsePointer() {
   return matchMedia("(pointer: coarse)").matches;
 }
 
-/** Touch chrome is play-only and only for coarse/touch pointers. */
-export function touchOverlayVisible(phase, coarse) {
-  return phase === "play" && !!coarse;
-}
-
-export function prefersCoarsePointer() {
-  if (typeof matchMedia !== "function") return false;
-  return matchMedia("(pointer: coarse)").matches;
-}
-
 export function createUI(root, api) {
   const sections = [...new Set(SLIDER_DEFS.map((s) => s.section))];
   const sliderHtml = sections
