@@ -31,11 +31,10 @@ func _apply_fidelity() -> void:
 	var f = GlowRules.clamp_fidelity(SettingsManager.fidelity)
 	if body_mesh and body_mesh.mesh is SphereMesh:
 		var sm = body_mesh.mesh as SphereMesh
-		if f > 1:
-			sm.radial_segments = mini(32, 8 + f * 4)
-			sm.rings = mini(24, 8 + f * 2)
-			body_mesh.scale = Vector3(0.92, 0.85, 1.28)
-	if f >= 3 and get_node_or_null("AntL") == null:
+		sm.radial_segments = mini(32, 16 + f * 3)
+		sm.rings = mini(24, 12 + f * 2)
+		body_mesh.scale = Vector3(0.92, 0.85, 1.28)
+	if get_node_or_null("AntL") == null:
 		var ant_mesh = CylinderMesh.new()
 		ant_mesh.top_radius = 0.003
 		ant_mesh.bottom_radius = 0.008
@@ -57,7 +56,7 @@ func _apply_fidelity() -> void:
 		ant_r.position.x = 0.04
 		ant_r.rotation_degrees.z = -20
 		add_child(ant_r)
-	if f >= 3 and get_node_or_null("HindL") == null and wing_l:
+	if get_node_or_null("HindL") == null and wing_l:
 		var hind = wing_l.duplicate()
 		hind.name = "HindL"
 		hind.scale = Vector3(0.62, 0.62, 0.62)

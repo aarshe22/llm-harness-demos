@@ -22,12 +22,12 @@ void main() {
   float rings = sin(vPos.y * 9.0 * d + vPos.x * 2.4) * sin(vPos.y * 3.1 * d + 1.7);
   float veins = smoothstep(0.42, 0.92, rings * 0.5 + 0.5);
   float moss = smoothstep(0.15, 0.55, 0.5 + 0.5 * sin(vPos.x * 14.0 * d + vPos.z * 11.0));
-  vec3 bark = vec3(0.035, 0.028, 0.02);
-  vec3 crack = glowColor * (0.35 + 0.65 * pulse);
-  vec3 col = mix(bark, crack, veins * 0.85);
-  col += glowColor * moss * 0.12;
+  vec3 bark = vec3(0.03, 0.024, 0.018);
+  vec3 crack = glowColor * (0.45 + 0.7 * pulse);
+  vec3 col = mix(bark, crack, veins * 0.92);
+  col += glowColor * moss * 0.22;
   float rim = pow(1.0 - max(dot(normalize(vN), vec3(0.0, 0.0, 1.0)), 0.0), 2.0);
-  col += glowColor * rim * 0.15;
+  col += glowColor * rim * 0.28;
   gl_FragColor = vec4(col, 1.0);
 }
 `;

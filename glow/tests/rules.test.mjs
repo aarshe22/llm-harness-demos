@@ -96,25 +96,24 @@ test("fidelity multiplier clamps to 1–8 and defaults to 1", () => {
   assert.equal(clampFidelity("3"), 3);
 });
 
-test("x1 fidelity stays cheap; x8 is richer", () => {
+test("x1 forest meshes are defined; x8 is denser", () => {
   const cheap = fidelityProfile(1);
   const rich = fidelityProfile(8);
   assert.equal(cheap.level, 1);
-  assert.equal(cheap.treeNearSeg, 8);
-  assert.equal(cheap.treeFarSeg, 5);
-  assert.equal(cheap.mothBodySeg, 12);
-  assert.equal(cheap.mothWings, 2);
-  assert.equal(cheap.mothWingGeo, "plane");
-  assert.equal(cheap.treeCanopy, false);
-  assert.equal(cheap.plantShapes, false);
-  assert.equal(cheap.predWings, false);
+  assert.ok(cheap.treeNearSeg >= 14);
+  assert.ok(cheap.floorSeg >= 16);
+  assert.equal(cheap.treeCanopy, true);
+  assert.equal(cheap.plantShapes, true);
+  assert.equal(cheap.predParts, true);
+  assert.equal(cheap.predWings, true);
+  assert.equal(cheap.mothWings, 4);
+  assert.equal(cheap.mothAbdomen, true);
+  assert.notEqual(cheap.mothWingGeo, "plane");
   assert.ok(rich.treeNearSeg > cheap.treeNearSeg);
   assert.ok(rich.mothBodySeg > cheap.mothBodySeg);
-  assert.ok(rich.mothWings > cheap.mothWings);
-  assert.equal(rich.treeCanopy, true);
-  assert.equal(rich.mothAntennae, true);
-  assert.equal(rich.predParts, true);
+  assert.ok(rich.floorSeg > cheap.floorSeg);
   assert.ok(rich.barkDetail > cheap.barkDetail);
+  assert.ok(rich.bloomBoost > cheap.bloomBoost);
 });
 
 test("biome pick is deterministic", () => {

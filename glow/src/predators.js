@@ -11,77 +11,101 @@ export function createPredator(kind, pos, fidelity = 1) {
   const p = fidelityProfile(fidelity);
   const root = new THREE.Group();
   const radial = p.predRadial;
+  const rings = Math.max(10, radial - 2);
+  const mark =
+    kind === "owl" || kind === "bobcat"
+      ? 0xff3a28
+      : kind === "frog" || kind === "dragonfly"
+        ? 0x44ff9a
+        : kind === "bat"
+          ? 0xc47cff
+          : 0xffc14d;
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0x0c0c0e,
-    emissive: kind === "owl" || kind === "bobcat" ? 0xe6281a : 0xb38033,
-    emissiveIntensity: 0.35,
-    roughness: p.level === 1 ? 0.7 : 0.45,
+    color: 0x0a0c10,
+    emissive: mark,
+    emissiveIntensity: 0.55,
+    roughness: 0.42,
   });
-  const aerial = kind === "owl" || kind === "crow";
-  const ground = kind === "bobcat" || kind === "fox";
-  let body;
-  if (aerial) {
-    body = new THREE.Mesh(
-      p.level === 1 ? new THREE.BoxGeometry(0.7, 0.35, 1.1) : new THREE.SphereGeometry(0.32, radial, Math.max(6, radial - 2)),
-      bodyMat
-    );
-    if (p.level > 1) body.scale.set(0.85, 0.7, 1.55);
-  } else if (ground) {
-    body = new THREE.Mesh(
-      p.level === 1 ? new THREE.BoxGeometry(0.7, 0.45, 1.3) : new THREE.SphereGeometry(0.34, radial, Math.max(6, radial - 2)),
-      bodyMat
-    );
-    if (p.level > 1) body.scale.set(0.7, 0.55, 1.7);
-  } else {
-    body = new THREE.Mesh(new THREE.SphereGeometry(0.26, radial, Math.max(6, p.level === 1 ? 6 : radial - 2)), bodyMat);
-  }
+  const aerial = kind === "owl" || kind === "crow" || kind === "bat";
+  const ground = kind === "bobcat" || kind === "fox" || kind === "raccoon";
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, radial, rings), bodyMat);
+  if (aerial) body.scale.set(0.9, 0.72, 1.55);
+  else if (ground) body.scale.set(0.72, 0.58, 1.75);
+  else if (kind === "frog") body.scale.set(1.05, 0.7, 1.15);
+  else if (kind === "snake") body.scale.set(0.45, 0.4, 2.4);
+  else if (kind === "dragonfly") body.scale.set(0.35, 0.28, 2.1);
+  else body.scale.set(0.75, 0.7, 1.2);
   root.add(body);
 
   const extras = [];
-  if (p.predParts) {
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, radial, Math.max(6, radial - 2)), bodyMat);
-    head.position.set(0, 0.08, -0.42);
-    root.add(head);
-    extras.push(head);
-    if (ground) {
-      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), bodyMat);
-      tail.scale.set(0.5, 0.5, 2.2);
-      tail.position.set(0, 0.05, 0.55);
-      root.add(tail);
-      extras.push(tail);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, radial, rings), bodyMat);
+  head.position.set(0, aerial ? 0.1 : 0.12, aerial ? -0.46 : -0.48);
+  root.add(head);
+  extras.push(head);
+
+  if (ground || kind === "owl") {
+    const earGeo = new THREE.ConeGeometry(0.05, 0.12, Math.max(6, Math.floor(radial / 2)));
+    const earL = new THREE.Mesh(earGeo, bodyMat);
+    const earR = earL.clone();
+    earL.position.set(-0.08, 0.22, -0.42);
+    earR.position.set(0.08, 0.22, -0.42);
+    root.add(earL, earR);
+    extras.push(earL, earR);
+  }
+  if (ground) {
+    const tail = new THREE.Mesh(new THREE.SphereGeometry(0.08, Math.max(8, radial - 4), 8), bodyMat);
+    tail.scale.set(0.5, 0.5, 2.4);
+    tail.position.set(0, 0.06, 0.62);
+    root.add(tail);
+    extras.push(tail);
+    const legGeo = new THREE.CylinderGeometry(0.035, 0.05, 0.28, Math.max(6, Math.floor(radial / 2)));
+    for (const [x, z] of [
+      [-0.14, -0.22],
+      [0.14, -0.22],
+      [-0.14, 0.28],
+      [0.14, 0.28],
+    ]) {
+      const leg = new THREE.Mesh(legGeo, bodyMat);
+      leg.position.set(x, -0.22, z);
+      root.add(leg);
+      extras.push(leg);
     }
   }
 
   let wingL = null;
   let wingR = null;
-  if (p.predWings && (aerial || kind === "bat" || kind === "dragonfly")) {
+  if (p.predWings && (aerial || kind === "dragonfly")) {
     const wMat = new THREE.MeshStandardMaterial({
-      color: 0x141418,
-      emissive: 0x331108,
-      emissiveIntensity: 0.15,
+      color: 0x101218,
+      emissive: mark,
+      emissiveIntensity: kind === "dragonfly" ? 0.7 : 0.28,
       side: THREE.DoubleSide,
-      transparent: kind === "dragonfly",
-      opacity: kind === "dragonfly" ? 0.35 : 1,
+      transparent: kind === "dragonfly" || kind === "bat",
+      opacity: kind === "dragonfly" ? 0.4 : kind === "bat" ? 0.7 : 1,
+      roughness: 0.35,
     });
-    const wGeo = new THREE.PlaneGeometry(kind === "owl" ? 0.9 : 0.7, 0.28);
+    const w = kind === "owl" ? 1.05 : kind === "dragonfly" ? 0.85 : 0.78;
+    const wGeo = new THREE.PlaneGeometry(w, kind === "bat" ? 0.42 : 0.32, 8, 4);
     wingL = new THREE.Mesh(wGeo, wMat);
     wingR = wingL.clone();
-    wingL.position.set(-0.4, 0.05, 0);
-    wingR.position.set(0.4, 0.05, 0);
+    wingL.position.set(-0.42, 0.06, 0);
+    wingR.position.set(0.42, 0.06, 0);
     root.add(wingL, wingR);
   }
 
-  const eye = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, p.level === 1 ? 6 : Math.min(12, 4 + p.level), p.level === 1 ? 6 : 8),
-    new THREE.MeshBasicMaterial({ color: 0xff2614 })
-  );
-  eye.position.set(0.12, 0.1, -0.4);
-  root.add(eye);
-  if (p.predParts) {
-    const eye2 = eye.clone();
-    eye2.position.x = -0.12;
-    root.add(eye2);
-  }
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xfff4e8,
+    emissive: 0xff2a18,
+    emissiveIntensity: 2.8,
+    roughness: 0.15,
+  });
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, Math.min(16, radial), 10), eyeMat);
+  eye.position.set(0.11, 0.12, -0.52);
+  const eye2 = eye.clone();
+  eye2.position.x = -0.11;
+  root.add(eye, eye2);
+  extras.push(eye, eye2);
+
   root.position.copy(pos);
   return {
     kind,

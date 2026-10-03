@@ -2,6 +2,7 @@ import * as THREE from "../vendor/three.module.js";
 import { BIOMES, pickBiome, hash2, lodTreeSplit, wildlifeAltitude, fidelityProfile } from "./rules.js";
 import { createPredator } from "./predators.js";
 import { barkMaterial } from "./bark.js";
+import { forestFloorMaterial } from "./floor.js";
 import { createPredatorPool } from "./pool.js";
 
 function mulberry(seed) {
@@ -25,14 +26,15 @@ function mat(key, make) {
 
 export function createWorld(scene, cfg, fidelity = 1) {
   const profile = fidelityProfile(fidelity);
-  const trunkNear = new THREE.CylinderGeometry(1, 1.15, 1, profile.treeNearSeg);
-  const trunkFar = new THREE.CylinderGeometry(1, 1.15, 1, profile.treeFarSeg);
-  const groundGeo = new THREE.BoxGeometry(1, 0.8, 1);
+  const trunkNear = new THREE.CylinderGeometry(0.85, 1.2, 1, profile.treeNearSeg);
+  const trunkFar = new THREE.CylinderGeometry(0.9, 1.18, 1, profile.treeFarSeg);
+  const groundGeo = new THREE.PlaneGeometry(1, 1, profile.floorSeg, profile.floorSeg);
   const plantGeo = new THREE.SphereGeometry(1, profile.plantSeg, profile.plantRings);
-  const capGeo = new THREE.SphereGeometry(1, profile.plantSeg, Math.max(4, profile.plantRings - 1));
-  const stemGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, Math.max(5, profile.plantSeg - 2));
-  const canopyGeo = new THREE.SphereGeometry(1, Math.max(6, profile.treeFarSeg), Math.max(5, profile.treeFarSeg - 1));
-  const flyGeo = new THREE.SphereGeometry(0.09, profile.flySeg, Math.max(6, profile.flySeg - 2));
+  const capGeo = new THREE.SphereGeometry(1, profile.plantSeg, Math.max(6, profile.plantRings - 1));
+  const stemGeo = new THREE.CylinderGeometry(0.1, 0.16, 1, Math.max(8, profile.plantSeg - 2));
+  const canopyGeo = new THREE.SphereGeometry(1, Math.max(10, profile.treeNearSeg - 4), Math.max(8, profile.treeFarSeg));
+  const puffGeo = new THREE.SphereGeometry(1, Math.max(8, profile.treeFarSeg), Math.max(6, profile.treeFarSeg - 2));
+  const flyGeo = new THREE.SphereGeometry(0.09, profile.flySeg, Math.max(8, profile.flySeg - 2));
   const chunks = new Map();
   const group = new THREE.Group();
   scene.add(group);
@@ -57,18 +59,11 @@ export function createWorld(scene, cfg, fidelity = 1) {
     const root = new THREE.Group();
     root.userData = { biomeId, trees: [], flies: [], preds: [], webs: [], solids: [], nearInst: null, farInst: null };
 
-    const ground = new THREE.Mesh(
-      groundGeo,
-      new THREE.MeshStandardMaterial({
-        color: 0x080a08,
-        roughness: 1,
-        emissive: blend,
-        emissiveIntensity: (0.03 + (1 - biome.dark) * 0.05) * (cfg.moss_density || 1),
-      })
-    );
+    const ground = new THREE.Mesh(groundGeo, forestFloorMaterial(biome.glow));
     ground.userData.ground = true;
-    ground.scale.set(cfg.chunk_size, 1, cfg.chunk_size);
-    ground.position.copy(origin).add(new THREE.Vector3(cfg.chunk_size / 2, -0.4, cfg.chunk_size / 2));
+    ground.rotation.x = -Math.PI / 2;
+    ground.scale.set(cfg.chunk_size + 0.14, cfg.chunk_size + 0.14, 1);
+    ground.position.copy(origin).add(new THREE.Vector3(cfg.chunk_size / 2, 0, cfg.chunk_size / 2));
     root.add(ground);
 
     const n = Math.floor(16 * cfg.tree_density * biome.trees);
@@ -90,7 +85,7 @@ export function createWorld(scene, cfg, fidelity = 1) {
       const p = origin.clone().add(new THREE.Vector3(rng() * cfg.chunk_size, h / 2, rng() * cfg.chunk_size));
       dummy.position.copy(p);
       dummy.scale.set(r, h, r);
-      dummy.rotation.set(0, 0, 0);
+      dummy.rotation.set((rng() - 0.5) * 0.06, rng() * Math.PI * 2, (rng() - 0.5) * 0.05);
       dummy.updateMatrix();
       if (i < split.near) {
         nearInst.setMatrixAt(ni++, dummy.matrix);
@@ -106,37 +101,56 @@ export function createWorld(scene, cfg, fidelity = 1) {
     root.userData.nearInst = nearInst;
     root.userData.farInst = farInst;
 
-    if (profile.treeCanopy) {
-      const cMat = mat("can-" + biomeId + profile.level, () =>
-        new THREE.MeshStandardMaterial({
-          color: 0x061208,
-          emissive: biome.glow,
-          emissiveIntensity: 0.22,
-          roughness: 0.85,
-        })
-      );
-      const canopy = new THREE.InstancedMesh(canopyGeo, cMat, Math.max(1, split.near));
-      canopy.count = split.near;
-      canopy.frustumCulled = true;
-      let ci = 0;
-      for (const t of root.userData.trees) {
-        if (ci >= split.near) break;
-        dummy.position.set(t.pos.x, t.pos.y + t.height * 0.42, t.pos.z);
-        dummy.scale.set(t.radius * 3.4, t.height * 0.18, t.radius * 3.4);
-        dummy.rotation.set(0, 0, 0);
-        dummy.updateMatrix();
-        canopy.setMatrixAt(ci++, dummy.matrix);
-      }
-      canopy.instanceMatrix.needsUpdate = true;
-      root.add(canopy);
+    const cMat = mat("can-" + biomeId + profile.level, () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x04100a,
+        emissive: biome.glow,
+        emissiveIntensity: 0.38,
+        roughness: 0.72,
+      })
+    );
+    const puffMat = mat("puff-" + biomeId + profile.level, () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x030c08,
+        emissive: blend,
+        emissiveIntensity: 0.28,
+        roughness: 0.8,
+      })
+    );
+    const canopy = new THREE.InstancedMesh(canopyGeo, cMat, Math.max(1, split.near));
+    const puffs = new THREE.InstancedMesh(puffGeo, puffMat, Math.max(1, split.near * 2));
+    canopy.count = split.near;
+    puffs.count = split.near * 2;
+    canopy.frustumCulled = true;
+    puffs.frustumCulled = true;
+    let ci = 0;
+    let pi = 0;
+    for (const t of root.userData.trees) {
+      if (ci >= split.near) break;
+      dummy.position.set(t.pos.x, t.pos.y + t.height * 0.38, t.pos.z);
+      dummy.scale.set(t.radius * 3.8, t.height * 0.22, t.radius * 3.8);
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      canopy.setMatrixAt(ci++, dummy.matrix);
+      dummy.position.set(t.pos.x + t.radius * 1.1, t.pos.y + t.height * 0.48, t.pos.z + t.radius * 0.4);
+      dummy.scale.set(t.radius * 2.4, t.height * 0.14, t.radius * 2.4);
+      dummy.updateMatrix();
+      puffs.setMatrixAt(pi++, dummy.matrix);
+      dummy.position.set(t.pos.x - t.radius * 0.9, t.pos.y + t.height * 0.32, t.pos.z - t.radius * 0.6);
+      dummy.scale.set(t.radius * 2.1, t.height * 0.12, t.radius * 2.1);
+      dummy.updateMatrix();
+      puffs.setMatrixAt(pi++, dummy.matrix);
     }
+    canopy.instanceMatrix.needsUpdate = true;
+    puffs.instanceMatrix.needsUpdate = true;
+    root.add(canopy, puffs);
 
     const plants = Math.floor(8 * cfg.mushroom_density + 6 * cfg.flower_density + 4 * (cfg.fern_density || 1));
     const pMat = mat("p-" + biomeId + profile.level, () =>
       new THREE.MeshStandardMaterial({
         color: 0x050508,
         emissive: biome.glow,
-        emissiveIntensity: 1.5,
+        emissiveIntensity: 2.05,
         roughness: profile.level === 1 ? 0.4 : 0.32,
       })
     );
@@ -208,7 +222,15 @@ export function createWorld(scene, cfg, fidelity = 1) {
     for (let i = 0; i < flies; i++) {
       const rare = rng() > 0.92;
       const col = rare ? 0xf259d9 : rng() > 0.6 ? 0x8cffb3 : rng() > 0.35 ? 0x73f2ff : 0xffd94d;
-      const mesh = new THREE.Mesh(flyGeo, new THREE.MeshBasicMaterial({ color: col }));
+        const mesh = new THREE.Mesh(
+          flyGeo,
+          new THREE.MeshStandardMaterial({
+            color: col,
+            emissive: col,
+            emissiveIntensity: 2.4,
+            roughness: 0.2,
+          })
+        );
       mesh.position.copy(origin).add(new THREE.Vector3(rng() * cfg.chunk_size, 1.2 + rng() * 8, rng() * cfg.chunk_size));
       mesh.userData = { t: rng() * 6, collected: false, rare, home: mesh.position.clone() };
       root.add(mesh);
