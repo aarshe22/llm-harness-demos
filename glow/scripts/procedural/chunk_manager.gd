@@ -104,8 +104,8 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	var local = RandomNumberGenerator.new()
 	local.seed = cfg.seed_value + int(origin.x) * 13 + int(origin.z) * 17
 	var cyl = CylinderMesh.new()
-	cyl.top_radius = 1.0
-	cyl.bottom_radius = 1.15
+	cyl.top_radius = 0.32
+	cyl.bottom_radius = 1.22
 	cyl.height = 1.0
 	cyl.radial_segments = mini(32, 14 + GlowRules.clamp_fidelity(SettingsManager.fidelity) * 2)
 	var mm = MultiMesh.new()
@@ -121,6 +121,11 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	mmi.visibility_range_end = 110.0
 	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	node.add_child(mmi)
+	var bases: Array[Vector3] = []
+	var heights: Array[float] = []
+	var radii: Array[float] = []
+	var pines: Array[bool] = []
+	var pine_heavy = biome in ["blackwood", "moonlit_grove", "thornwood", "mist_basin", "fallen_forest"]
 	for i in n:
 		var p = origin + Vector3(local.randf() * cfg.chunk_size, 0, local.randf() * cfg.chunk_size)
 		var h = local.randf_range(8.0, 22.0)
@@ -129,6 +134,10 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 		var r = local.randf_range(0.28, 0.7)
 		var xf = Transform3D(Basis.from_scale(Vector3(r, h, r)), p + Vector3(0, h * 0.5, 0))
 		mm.set_instance_transform(i, xf)
+		bases.append(p)
+		heights.append(h)
+		radii.append(r)
+		pines.append(local.randf() > (0.18 if pine_heavy else 0.62))
 		if i < int(n * 0.45):
 			var body = StaticBody3D.new()
 			var col = CollisionShape3D.new()
@@ -140,6 +149,50 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 			body.position = p + Vector3(0, h * 0.5, 0)
 			body.add_to_group("hard")
 			node.add_child(body)
+	var layers = 5
+	var cone = ConeMesh.new()
+	cone.bottom_radius = 1.0
+	cone.height = 1.0
+	cone.radial_segments = mini(24, 10 + GlowRules.clamp_fidelity(SettingsManager.fidelity) * 2)
+	var foliage = MultiMesh.new()
+	foliage.transform_format = MultiMesh.TRANSFORM_3D
+	foliage.mesh = cone
+	foliage.instance_count = maxi(n * layers, 1)
+	var fm = StandardMaterial3D.new()
+	fm.albedo_color = Color(0.02, 0.07, 0.04)
+	fm.emission_enabled = true
+	fm.emission = Biome.color_for(biome)
+	fm.emission_energy_multiplier = 0.45
+	fm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var fmi = MultiMeshInstance3D.new()
+	fmi.multimesh = foliage
+	fmi.material_override = fm
+	fmi.visibility_range_end = 95.0
+	node.add_child(fmi)
+	var fi = 0
+	for ti in n:
+		var base: Vector3 = bases[ti]
+		var h2: float = heights[ti]
+		var r2: float = radii[ti]
+		var is_pine: bool = pines[ti]
+		for layer in layers:
+			var u = float(layer) / float(maxi(layers - 1, 1))
+			var y: float
+			var sx: float
+			var sy: float
+			if is_pine:
+				y = base.y + h2 * (0.2 + u * 0.76)
+				sx = r2 * (4.2 - u * 3.3)
+				sy = h2 * (0.24 - u * 0.05)
+			else:
+				y = base.y + h2 * (0.16 + u * 0.64)
+				sx = r2 * (5.4 - u * 2.1)
+				sy = h2 * 0.1
+			var xf2 = Transform3D(Basis.from_scale(Vector3(sx, sy, sx)), Vector3(base.x, y, base.z))
+			foliage.set_instance_transform(fi, xf2)
+			fi += 1
+	if fi > 0:
+		foliage.visible_instance_count = fi
 
 
 func _plants(node: Node3D, origin: Vector3, biome: String, cfg) -> void:

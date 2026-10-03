@@ -12,4 +12,6 @@ test("browser modules parse and a chunk can spawn", () => {
   world.stream(moth.root.position);
   assert.ok(world.chunks.size >= 1);
   assert.ok(world.all("trees").length > 0);
+  assert.ok(world.all("trees").every((t) => typeof t.pine === "boolean"));
+  assert.ok(world.all("trees").every((t) => t.height > 4));
 });
