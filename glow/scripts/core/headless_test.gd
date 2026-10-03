@@ -11,6 +11,8 @@ func _init() -> void:
 	failed += _check(Rules.final_score(10, 30.0, 50.0, 2, 1, 1) > 10, "score")
 	failed += _check(Rules.overglow_ready(8, 1.0), "overglow")
 	failed += _check(not Rules.overglow_ready(3, 1.0), "overglow gate")
+	var split = Rules.lod_tree_split(20)
+	failed += _check(split.x + split.y == 20, "lod split")
 	print("GLOW headless tests failed=", failed)
 	quit(failed)
 

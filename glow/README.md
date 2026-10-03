@@ -19,3 +19,9 @@ Controls: WASD fly, mouse steer, Space/Ctrl rise/descend, Shift boost, E or RMB 
 ## Browser
 
 Open `/glow/` from the gallery server, or `npx --yes serve glow`. Node tests: `node --test glow/tests/rules.test.mjs`.
+
+Godot HTML5 export (optional, does not replace the gallery `index.html`):
+
+```bash
+./tools/export-web.sh   # writes glow/godot-html/ after templates are installed
+```

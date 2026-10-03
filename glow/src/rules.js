@@ -44,6 +44,38 @@ export function hash2(x, z, seed) {
   return (n >>> 0) / 4294967296;
 }
 
+/** Altitude bands used by wildlife ecology. */
+export function altitudeBand(y) {
+  if (y >= 14) return "canopy";
+  if (y >= 5) return "mid";
+  if (y >= 2) return "understory";
+  return "ground";
+}
+
+export function wildlifeAltitude(kind) {
+  const map = {
+    owl: 10,
+    crow: 14,
+    bat: 9,
+    dragonfly: 5,
+    mantis: 2.4,
+    frog: 1.0,
+    snake: 0.5,
+    bobcat: 0.6,
+    fox: 0.5,
+    raccoon: 0.8,
+    spider: 3.5,
+  };
+  return map[kind] ?? 4;
+}
+
+/** Near/far tree instance split for LOD. Near keeps collision. */
+export function lodTreeSplit(count, farRatio = 0.55) {
+  const far = Math.floor(count * farRatio);
+  const near = Math.max(0, count - far);
+  return { near, far, total: count };
+}
+
 export function pickBiome(wx, wz, seed, weights) {
   let total = 0;
   const ids = [];

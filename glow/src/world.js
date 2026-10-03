@@ -1,5 +1,5 @@
 import * as THREE from "../vendor/three.module.js";
-import { BIOMES, pickBiome, hash2 } from "./rules.js";
+import { BIOMES, pickBiome, hash2, lodTreeSplit, wildlifeAltitude } from "./rules.js";
 import { createPredator } from "./predators.js";
 
 function mulberry(seed) {
@@ -13,15 +13,26 @@ function mulberry(seed) {
   };
 }
 
+const trunkNear = new THREE.CylinderGeometry(1, 1.15, 1, 8);
+const trunkFar = new THREE.CylinderGeometry(1, 1.15, 1, 5);
+const groundGeo = new THREE.BoxGeometry(1, 0.8, 1);
+const plantGeo = new THREE.SphereGeometry(1, 6, 5);
+const flyGeo = new THREE.SphereGeometry(0.09, 8, 6);
+const dummy = new THREE.Object3D();
+
+const matCache = new Map();
+function mat(key, make) {
+  if (!matCache.has(key)) matCache.set(key, make());
+  return matCache.get(key);
+}
+
 export function createWorld(scene, cfg) {
   const chunks = new Map();
   const group = new THREE.Group();
   scene.add(group);
-
-  const trunkGeo = new THREE.CylinderGeometry(1, 1, 1, 7);
-  const groundGeo = new THREE.BoxGeometry(1, 0.8, 1);
-  const plantGeo = new THREE.SphereGeometry(1, 8, 6);
-  const flyGeo = new THREE.SphereGeometry(0.09, 8, 6);
+  const mist = makeMist(cfg);
+  scene.add(mist);
+  const events = { stars: [], bloomUntil: 0, weather: "clear" };
 
   function key(cx, cz) {
     return `${cx},${cz}`;
@@ -31,79 +42,93 @@ export function createWorld(scene, cfg) {
     const k = key(cx, cz);
     if (chunks.has(k)) return;
     const biomeId = pickBiome(cx, cz, cfg.seed_value, cfg.biome_weights);
+    const nId = pickBiome(cx, cz + 1, cfg.seed_value, cfg.biome_weights);
     const biome = BIOMES[biomeId];
+    const blend = new THREE.Color(biome.glow).lerp(new THREE.Color(BIOMES[nId].glow), 0.28);
     const origin = new THREE.Vector3(cx * cfg.chunk_size, 0, cz * cfg.chunk_size);
     const rng = mulberry((cfg.seed_value + cx * 131 + cz * 917) >>> 0);
     const root = new THREE.Group();
-    root.userData = { biomeId, trees: [], flies: [], preds: [], webs: [], solids: [] };
+    root.userData = { biomeId, trees: [], flies: [], preds: [], webs: [], solids: [], nearInst: null, farInst: null };
 
     const ground = new THREE.Mesh(
       groundGeo,
       new THREE.MeshStandardMaterial({
         color: 0x080a08,
         roughness: 1,
-        emissive: biome.glow,
-        emissiveIntensity: 0.04 + (1 - biome.dark) * 0.06,
+        emissive: blend,
+        emissiveIntensity: (0.03 + (1 - biome.dark) * 0.05) * (cfg.moss_density || 1),
       })
     );
     ground.scale.set(cfg.chunk_size, 1, cfg.chunk_size);
     ground.position.copy(origin).add(new THREE.Vector3(cfg.chunk_size / 2, -0.4, cfg.chunk_size / 2));
     root.add(ground);
 
-    let n = Math.floor(16 * cfg.tree_density * biome.trees);
+    const n = Math.floor(16 * cfg.tree_density * biome.trees);
+    const split = lodTreeSplit(n);
+    const tMat = mat("t-" + biomeId, () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x050403,
+        roughness: 1,
+        emissive: biome.glow,
+        emissiveIntensity: biomeId === "blackwood" ? 0.01 : 0.05,
+      })
+    );
+    const nearInst = new THREE.InstancedMesh(trunkNear, tMat, Math.max(1, split.near));
+    const farInst = new THREE.InstancedMesh(trunkFar, tMat, Math.max(1, split.far));
+    nearInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    farInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    nearInst.count = split.near;
+    farInst.count = split.far;
+    nearInst.frustumCulled = true;
+    farInst.frustumCulled = true;
+    let ni = 0;
+    let fi = 0;
     for (let i = 0; i < n; i++) {
       const h = 8 + rng() * 16 * (biomeId === "ancient_grove" ? 1.35 : 1);
       const r = 0.28 + rng() * 0.45;
-      const trunk = new THREE.Mesh(
-        trunkGeo,
-        new THREE.MeshStandardMaterial({
-          color: 0x050403,
-          roughness: 1,
-          emissive: biome.glow,
-          emissiveIntensity: biomeId === "blackwood" ? 0.01 : 0.05,
-        })
-      );
-      trunk.scale.set(r, h, r);
       const p = origin.clone().add(new THREE.Vector3(rng() * cfg.chunk_size, h / 2, rng() * cfg.chunk_size));
-      trunk.position.copy(p);
-      root.add(trunk);
+      dummy.position.copy(p);
+      dummy.scale.set(r, h, r);
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      if (i < split.near) {
+        nearInst.setMatrixAt(ni++, dummy.matrix);
+        root.userData.solids.push({ pos: new THREE.Vector3(p.x, 0, p.z), radius: r * 1.2, kind: "hard" });
+      } else {
+        farInst.setMatrixAt(fi++, dummy.matrix);
+      }
       root.userData.trees.push({ pos: p.clone(), radius: r * 1.15, height: h });
-      root.userData.solids.push({ pos: new THREE.Vector3(p.x, 0, p.z), radius: r * 1.2, kind: "hard" });
     }
+    nearInst.instanceMatrix.needsUpdate = true;
+    farInst.instanceMatrix.needsUpdate = true;
+    root.add(nearInst, farInst);
+    root.userData.nearInst = nearInst;
+    root.userData.farInst = farInst;
 
-    const plants = Math.floor(8 * cfg.mushroom_density + 6 * cfg.flower_density);
+    const plants = Math.floor(8 * cfg.mushroom_density + 6 * cfg.flower_density + 4 * (cfg.fern_density || 1));
+    const pMat = mat("p-" + biomeId, () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x050508,
+        emissive: biome.glow,
+        emissiveIntensity: 1.5,
+        roughness: 0.4,
+      })
+    );
+    const plantInst = new THREE.InstancedMesh(plantGeo, pMat, Math.max(1, plants));
+    plantInst.count = plants;
+    plantInst.frustumCulled = true;
     for (let i = 0; i < plants; i++) {
       const s = 0.12 + rng() * 0.28;
-      const mesh = new THREE.Mesh(
-        plantGeo,
-        new THREE.MeshStandardMaterial({
-          color: 0x050508,
-          emissive: biome.glow,
-          emissiveIntensity: 1.5,
-          roughness: 0.4,
-        })
-      );
-      mesh.scale.setScalar(s);
-      mesh.position.copy(origin).add(new THREE.Vector3(rng() * cfg.chunk_size, 0.2, rng() * cfg.chunk_size));
-      root.add(mesh);
+      dummy.position.copy(origin).add(new THREE.Vector3(rng() * cfg.chunk_size, 0.2, rng() * cfg.chunk_size));
+      dummy.scale.setScalar(s);
+      dummy.updateMatrix();
+      plantInst.setMatrixAt(i, dummy.matrix);
     }
+    plantInst.instanceMatrix.needsUpdate = true;
+    root.add(plantInst);
 
     const flies = Math.floor(5 * cfg.firefly_population * cfg.firefly_cluster_size * biome.flies);
-    for (let i = 0; i < flies; i++) {
-      const rare = rng() > 0.92;
-      const col = rare ? 0xf259d9 : rng() > 0.6 ? 0x8cffb3 : rng() > 0.35 ? 0x73f2ff : 0xffd94d;
-      const mesh = new THREE.Mesh(
-        flyGeo,
-        new THREE.MeshBasicMaterial({ color: col })
-      );
-      mesh.position.copy(origin).add(
-        new THREE.Vector3(rng() * cfg.chunk_size, 1.2 + rng() * 8, rng() * cfg.chunk_size)
-      );
-      mesh.userData = { t: rng() * 6, collected: false, rare, home: mesh.position.clone() };
-      root.add(mesh);
-      root.userData.flies.push(mesh);
-    }
-
+    spawnFlies(root, origin, rng, flies, cfg);
     maybeWildlife(root, origin, rng, biomeId, cfg);
     if (biomeId === "thornwood" || biomeId === "violet_fungal") {
       if (rng() < 0.45 * cfg.spider_population) {
@@ -122,19 +147,34 @@ export function createWorld(scene, cfg) {
     chunks.set(k, root);
   }
 
+  function spawnFlies(root, origin, rng, flies, cfg) {
+    for (let i = 0; i < flies; i++) {
+      const rare = rng() > 0.92;
+      const col = rare ? 0xf259d9 : rng() > 0.6 ? 0x8cffb3 : rng() > 0.35 ? 0x73f2ff : 0xffd94d;
+      const mesh = new THREE.Mesh(flyGeo, new THREE.MeshBasicMaterial({ color: col }));
+      mesh.position.copy(origin).add(new THREE.Vector3(rng() * cfg.chunk_size, 1.2 + rng() * 8, rng() * cfg.chunk_size));
+      mesh.userData = { t: rng() * 6, collected: false, rare, home: mesh.position.clone() };
+      root.add(mesh);
+      root.userData.flies.push(mesh);
+    }
+  }
+
   function maybeWildlife(root, origin, rng, biomeId, cfg) {
-    const diff = 1;
     const tries = [
-      ["owl", cfg.owl_population * (biomeId === "ancient_grove" ? 1.4 : 1), 8],
-      ["crow", cfg.crow_population, 12],
-      ["bat", cfg.bat_population * (biomeId === "blackwood" ? 1.3 : 1), 10],
-      ["frog", cfg.frog_population, 1],
-      ["bobcat", cfg.bobcat_population * (biomeId === "fallen_forest" ? 1.3 : 1), 0.6],
-      ["fox", cfg.fox_population, 0.5],
-      ["dragonfly", cfg.dragonfly_population * (biomeId === "crystal_creek" ? 1.4 : 1), 4],
+      ["owl", cfg.owl_population * (biomeId === "ancient_grove" ? 1.4 : 1)],
+      ["crow", cfg.crow_population],
+      ["bat", cfg.bat_population * (biomeId === "blackwood" ? 1.3 : 1)],
+      ["frog", cfg.frog_population],
+      ["bobcat", cfg.bobcat_population * (biomeId === "fallen_forest" ? 1.3 : 1)],
+      ["fox", cfg.fox_population],
+      ["dragonfly", cfg.dragonfly_population * (biomeId === "crystal_creek" ? 1.4 : 1)],
+      ["raccoon", cfg.raccoon_population * 0.6],
+      ["snake", cfg.snake_population],
+      ["mantis", cfg.mantis_population],
     ];
-    for (const [kind, w, y] of tries) {
-      if (rng() > Math.min(0.72, 0.18 * w * diff)) continue;
+    for (const [kind, w] of tries) {
+      if (rng() > Math.min(0.72, 0.18 * w)) continue;
+      const y = wildlifeAltitude(kind);
       const p = origin.clone().add(new THREE.Vector3(rng() * cfg.chunk_size, y, rng() * cfg.chunk_size));
       const pred = createPredator(kind, p);
       root.add(pred.root);
@@ -160,13 +200,24 @@ export function createWorld(scene, cfg) {
         chunks.delete(k);
       }
     }
+    updateLod(playerPos);
+  }
+
+  function updateLod(playerPos) {
+    const nearR = cfg.chunk_size * 1.15;
+    for (const node of chunks.values()) {
+      const g = node.children.find((c) => c.isMesh && c.geometry === groundGeo);
+      const center = g ? g.position : playerPos;
+      const d = Math.hypot(center.x - playerPos.x, center.z - playerPos.z);
+      if (node.userData.nearInst) node.userData.nearInst.visible = d < nearR * 1.6;
+      if (node.userData.farInst) node.userData.farInst.visible = d > nearR * 0.35;
+    }
   }
 
   function currentBiome(playerPos) {
     const cs = cfg.chunk_size;
     const k = key(Math.floor(playerPos.x / cs), Math.floor(playerPos.z / cs));
-    const n = chunks.get(k);
-    return n?.userData.biomeId || "moonlit_grove";
+    return chunks.get(k)?.userData.biomeId || "moonlit_grove";
   }
 
   function all(field) {
@@ -175,7 +226,62 @@ export function createWorld(scene, cfg) {
     return out;
   }
 
-  return { chunks, stream, currentBiome, all, group };
+  function tickEvents(dt, mothPos) {
+    mist.rotation.y += dt * 0.02 * (cfg.wind_strength || 1);
+    mist.material.opacity = 0.08 * (cfg.ground_mist || 1);
+    if (Math.random() < dt * 0.08 * (cfg.shooting_star_frequency || 1)) {
+      const s = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      s.position.copy(mothPos).add(new THREE.Vector3(20, 28, -10));
+      s.userData.vel = new THREE.Vector3(-18, -6, 8);
+      s.userData.life = 1.6;
+      scene.add(s);
+      events.stars.push(s);
+    }
+    for (let i = events.stars.length - 1; i >= 0; i--) {
+      const s = events.stars[i];
+      s.userData.life -= dt;
+      s.position.addScaledVector(s.userData.vel, dt);
+      if (s.userData.life <= 0) {
+        scene.remove(s);
+        events.stars.splice(i, 1);
+      }
+    }
+    if (events.bloomUntil <= 0 && Math.random() < dt * 0.012 * (cfg.firefly_bloom_frequency || 1)) {
+      events.bloomUntil = 8;
+      const origin = mothPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 12, 0, (Math.random() - 0.5) * 12));
+      const chunk = [...chunks.values()][0];
+      if (chunk) spawnFlies(chunk, origin, mulberry((Math.random() * 1e9) | 0), 10, cfg);
+    }
+    events.bloomUntil = Math.max(0, events.bloomUntil - dt);
+    if (Math.random() < dt * 0.008 * (cfg.bat_swarm_frequency || 1)) {
+      const p = mothPos.clone().add(new THREE.Vector3(18, 10, -8));
+      const pred = createPredator("bat", p);
+      group.add(pred.root);
+      const any = [...chunks.values()][0];
+      if (any) any.userData.preds.push(pred);
+    }
+  }
+
+  return { chunks, stream, currentBiome, all, group, updateLod, tickEvents, events, mist };
+}
+
+function makeMist(cfg) {
+  const n = Math.floor(180 * (cfg.ground_mist || 1) * (cfg.spore_density || 1));
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    pos[i * 3] = (Math.random() - 0.5) * 80;
+    pos[i * 3 + 1] = Math.random() * 6;
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 80;
+  }
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(
+    geo,
+    new THREE.PointsMaterial({ color: 0x88ffcc, size: 0.12, transparent: true, opacity: 0.1, depthWrite: false })
+  );
 }
 
 export function collideMoth(moth, world) {

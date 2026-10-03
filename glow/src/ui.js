@@ -1,9 +1,25 @@
+import { SLIDER_DEFS, readSliderValue } from "./config.js";
+
 export function createUI(root, api) {
+  const sections = [...new Set(SLIDER_DEFS.map((s) => s.section))];
+  const sliderHtml = sections
+    .map((sec) => {
+      const rows = SLIDER_DEFS.filter((s) => s.section === sec)
+        .map(
+          (s) =>
+            `<label>${s.label} <input type="range" id="${s.id}" min="${s.min}" max="${s.max}" step="${s.step}"></label>`
+        )
+        .join("");
+      return `<h3>${sec}</h3>${rows}`;
+    })
+    .join("");
+
   root.innerHTML = `
     <div class="safe">
       <div class="hud-top hidden" id="hud">
         <div class="flies" id="flies">0</div>
         <div class="energy"><i id="energy"></i></div>
+        <div class="biome" id="biome"></div>
       </div>
       <pre class="debug hidden" id="debug"></pre>
       <div class="panel" id="title">
@@ -12,25 +28,33 @@ export function createUI(root, api) {
         <p class="blurb">A tiny white moth. No weapons. Shine to see — and to be seen.</p>
         <button id="play">ENTER THE FOREST</button>
         <button id="calm" class="ghost">CALM PRESET</button>
+        <button id="danger" class="ghost">DANGER PRESET</button>
         <button id="customBtn" class="ghost">CUSTOM GAME</button>
+        <button id="settingsBtn" class="ghost">SETTINGS</button>
         <p class="help">WASD fly · mouse steer · Shift boost · E / RMB dim · C camera · Esc pause · F3 debug</p>
       </div>
-      <div class="panel hidden" id="custom">
+      <div class="panel scroll hidden" id="custom">
         <h2>CUSTOM GAME</h2>
-        <label>Trees <input type="range" id="tree_density" min="0" max="5" step="0.05"></label>
-        <label>Fireflies <input type="range" id="firefly_population" min="0" max="5" step="0.05"></label>
-        <label>Predators <input type="range" id="owl_population" min="0" max="3" step="0.05"></label>
-        <label>Glow <input type="range" id="player_normal_glow" min="0.5" max="2" step="0.05"></label>
-        <label>Trail <input type="range" id="trail_brightness" min="0" max="3" step="0.05"></label>
-        <label>Danger growth <input type="range" id="difficulty_growth" min="0" max="2" step="0.05"></label>
+        <div class="sliders">${sliderHtml}</div>
         <p class="warn" id="warn"></p>
         <button id="applyCustom">APPLY</button>
         <button id="resetCustom" class="ghost">RESET TO DEFAULTS</button>
         <button id="closeCustom" class="ghost">CLOSE</button>
       </div>
+      <div class="panel hidden" id="settings">
+        <h2>SETTINGS</h2>
+        <label>Render scale <input type="range" id="render_scale" min="0.5" max="1.25" step="0.05"></label>
+        <label>Master volume <input type="range" id="master_volume" min="0" max="1" step="0.05"></label>
+        <label class="check"><input type="checkbox" id="invert_y"> Invert look Y</label>
+        <label class="check"><input type="checkbox" id="high_vis"> High-visibility fireflies</label>
+        <label class="check"><input type="checkbox" id="reduced_flash"> Reduced flash</label>
+        <button id="applySettings">SAVE</button>
+        <button id="closeSettings" class="ghost">CLOSE</button>
+      </div>
       <div class="panel hidden" id="pause">
         <h2>PAUSED</h2>
         <button id="resume">RESUME</button>
+        <button id="pauseSettings" class="ghost">SETTINGS</button>
         <button id="toMenu" class="ghost">MAIN MENU</button>
       </div>
       <div class="panel hidden" id="dead">
@@ -55,14 +79,17 @@ export function createUI(root, api) {
     </div>`;
 
   const $ = (id) => root.querySelector(id);
-  const sliders = ["tree_density", "firefly_population", "owl_population", "player_normal_glow", "trail_brightness", "difficulty_growth"];
+  const sliders = SLIDER_DEFS.map((s) => s.id);
 
   $("#play").onclick = () => api.play();
   $("#calm").onclick = () => api.calm();
+  $("#danger").onclick = () => api.danger();
   $("#customBtn").onclick = () => show("custom");
+  $("#settingsBtn").onclick = () => show("settings");
+  $("#pauseSettings").onclick = () => show("settings");
   $("#applyCustom").onclick = () => {
     const patch = {};
-    for (const id of sliders) patch[id] = Number($("#" + id).value);
+    for (const id of sliders) patch[id] = Number($("#" + CSS.escape(id))?.value);
     api.applyCustom(patch);
     show("title");
   };
@@ -71,36 +98,56 @@ export function createUI(root, api) {
     sync();
   };
   $("#closeCustom").onclick = () => show("title");
+  $("#applySettings").onclick = () => {
+    api.applySettings({
+      render_scale: Number($("#render_scale").value),
+      master_volume: Number($("#master_volume").value),
+      invert_y: $("#invert_y").checked,
+      high_vis: $("#high_vis").checked,
+      reduced_flash: $("#reduced_flash").checked,
+    });
+    show("title");
+  };
+  $("#closeSettings").onclick = () => show("title");
   $("#resume").onclick = () => api.resume();
   $("#toMenu").onclick = () => api.menu();
   $("#again").onclick = () => api.again();
   $("#deadMenu").onclick = () => api.menu();
 
   function show(name) {
-    for (const id of ["title", "custom", "pause", "dead"]) {
+    for (const id of ["title", "custom", "settings", "pause", "dead"]) {
       $("#" + id).classList.toggle("hidden", id !== name);
     }
-    $("#hud").classList.toggle("hidden", name !== null && name !== "play");
+    $("#hud").classList.toggle("hidden", name !== "play");
   }
 
   function setPhase(phase) {
     if (phase === "play") {
-      for (const id of ["title", "custom", "pause", "dead"]) $("#" + id).classList.add("hidden");
+      for (const id of ["title", "custom", "settings", "pause", "dead"]) $("#" + id).classList.add("hidden");
       $("#hud").classList.remove("hidden");
     } else show(phase);
   }
 
   function sync() {
     const c = api.config();
-    for (const id of sliders) {
-      if (c[id] != null) $("#" + id).value = c[id];
+    for (const def of SLIDER_DEFS) {
+      const el = $("#" + CSS.escape(def.id));
+      const v = readSliderValue(c, def.id);
+      if (el && v != null) el.value = v;
     }
     $("#warn").textContent = api.warning();
+    const s = api.settings();
+    $("#render_scale").value = s.render_scale;
+    $("#master_volume").value = s.master_volume;
+    $("#invert_y").checked = s.invert_y;
+    $("#high_vis").checked = s.high_vis;
+    $("#reduced_flash").checked = s.reduced_flash;
   }
 
-  function hud(flies, energy) {
+  function hud(flies, energy, biomeName = "") {
     $("#flies").textContent = String(flies);
     $("#energy").style.transform = `scaleX(${Math.max(0.08, energy)})`;
+    $("#biome").textContent = biomeName;
   }
 
   function stats(text) {

@@ -22,8 +22,34 @@ export function createAudio() {
       /* autoplay policy */
     }
   }
+  let pad = null;
+  function ambience(on, vol = 0.04) {
+    const c = ac();
+    if (on && !pad) {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = "sine";
+      o.frequency.value = 62;
+      g.gain.value = vol;
+      o.connect(g);
+      g.connect(c.destination);
+      o.start();
+      pad = { o, g };
+    }
+    if (!on && pad) {
+      pad.o.stop();
+      pad = null;
+    }
+    if (pad) pad.g.gain.value = vol;
+  }
   return {
-    unlock: () => ac(),
+    unlock: () => {
+      ac();
+      ambience(true);
+    },
+    setMaster: (v) => {
+      if (pad) pad.g.gain.value = 0.04 * v;
+    },
     chime: () => tone(880 + Math.random() * 200, 0.12, 0.05, "triangle"),
     danger: () => tone(80, 0.4, 0.1, "sawtooth"),
     hoot: () => tone(140, 0.45, 0.07, "sine"),

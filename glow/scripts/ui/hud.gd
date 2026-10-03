@@ -57,6 +57,7 @@ func _build() -> void:
 	_btn(title, "ENTER THE FOREST", _play)
 	_btn(title, "CUSTOM GAME", func(): custom.visible = true)
 	_btn(title, "CALM PRESET", func(): GameConfigManager.apply_calm_preset(); _play())
+	_btn(title, "DANGER PRESET", func(): GameConfigManager.apply_danger_preset(); _play())
 	var hint = Label.new()
 	hint.text = "WASD fly · mouse steer · Shift boost · E dim · C camera · Esc pause"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -75,10 +76,17 @@ func _build() -> void:
 	custom = _panel(safe, "CUSTOM GAME")
 	for pair in [
 		["tree_density", "TREES", 0.0, 5.0],
+		["mushroom_density", "MUSHROOMS", 0.0, 5.0],
+		["flower_density", "FLOWERS", 0.0, 5.0],
 		["firefly_population", "FIREFLIES", 0.0, 5.0],
-		["owl_population", "PREDATORS", 0.0, 3.0],
+		["firefly_attraction", "ATTRACTION", 0.0, 2.0],
+		["owl_population", "OWLS", 0.0, 3.0],
+		["crow_population", "CROWS", 0.0, 3.0],
+		["bat_population", "BATS", 0.0, 3.0],
+		["bobcat_population", "BOBCATS", 0.0, 3.0],
 		["player_normal_glow", "GLOW", 0.5, 2.0],
 		["trail_brightness", "TRAIL", 0.0, 3.0],
+		["fog_density", "FOG", 0.0, 3.0],
 		["difficulty_growth", "DANGER GROWTH", 0.0, 2.0],
 	]:
 		var lab = Label.new()
@@ -268,9 +276,8 @@ func _sync_sliders() -> void:
 func _apply_custom() -> void:
 	var cfg = GameConfigManager.user_custom_config
 	for k in sliders.keys():
-		cfg.set(k, sliders[k].value)
-	cfg.crow_population = cfg.owl_population
-	cfg.bat_population = cfg.owl_population * 0.9
+		if k in cfg:
+			cfg.set(k, sliders[k].value)
 	GameConfigManager.apply_user_custom()
 	GameConfigManager.persist_custom()
 	warn_label.text = cfg.performance_warning()

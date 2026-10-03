@@ -17,3 +17,8 @@ static func final_score(fireflies: int, survival: float, distance: float, escape
 
 static func overglow_ready(combo: int, threshold_scale: float) -> bool:
 	return combo >= int(8.0 * threshold_scale)
+
+
+static func lod_tree_split(count: int, far_ratio: float = 0.55) -> Vector2i:
+	var far = int(floor(float(count) * far_ratio))
+	return Vector2i(count - far, far)

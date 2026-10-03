@@ -1,5 +1,5 @@
 import * as THREE from "../vendor/three.module.js";
-import { defaultConfig, applyCalm, applyDanger, performanceWarning } from "./config.js";
+import { defaultConfig, applyCalm, applyDanger, performanceWarning, applySliderPatch } from "./config.js";
 import { BIOMES, finalScore } from "./rules.js";
 import { createInput } from "./input.js";
 import { createAudio } from "./audio.js";
@@ -57,7 +57,12 @@ const clock = new THREE.Clock();
 
 let cfg = Object.assign(defaultConfig(), loadSave().custom || {});
 let preset = loadSave().preset || "default";
+let settings = Object.assign(
+  { render_scale: 1, master_volume: 0.85, invert_y: false, high_vis: false, reduced_flash: false },
+  loadSave().settings || {}
+);
 const defaults = defaultConfig();
+void defaults;
 
 const input = createInput(canvas);
 const audio = createAudio();
@@ -147,7 +152,8 @@ function resetRun() {
 
 function lockPointer() {
   try {
-    canvas.requestPointerLock?.();
+    const p = canvas.requestPointerLock?.();
+    if (p && typeof p.catch === "function") p.catch(() => {});
   } catch {
     /* headless / insecure */
   }
@@ -171,22 +177,36 @@ const ui = createUI(overlay, {
     rebuildWorld();
     play();
   },
+  danger() {
+    cfg = defaultConfig();
+    applyDanger(cfg);
+    preset = "danger";
+    rebuildWorld();
+    play();
+  },
   applyCustom(patch) {
-    Object.assign(cfg, patch);
-    cfg.crow_population = cfg.owl_population;
-    cfg.bat_population = cfg.owl_population * 0.9;
+    applySliderPatch(cfg, patch);
     preset = "custom";
     const save = loadSave();
     save.custom = { ...cfg };
     save.preset = preset;
     writeSave(save);
     rebuildWorld();
+    applyAtmosphere();
   },
   resetCustom() {
     cfg = defaultConfig();
     preset = "default";
     ui.sync();
   },
+  applySettings(s) {
+    Object.assign(settings, s);
+    const save = loadSave();
+    save.settings = { ...settings };
+    writeSave(save);
+    applyAtmosphere();
+  },
+  settings: () => settings,
   resume() {
     paused = false;
     phase = "play";
@@ -223,9 +243,17 @@ const ui = createUI(overlay, {
 });
 
 function rebuildWorld() {
-  scene.remove(world.group);
+  if (world?.group) scene.remove(world.group);
+  if (world?.mist) scene.remove(world.mist);
   world = createWorld(scene, cfg);
   world.stream(moth.root.position);
+}
+
+function applyAtmosphere() {
+  if (renderer) renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * settings.render_scale);
+  moon.scale.setScalar(cfg.moon_size);
+  moonLight.intensity = 0.18 * cfg.moon_brightness;
+  audio.setMaster?.(settings.master_volume);
 }
 
 function toggleCam() {
@@ -327,12 +355,14 @@ function tick() {
   if (phase === "play" && !paused) {
     playTime += dt;
     const look = input.consumeLook(cfg.mouse_sensitivity);
+    if (settings.invert_y) look.y *= -1;
     updateMoth(moth, st, cfg, dt, look);
     const col = collideMoth(moth, world);
     if (col === "hard" && hit(moth, "hard", 0.22)) die();
     if (col === "web") moth.web = 1.5;
     trail.push(moth.root.position, moth.glow * cfg.trail_brightness, new THREE.Vector3(0, 0, -1).applyQuaternion(moth.root.quaternion), moth.vel, dt, cfg);
     world.stream(moth.root.position);
+    world.tickEvents?.(dt, moth.root.position);
     updateFireflies(dt);
     const biome = world.currentBiome(moth.root.position);
     regions.add(biome);
@@ -354,7 +384,7 @@ function tick() {
       }
     }
     if (moth.dead && phase === "play") die();
-    ui.hud(fireflies, moth.energy);
+    ui.hud(fireflies, moth.energy, BIOMES[biome]?.name || "");
   }
   if (phase !== "title") updateCamera(dt);
   else {

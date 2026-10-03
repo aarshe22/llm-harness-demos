@@ -91,56 +91,72 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 		n = int(n * 1.2)
 	var local = RandomNumberGenerator.new()
 	local.seed = cfg.seed_value + int(origin.x) * 13 + int(origin.z) * 17
+	var cyl = CylinderMesh.new()
+	cyl.top_radius = 1.0
+	cyl.bottom_radius = 1.15
+	cyl.height = 1.0
+	cyl.radial_segments = 6
+	var mm = MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = cyl
+	mm.instance_count = maxi(n, 1)
+	var tm = StandardMaterial3D.new()
+	tm.albedo_color = Color(0.04, 0.03, 0.025)
+	tm.emission_enabled = true
+	tm.emission = Biome.color_for(biome)
+	tm.emission_energy_multiplier = 0.05 if biome != "blackwood" else 0.01
+	var mmi = MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = tm
+	mmi.visibility_range_end = 110.0
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	node.add_child(mmi)
 	for i in n:
 		var p = origin + Vector3(local.randf() * cfg.chunk_size, 0, local.randf() * cfg.chunk_size)
 		var h = local.randf_range(8.0, 22.0)
 		if biome == "ancient_grove":
 			h *= 1.35
-		var trunk = MeshInstance3D.new()
-		var cyl = CylinderMesh.new()
-		cyl.top_radius = local.randf_range(0.28, 0.7)
-		cyl.bottom_radius = cyl.top_radius * 1.25
-		cyl.height = h
-		trunk.mesh = cyl
-		var tm = StandardMaterial3D.new()
-		tm.albedo_color = Color(0.04, 0.03, 0.025)
-		tm.emission_enabled = true
-		tm.emission = Biome.color_for(biome)
-		tm.emission_energy_multiplier = 0.12 if biome != "blackwood" else 0.02
-		trunk.material_override = tm
-		trunk.position = p + Vector3(0, h * 0.5, 0)
-		node.add_child(trunk)
-		var body = StaticBody3D.new()
-		var col = CollisionShape3D.new()
-		var shp = CylinderShape3D.new()
-		shp.radius = cyl.bottom_radius
-		shp.height = h
-		col.shape = shp
-		body.add_child(col)
-		body.position = trunk.position
-		body.add_to_group("hard")
-		node.add_child(body)
+		var r = local.randf_range(0.28, 0.7)
+		var xf = Transform3D(Basis.from_scale(Vector3(r, h, r)), p + Vector3(0, h * 0.5, 0))
+		mm.set_instance_transform(i, xf)
+		if i < int(n * 0.45):
+			var body = StaticBody3D.new()
+			var col = CollisionShape3D.new()
+			var shp = CylinderShape3D.new()
+			shp.radius = r
+			shp.height = h
+			col.shape = shp
+			body.add_child(col)
+			body.position = p + Vector3(0, h * 0.5, 0)
+			body.add_to_group("hard")
+			node.add_child(body)
 
 
 func _plants(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	var local = RandomNumberGenerator.new()
 	local.seed = cfg.seed_value + 99 + int(origin.x)
 	var count = int(10.0 * cfg.mushroom_density + 8.0 * cfg.flower_density)
+	var sph = SphereMesh.new()
+	sph.radius = 1.0
+	sph.height = 2.0
+	var mm = MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = sph
+	mm.instance_count = maxi(count, 1)
+	var m = StandardMaterial3D.new()
+	m.albedo_color = Color(0.02, 0.02, 0.03)
+	m.emission_enabled = true
+	m.emission = Biome.color_for(biome)
+	m.emission_energy_multiplier = 1.6
+	var mmi = MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = m
+	mmi.visibility_range_end = 70.0
+	node.add_child(mmi)
 	for i in count:
 		var p = origin + Vector3(local.randf() * cfg.chunk_size, 0.2, local.randf() * cfg.chunk_size)
-		var mi = MeshInstance3D.new()
-		var sph = SphereMesh.new()
-		sph.radius = local.randf_range(0.12, 0.38)
-		sph.height = sph.radius * 2.0
-		mi.mesh = sph
-		var m = StandardMaterial3D.new()
-		m.albedo_color = Color(0.02, 0.02, 0.03)
-		m.emission_enabled = true
-		m.emission = Biome.color_for(biome).lerp(Color(1, 0.3, 0.8), local.randf() * 0.4)
-		m.emission_energy_multiplier = 1.6
-		mi.material_override = m
-		mi.position = p
-		node.add_child(mi)
+		var s = local.randf_range(0.12, 0.38)
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(s, s, s)), p))
 
 
 func _fireflies(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
