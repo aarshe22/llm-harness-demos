@@ -58,7 +58,7 @@ export function createUI(root, api) {
         <label>Fidelity boost <span id="fidelityVal">x1</span>
           <input type="range" id="fidelity" min="1" max="8" step="1">
         </label>
-        <p class="help">x1 is the cheap default look. Higher multipliers use richer moth, predator, and forest meshes (applies now).</p>
+		<p class="help">x1 is the default living forest. Higher multipliers add still denser moth, predator, and canopy meshes (applies now).</p>
         <label>Master volume <input type="range" id="master_volume" min="0" max="1" step="0.05"></label>
         <label class="check"><input type="checkbox" id="invert_y"> Invert look Y</label>
         <label class="check"><input type="checkbox" id="high_vis"> High-visibility fireflies</label>

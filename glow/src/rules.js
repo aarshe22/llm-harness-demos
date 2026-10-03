@@ -53,33 +53,34 @@ export function mothFlightY(cruiseAlt, distance, t, amp) {
   return clamp(cruiseAlt + mothTrackWave(distance, t, amp), MOTH_MIN_Y, MOTH_MAX_Y);
 }
 
-/** Mesh / silhouette knobs. Level 1 matches the cheap prototype look. */
+/** Mesh knobs. Even x1 is a defined bioluminescent forest; x8 is denser still. */
 export function fidelityProfile(level) {
   const f = clampFidelity(level);
   return {
     level: f,
-    mothBodySeg: f === 1 ? 12 : 8 + f * 4,
-    mothBodyRings: f === 1 ? 10 : 8 + f * 3,
-    mothWings: f <= 2 ? 2 : 4,
-    mothAntennae: f >= 3,
-    mothWingVeins: f >= 4,
-    mothWingGeo: f === 1 ? "plane" : f < 5 ? "rounded" : "shaped",
-    mothAbdomen: f >= 3,
-    mothHaloSeg: f === 1 ? 12 : 10 + f * 2,
-    treeNearSeg: f === 1 ? 8 : Math.min(24, 6 + f * 2),
-    treeFarSeg: f === 1 ? 5 : Math.min(14, 4 + f),
-    treeCanopy: f >= 4,
-    plantSeg: f === 1 ? 6 : Math.min(18, 4 + f * 2),
-    plantRings: f === 1 ? 5 : Math.min(14, 4 + f),
-    plantShapes: f >= 3,
-    flySeg: f === 1 ? 8 : Math.min(16, 6 + f),
-    predRadial: f === 1 ? 8 : Math.min(20, 6 + f * 2),
-    predWings: f >= 3,
-    predParts: f >= 4,
-    predAnim: f >= 2,
-    barkDetail: 1 + (f - 1) * 0.4,
-    moonSeg: f === 1 ? 24 : 16 + f * 4,
-    bloomBoost: 1 + (f - 1) * 0.06,
+    mothBodySeg: 16 + f * 3,
+    mothBodyRings: 12 + f * 2,
+    mothWings: 4,
+    mothAntennae: true,
+    mothWingVeins: true,
+    mothWingGeo: f < 5 ? "rounded" : "shaped",
+    mothAbdomen: true,
+    mothHaloSeg: 14 + f * 2,
+    treeNearSeg: Math.min(32, 14 + f * 2),
+    treeFarSeg: Math.min(20, 10 + f),
+    treeCanopy: true,
+    plantSeg: Math.min(24, 10 + f * 2),
+    plantRings: Math.min(16, 8 + f),
+    plantShapes: true,
+    flySeg: Math.min(20, 10 + f),
+    predRadial: Math.min(28, 12 + f * 2),
+    predWings: true,
+    predParts: true,
+    predAnim: true,
+    barkDetail: 1.35 + (f - 1) * 0.4,
+    moonSeg: 20 + f * 4,
+    bloomBoost: 1.12 + (f - 1) * 0.07,
+    floorSeg: Math.min(36, 16 + f * 2),
   };
 }
 

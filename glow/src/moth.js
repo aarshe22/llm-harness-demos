@@ -26,7 +26,7 @@ export function createMoth(scene, fidelity = 1) {
     roughness: p.level === 1 ? 0.25 : 0.18,
   });
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.11, p.mothBodySeg, p.mothBodyRings), bodyMat);
-  if (p.level > 1) body.scale.set(0.92, 0.85, 1.28);
+  body.scale.set(0.92, 0.85, 1.28);
   const wingMat = new THREE.MeshStandardMaterial({
     color: 0xcfe9ff,
     emissive: 0xaad8ff,

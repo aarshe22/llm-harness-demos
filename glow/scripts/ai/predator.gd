@@ -30,59 +30,48 @@ func _ready() -> void:
 	var fid := GlowRules.clamp_fidelity(SettingsManager.fidelity)
 	match kind:
 		"owl", "crow":
-			if fid <= 1:
-				var b = BoxMesh.new()
-				b.size = Vector3(0.7, 0.35, 1.1)
-				mesh = b
-			else:
-				var s_owl = SphereMesh.new()
-				s_owl.radius = 0.32
-				s_owl.height = 0.5
-				s_owl.radial_segments = mini(20, 6 + fid * 2)
-				mesh = s_owl
+			var s_owl = SphereMesh.new()
+			s_owl.radius = 0.32
+			s_owl.height = 0.5
+			s_owl.radial_segments = mini(28, 12 + fid * 2)
+			mesh = s_owl
 		"bat", "dragonfly":
 			var s = SphereMesh.new()
 			s.radius = 0.22
 			s.height = 0.44
-			if fid > 1:
-				s.radial_segments = mini(20, 6 + fid * 2)
+			s.radial_segments = mini(28, 12 + fid * 2)
 			mesh = s
 		"bobcat", "fox", "raccoon":
-			if fid <= 1:
-				var c = BoxMesh.new()
-				c.size = Vector3(0.7, 0.45, 1.3)
-				mesh = c
-			else:
-				var s_cat = SphereMesh.new()
-				s_cat.radius = 0.34
-				s_cat.height = 0.5
-				s_cat.radial_segments = mini(20, 6 + fid * 2)
-				mesh = s_cat
+			var s_cat = SphereMesh.new()
+			s_cat.radius = 0.34
+			s_cat.height = 0.5
+			s_cat.radial_segments = mini(28, 12 + fid * 2)
+			mesh = s_cat
 		"frog", "snake", "mantis":
 			var s2 = SphereMesh.new()
 			s2.radius = 0.28
 			s2.height = 0.4
-			if fid > 1:
-				s2.radial_segments = mini(20, 6 + fid * 2)
+			s2.radial_segments = mini(28, 12 + fid * 2)
 			mesh = s2
 		_:
 			var s3 = SphereMesh.new()
 			s3.radius = 0.3
 			s3.height = 0.6
-			if fid > 1:
-				s3.radial_segments = mini(20, 6 + fid * 2)
+			s3.radial_segments = mini(28, 12 + fid * 2)
 			mesh = s3
 	mi.mesh = mesh
 	var mat = StandardMaterial3D.new()
 	mat.albedo_color = Color(0.05, 0.05, 0.06)
 	mat.emission_enabled = true
 	mat.emission = Color(0.9, 0.15, 0.1) if kind in ["owl", "bobcat"] else Color(0.7, 0.5, 0.2)
-	mat.emission_energy_multiplier = 0.35
+	mat.emission_energy_multiplier = 0.7
 	mi.material_override = mat
-	if fid > 1 and kind in ["owl", "crow", "bobcat", "fox"]:
-		mi.scale = Vector3(0.8, 0.65, 1.55)
+	if kind in ["owl", "crow", "bat"]:
+		mi.scale = Vector3(0.9, 0.72, 1.55)
+	elif kind in ["bobcat", "fox", "raccoon"]:
+		mi.scale = Vector3(0.72, 0.58, 1.75)
 	add_child(mi)
-	if fid >= 3 and kind in ["owl", "crow", "bat", "dragonfly"]:
+	if kind in ["owl", "crow", "bat", "dragonfly"]:
 		var wmat = StandardMaterial3D.new()
 		wmat.albedo_color = Color(0.08, 0.08, 0.1)
 		wmat.cull_mode = BaseMaterial3D.CULL_DISABLED

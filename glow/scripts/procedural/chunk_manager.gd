@@ -2,6 +2,7 @@ class_name ChunkManager
 extends Node3D
 
 const Biome := preload("res://scripts/procedural/biome_manager.gd")
+const FloorShader := preload("res://shaders/floor.gdshader")
 
 const PoolScript := preload("res://scripts/ai/predator_pool.gd")
 const BarkShader := preload("res://shaders/bark.gdshader")
@@ -69,26 +70,25 @@ func _spawn_chunk(key: Vector2i) -> void:
 
 func _ground(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	var mesh = MeshInstance3D.new()
-	var box = BoxMesh.new()
-	box.size = Vector3(cfg.chunk_size, 0.8, cfg.chunk_size)
-	mesh.mesh = box
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color(0.03, 0.04, 0.03)
-	mat.roughness = 1.0
-	var glow = Biome.color_for(biome)
-	mat.emission_enabled = true
-	mat.emission = glow
-	mat.emission_energy_multiplier = 0.04 * cfg.moss_density
-	mesh.material_override = mat
-	mesh.position = origin + Vector3(cfg.chunk_size * 0.5, -0.4, cfg.chunk_size * 0.5)
+	var plane = PlaneMesh.new()
+	plane.size = Vector2(cfg.chunk_size + 0.14, cfg.chunk_size + 0.14)
+	var fid := GlowRules.clamp_fidelity(SettingsManager.fidelity)
+	plane.subdivide_width = mini(36, 16 + fid * 2)
+	plane.subdivide_depth = plane.subdivide_width
+	mesh.mesh = plane
+	var sm = ShaderMaterial.new()
+	sm.shader = FloorShader
+	sm.set_shader_parameter("glow", Biome.color_for(biome))
+	mesh.material_override = sm
+	mesh.position = origin + Vector3(cfg.chunk_size * 0.5, 0.0, cfg.chunk_size * 0.5)
 	node.add_child(mesh)
 	var body = StaticBody3D.new()
 	var col = CollisionShape3D.new()
 	var shp = BoxShape3D.new()
-	shp.size = box.size
+	shp.size = Vector3(cfg.chunk_size, 0.4, cfg.chunk_size)
 	col.shape = shp
 	body.add_child(col)
-	body.position = mesh.position
+	body.position = origin + Vector3(cfg.chunk_size * 0.5, -0.2, cfg.chunk_size * 0.5)
 	body.add_to_group("hard")
 	node.add_child(body)
 
@@ -107,7 +107,7 @@ func _trees(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	cyl.top_radius = 1.0
 	cyl.bottom_radius = 1.15
 	cyl.height = 1.0
-	cyl.radial_segments = 6 if GlowRules.clamp_fidelity(SettingsManager.fidelity) <= 1 else mini(24, 6 + GlowRules.clamp_fidelity(SettingsManager.fidelity) * 2)
+	cyl.radial_segments = mini(32, 14 + GlowRules.clamp_fidelity(SettingsManager.fidelity) * 2)
 	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = cyl
@@ -150,9 +150,8 @@ func _plants(node: Node3D, origin: Vector3, biome: String, cfg) -> void:
 	sph.radius = 1.0
 	sph.height = 2.0
 	var fid := GlowRules.clamp_fidelity(SettingsManager.fidelity)
-	if fid > 1:
-		sph.radial_segments = mini(24, 6 + fid * 2)
-		sph.rings = mini(16, 4 + fid)
+	sph.radial_segments = mini(24, 10 + fid * 2)
+	sph.rings = mini(16, 8 + fid)
 	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = sph

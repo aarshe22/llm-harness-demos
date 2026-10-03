@@ -18,7 +18,7 @@ export function createBloom(renderer) {
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const geo = new THREE.PlaneGeometry(2, 2);
   const extract = new THREE.ShaderMaterial({
-    uniforms: { tDiffuse: { value: null }, threshold: { value: 0.62 } },
+    uniforms: { tDiffuse: { value: null }, threshold: { value: 0.42 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`,
     fragmentShader: `
       uniform sampler2D tDiffuse; uniform float threshold; varying vec2 vUv;

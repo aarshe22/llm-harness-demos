@@ -10,6 +10,7 @@ import { updatePredator } from "./predators.js";
 import { createUI } from "./ui.js";
 import { createBloom } from "./bloom.js";
 import { tickBark } from "./bark.js";
+import { tickFloor } from "./floor.js";
 
 const SAVE_KEY = "glow-save-v1";
 
@@ -88,10 +89,10 @@ const moon = new THREE.Mesh(
 );
 moon.position.set(90, 72, -190);
 scene.add(moon);
-const moonLight = new THREE.DirectionalLight(0x88a0cc, 0.18 * cfg.moon_brightness);
+const moonLight = new THREE.DirectionalLight(0x88a0cc, 0.14 * cfg.moon_brightness);
 moonLight.position.set(40, 60, -80);
 scene.add(moonLight);
-const amb = new THREE.AmbientLight(0x081018, 0.07);
+const amb = new THREE.AmbientLight(0x0c2230, 0.11);
 scene.add(amb);
 
 const starGroup = new THREE.Group();
@@ -412,6 +413,7 @@ function tick() {
   }
   moon.rotation.y += dt * 0.01;
   tickBark(performance.now() * 0.001);
+  tickFloor(performance.now() * 0.001);
   if (!bloom.render?.(scene, camera, settings.reduced_flash, fidelityProfile(settings.fidelity).bloomBoost)) renderer?.render(scene, camera);
   if (debugOn) {
     const b = world.currentBiome(moth.root.position);
