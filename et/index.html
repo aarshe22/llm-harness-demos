@@ -12,7 +12,62 @@
       <h1>E.T. the Extra-Terrestrial</h1>
       <p class="sub">Atari 2600 remake — 1982 cart, or every sequence from the film</p>
     </header>
-    <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
+    <div class="play-row">
+      <canvas id="game" width="640" height="768" tabindex="0" aria-label="E.T. game screen"></canvas>
+      <aside class="world-map" id="worldMap" aria-label="World map">
+        <h2>World map</h2>
+        <p class="map-here" id="mapHere">Title</p>
+        <div id="cartMap" class="map-cart" hidden>
+          <div class="cart-grid">
+            <div class="map-cell site" data-site="4">
+              <span class="map-name">Forest</span>
+              <span class="map-sub">landing · eat · warp</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell site" data-site="3">
+              <span class="map-name">Wide</span>
+              <span class="map-sub">4 wells</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell site" data-site="2">
+              <span class="map-name">Arrow</span>
+              <span class="map-sub">8 wells</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell site" data-site="1">
+              <span class="map-name">Eight</span>
+              <span class="map-sub">8 wells</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell site" data-site="0">
+              <span class="map-name">Diamond</span>
+              <span class="map-sub">4 wells</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell site" data-site="5">
+              <span class="map-name">Washington</span>
+              <span class="map-sub">FBI · scientist home</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell extra" data-site="6">
+              <span class="map-name">Well</span>
+              <span class="map-sub">interior</span>
+              <i class="you" hidden></i>
+            </div>
+            <div class="map-cell extra" data-site="7">
+              <span class="map-name">Home</span>
+              <span class="map-sub">score</span>
+              <i class="you" hidden></i>
+            </div>
+          </div>
+          <p class="map-legend">West ← Wide · Arrow · Eight · Diamond → East, wrapping. Up from wells → Forest. Down → Washington. Forest south → Arrow. Washington north → Diamond.</p>
+        </div>
+        <div id="movieMap" class="map-movie" hidden>
+          <div class="movie-grid" id="movieGrid"></div>
+          <p class="map-legend">Film order, one site per sequence. Cleared sites stay lit. Click a beat to jump there.</p>
+        </div>
+      </aside>
+    </div>
     <div class="hud-help">
       <div>
         <strong>Move</strong> arrows / WASD

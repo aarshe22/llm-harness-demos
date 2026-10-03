@@ -14,7 +14,7 @@ Open `index.html` in a browser, or serve this folder and load it from there.
   - Fire while standing in a power zone = use that power (neck stretch)
   - Fire + Up in a well = levitate out
   - On Halloween / bike sites, hold Fire for the sheet or to lift off
-- **World:** 1982 cart (six sites) or Movie (34 sequences)
+- **World map:** beside the screen (above it on a narrow window). Cart layout matches wrap tables; movie world lists all 34 beats. Green cell = you are here; the dot is E.T.’s position on that site. Click a movie beat to jump.
 - **Sequence:** jump to any film beat (Movie world)
 - **Reset:** Reset / Start button
 - **Variation 1–3:** Elliott+FBI+Scientist, Elliott+FBI, or Elliott only

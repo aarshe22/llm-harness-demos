@@ -210,6 +210,9 @@
     scoringPhase: 0,
     world: 0,
     camp: null,
+    campScene: 0,
+    visitedCart: Object.create(null),
+    visitedMovie: Object.create(null),
   };
 
   function pfFor(screen) {
@@ -317,6 +320,7 @@
     }
     calcZonePtr();
     placeCandy();
+    if (id <= ID.DC) G.visitedCart[id] = true;
   }
 
   function incrementEnergy(hi, lo) {
@@ -365,6 +369,7 @@
       hitStun: 0,
     };
     G.screen = ID.CAMP;
+    G.visitedMovie[idx] = true;
     G.et.pit = 0;
     G.et.neck = 0;
     G.et.carried = false;
@@ -544,6 +549,7 @@
         G.et.neck = 0;
         G.et.carried = false;
         G.campScene = Number(document.getElementById("scene").value) || 0;
+        G.visitedMovie = Object.create(null);
       }
       loadCampaignScene(G.campScene || 0);
       const hint = document.getElementById("hint");
@@ -561,6 +567,7 @@
       G.et.pit = 0;
       G.et.neck = 0;
       G.et.carried = false;
+      G.visitedCart = Object.create(null);
     }
     G.fireHeld = true;
     G.mothership = 0x84;
@@ -598,6 +605,7 @@
     G.shipY = 240;
     G.shipH = 16;
     G.screen = ID.FOREST;
+    G.visitedCart[ID.FOREST] = true;
     G.candyStatus = 0;
     calcZonePtr();
     beep(180, 0.4, 0.05, "sawtooth");
@@ -1491,7 +1499,117 @@
   function loop() {
     tick();
     draw();
+    refreshWorldMap();
     requestAnimationFrame(loop);
+  }
+
+  const CART_HERE = {
+    0: "Diamond wells (four pits)",
+    1: "Eight wells",
+    2: "Arrow wells",
+    3: "Wide diamond wells",
+    4: "Forest",
+    5: "Washington",
+    6: "Inside a well",
+    7: "Home / scoring",
+    8: "Title",
+    9: "Movie site",
+  };
+
+  function mapDotPos(el, x, y) {
+    if (!el) return;
+    const yy = y & 255;
+    const px = 10 + (Math.max(0, Math.min(XMAX, x)) / XMAX) * 80;
+    const py = 22 + (Math.max(0, Math.min(ET_YMAX, yy > 80 ? ET_YMAX : yy)) / ET_YMAX) * 62;
+    el.style.left = px + "%";
+    el.style.top = py + "%";
+    el.hidden = false;
+  }
+
+  function buildMovieMap() {
+    const grid = document.getElementById("movieGrid");
+    if (!grid || !window.ET_CAMPAIGN) return;
+    grid.innerHTML = window.ET_CAMPAIGN.scenes.map((s, i) => {
+      const short = (s.title || "").replace(/^\d+\s+/, "");
+      return `<button type="button" class="movie-cell" data-scene="${i}"><span class="n">${i + 1}</span><span class="map-name">${short}</span><i class="you" hidden></i></button>`;
+    }).join("");
+    grid.addEventListener("click", (e) => {
+      const cell = e.target.closest(".movie-cell");
+      if (!cell) return;
+      const sel = document.getElementById("scene");
+      const world = document.getElementById("world");
+      if (sel) sel.value = cell.getAttribute("data-scene");
+      if (world) world.value = "1";
+      startRound(true);
+    });
+  }
+
+  function refreshWorldMap() {
+    const cartEl = document.getElementById("cartMap");
+    const movieEl = document.getElementById("movieMap");
+    const hereEl = document.getElementById("mapHere");
+    if (!cartEl || !movieEl) return;
+    const wantMovie = Number(document.getElementById("world").value) === 1;
+    const playingMovie = G.world === 1 && G.screen !== ID.TITLE;
+    const movie = playingMovie || (G.screen === ID.TITLE && wantMovie);
+    cartEl.hidden = movie;
+    movieEl.hidden = !movie;
+
+    if (movie) {
+      const idx = G.screen === ID.TITLE ? Number(document.getElementById("scene").value) || 0 : (G.campScene || 0);
+      const scenes = window.ET_CAMPAIGN && window.ET_CAMPAIGN.scenes;
+      const spec = scenes && scenes[idx];
+      if (hereEl) {
+        if (G.screen === ID.HOME) hereEl.textContent = "Come / Stay scored";
+        else if (G.screen === ID.TITLE) hereEl.textContent = spec ? ("Start at " + spec.title) : "Movie world";
+        else hereEl.textContent = spec ? spec.title : "Movie site";
+      }
+      movieEl.querySelectorAll(".movie-cell").forEach((cell) => {
+        const i = Number(cell.getAttribute("data-scene"));
+        cell.classList.toggle("been", !!G.visitedMovie[i]);
+        const on = G.screen !== ID.TITLE && G.screen !== ID.HOME && i === (G.campScene || 0);
+        cell.classList.toggle("here", on || (G.screen === ID.TITLE && i === idx));
+        const you = cell.querySelector(".you");
+        if (on) mapDotPos(you, G.et.x, G.et.y);
+        else if (you) you.hidden = true;
+      });
+      return;
+    }
+
+    const site = G.screen === ID.TITLE ? -1 : G.screen;
+    const pitParent = G.screen === ID.PIT ? G.hold.screen : -1;
+    if (hereEl) {
+      if (site < 0) hereEl.textContent = "Title — six-site cart";
+      else if (G.screen === ID.PIT) hereEl.textContent = "Well under " + (CART_HERE[pitParent] || "a pit screen");
+      else hereEl.textContent = CART_HERE[G.screen] || "Cart";
+    }
+    cartEl.querySelectorAll(".map-cell").forEach((cell) => {
+      const id = Number(cell.getAttribute("data-site"));
+      cell.classList.toggle("been", !!G.visitedCart[id] || (id === ID.PIT && G.screen === ID.PIT));
+      const on = site === id;
+      cell.classList.toggle("here", on);
+      cell.classList.toggle("well-from", pitParent === id);
+      const you = cell.querySelector(".you");
+      if (on) mapDotPos(you, G.et.x, G.et.y);
+      else if (you) you.hidden = true;
+    });
+    G.humans.forEach((h) => {
+      let d = cartEl.querySelector(".human-dot[data-h=\"" + h.id + "\"]");
+      if (!d) {
+        d = document.createElement("i");
+        d.className = "human-dot " + (h.id === 0 ? "fbi" : h.id === 1 ? "elliott" : "scientist");
+        d.setAttribute("data-h", String(h.id));
+        cartEl.appendChild(d);
+      }
+      if (G.screen === ID.TITLE || h.screen < 0 || h.screen > ID.DC) {
+        d.hidden = true;
+        return;
+      }
+      const cell = cartEl.querySelector('.map-cell[data-site="' + h.screen + '"]');
+      if (!cell) { d.hidden = true; return; }
+      if (d.parentNode !== cell) cell.appendChild(d);
+      mapDotPos(d, h.x, h.y);
+    });
   }
 
   document.getElementById("startBtn").addEventListener("click", () => startRound(true));
@@ -1508,8 +1626,10 @@
       if (hint && document.getElementById("world").value !== "1") {
         hint.textContent = "Cart: three phone pieces, call ship, landing pad. Movie: one site per film beat — collect, hide from Keys, heal, fly. Hold Fire on Halloween for the sheet.";
       }
+      refreshWorldMap();
     });
   })();
+  buildMovieMap();
   G.screen = ID.TITLE;
   requestAnimationFrame(loop);
 })();
