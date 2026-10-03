@@ -1,4 +1,15 @@
 import { SLIDER_DEFS, readSliderValue } from "./config.js";
+import { clampFidelity } from "./rules.js";
+
+/** Touch chrome is play-only and only for coarse/touch pointers. */
+export function touchOverlayVisible(phase, coarse) {
+  return phase === "play" && !!coarse;
+}
+
+export function prefersCoarsePointer() {
+  if (typeof matchMedia !== "function") return false;
+  return matchMedia("(pointer: coarse)").matches;
+}
 
 /** Touch chrome is play-only and only for coarse/touch pointers. */
 export function touchOverlayVisible(phase, coarse) {
@@ -54,6 +65,10 @@ export function createUI(root, api) {
       <div class="panel hidden" id="settings">
         <h2>SETTINGS</h2>
         <label>Render scale <input type="range" id="render_scale" min="0.5" max="1.25" step="0.05"></label>
+        <label>Fidelity boost <span id="fidelityVal">x1</span>
+          <input type="range" id="fidelity" min="1" max="8" step="1">
+        </label>
+        <p class="help">x1 is the cheap default look. Higher multipliers use richer moth, predator, and forest meshes (applies now).</p>
         <label>Master volume <input type="range" id="master_volume" min="0" max="1" step="0.05"></label>
         <label class="check"><input type="checkbox" id="invert_y"> Invert look Y</label>
         <label class="check"><input type="checkbox" id="high_vis"> High-visibility fireflies</label>
@@ -108,9 +123,13 @@ export function createUI(root, api) {
     sync();
   };
   $("#closeCustom").onclick = () => show("title");
+  $("#fidelity").oninput = () => {
+    $("#fidelityVal").textContent = `x${clampFidelity($("#fidelity").value)}`;
+  };
   $("#applySettings").onclick = () => {
     api.applySettings({
       render_scale: Number($("#render_scale").value),
+      fidelity: clampFidelity($("#fidelity").value),
       master_volume: Number($("#master_volume").value),
       invert_y: $("#invert_y").checked,
       high_vis: $("#high_vis").checked,
@@ -158,6 +177,8 @@ export function createUI(root, api) {
     $("#warn").textContent = api.warning();
     const s = api.settings();
     $("#render_scale").value = s.render_scale;
+    $("#fidelity").value = clampFidelity(s.fidelity);
+    $("#fidelityVal").textContent = `x${clampFidelity(s.fidelity)}`;
     $("#master_volume").value = s.master_volume;
     $("#invert_y").checked = s.invert_y;
     $("#high_vis").checked = s.high_vis;

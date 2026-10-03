@@ -21,6 +21,49 @@ var min_alt: float = 8.0
 func _ready() -> void:
 	floor_snap_length = 0.0
 	motion_mode = MOTION_MODE_FLOATING
+	_apply_fidelity()
+
+
+func _apply_fidelity() -> void:
+	var f = GlowRules.clamp_fidelity(SettingsManager.fidelity)
+	if body_mesh and body_mesh.mesh is SphereMesh:
+		var sm = body_mesh.mesh as SphereMesh
+		if f > 1:
+			sm.radial_segments = mini(32, 8 + f * 4)
+			sm.rings = mini(24, 8 + f * 2)
+			body_mesh.scale = Vector3(0.92, 0.85, 1.28)
+	if f >= 3 and get_node_or_null("AntL") == null:
+		var ant_mesh = CylinderMesh.new()
+		ant_mesh.top_radius = 0.003
+		ant_mesh.bottom_radius = 0.008
+		ant_mesh.height = 0.22
+		ant_mesh.radial_segments = 6
+		var ant_mat = StandardMaterial3D.new()
+		ant_mat.albedo_color = Color(0.9, 0.95, 1)
+		ant_mat.emission_enabled = true
+		ant_mat.emission = Color(0.7, 0.86, 1)
+		var ant_l = MeshInstance3D.new()
+		ant_l.name = "AntL"
+		ant_l.mesh = ant_mesh
+		ant_l.material_override = ant_mat
+		ant_l.position = Vector3(-0.04, 0.12, -0.08)
+		ant_l.rotation_degrees = Vector3(-40, 0, 20)
+		add_child(ant_l)
+		var ant_r = ant_l.duplicate()
+		ant_r.name = "AntR"
+		ant_r.position.x = 0.04
+		ant_r.rotation_degrees.z = -20
+		add_child(ant_r)
+	if f >= 3 and get_node_or_null("HindL") == null and wing_l:
+		var hind = wing_l.duplicate()
+		hind.name = "HindL"
+		hind.scale = Vector3(0.62, 0.62, 0.62)
+		hind.position = Vector3(-0.12, 0.0, 0.06)
+		add_child(hind)
+		var hind_r = hind.duplicate()
+		hind_r.name = "HindR"
+		hind_r.position.x = 0.12
+		add_child(hind_r)
 
 
 func _physics_process(dt: float) -> void:
@@ -93,6 +136,12 @@ func _flap(dt: float) -> void:
 		wing_l.rotation.z = 0.55 + flap
 	if wing_r:
 		wing_r.rotation.z = -0.55 - flap
+	var hind_l = get_node_or_null("HindL")
+	var hind_r = get_node_or_null("HindR")
+	if hind_l:
+		hind_l.rotation.z = 0.35 + flap * 0.75
+	if hind_r:
+		hind_r.rotation.z = -0.35 - flap * 0.75
 
 
 func _update_light() -> void:

@@ -13,6 +13,10 @@ func _init() -> void:
 	failed += _check(not Rules.overglow_ready(3, 1.0), "overglow gate")
 	var split = Rules.lod_tree_split(20)
 	failed += _check(split.x + split.y == 20, "lod split")
+	failed += _check(Rules.clamp_fidelity(null) == 1, "fidelity default")
+	failed += _check(Rules.clamp_fidelity(0) == 1, "fidelity min")
+	failed += _check(Rules.clamp_fidelity(9) == 8, "fidelity max")
+	failed += _check(Rules.clamp_fidelity(4.6) == 5, "fidelity round")
 	print("GLOW headless tests failed=", failed)
 	quit(failed)
 

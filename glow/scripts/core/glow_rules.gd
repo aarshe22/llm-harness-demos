@@ -22,3 +22,10 @@ static func overglow_ready(combo: int, threshold_scale: float) -> bool:
 static func lod_tree_split(count: int, far_ratio: float = 0.55) -> Vector2i:
 	var far = int(floor(float(count) * far_ratio))
 	return Vector2i(count - far, far)
+
+
+static func clamp_fidelity(v: Variant) -> int:
+	var n = float(v) if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_STRING else 1.0
+	if is_nan(n) or is_inf(n):
+		return 1
+	return clampi(int(round(n)), 1, 8)
