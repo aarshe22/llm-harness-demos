@@ -98,7 +98,8 @@ DC.Game = (function () {
     if (!state.maintenance && DC.Maintenance) DC.Maintenance.initState(state);
     if (!state.upgrades) state.upgrades = [];
     if (state.metrics && state.metrics.growthPct === undefined) state.metrics.growthPct = 0;
-    ["patches", "badPatches", "batteriesReplaced", "migrations"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
+    if (!state.requests) state.requests = [];
+    ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     bootRun();
   }
 
@@ -197,6 +198,7 @@ DC.Game = (function () {
     DC.Security.tick(state, dt);
     DC.Maintenance.tick(state, dt);
     DC.Helpdesk.tick(state, dt);
+    DC.FieldRequests.tick(state, dt);
     DC.Incidents.tick(state, dt);
     DC.Growth.tick(state, dt);
     DC.Tutorial.tick(state, dt);

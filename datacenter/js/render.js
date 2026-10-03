@@ -348,6 +348,7 @@ DC.Render = (function () {
     const blink = Math.sin(time * 5 + bx) > 0;
 
     if (eq.type === "server") drawServer(ctx, eq, x, bx, bw, y, h, time, blink);
+    else if (eq.type === "blade") drawBlade(ctx, eq, x, bx, bw, y, h, time, blink);
     else if (eq.type === "storage") drawStorage(ctx, eq, x, bx, bw, y, h, time, blink);
     else if (eq.type === "switch") drawSwitch(ctx, eq, bx, bw, y, h, time, blink);
     else if (eq.type === "pdu") drawPDU(ctx, eq, bx, bw, y, h, time, blink);
@@ -416,6 +417,53 @@ DC.Render = (function () {
     }
   }
 
+  const TENANT_COLORS = ["#3de1ff", "#ff7ad9", "#ffc23d", "#3dff8f", "#7a5cff", "#ff7a3d"];
+
+  function drawBlade(ctx, eq, x, bx, bw, y, h, time, blink) {
+    const online = eq.state === "online";
+    const tc = TENANT_COLORS[(eq.name || "").split("-").pop() % TENANT_COLORS.length || 0];
+    ctx.fillStyle = online ? "#151438" : "#0b0820";
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    let edge = online ? PAL.ledPink : PAL.ledRed;
+    if (online && eq.temp > 72) edge = PAL.ledRed;
+    else if (online && eq.temp > 58) edge = PAL.hot;
+    if (eq.runaway && blink) edge = PAL.ledPink;
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(bx, y + 2, bw, h - 4);
+    ctx.lineWidth = 1;
+    pxText(ctx, eq.name, bx + 6, y + 16, 8, PAL.text);
+    ctx.fillStyle = tc;
+    ctx.fillRect(bx + bw - 14, y + 6, 8, 8);
+    ctx.font = 8 + 'px "Press Start 2P", monospace';
+    ctx.fillStyle = tc;
+    if (eq.tenant) ctx.fillText((eq.tenant.name || "?").split(" ")[0].slice(0, 8), bx + 20, y + 16);
+    const lw = Math.floor((bw - 60) * (eq.load / 100) / PX) * PX;
+    ctx.fillStyle = "#0a0722";
+    ctx.fillRect(bx + 6, y + h - 14, bw - 40, 6);
+    ctx.fillStyle = eq.load > 90 ? PAL.ledPink : eq.load > 75 ? PAL.ledAmber : PAL.ledGreen;
+    ctx.fillRect(bx + 6, y + h - 14, lw, 6);
+    if (online) {
+      const led2 = blink ? PAL.ledGreen : "#1b1445";
+      ctx.fillStyle = led2;
+      ctx.fillRect(bx + bw - 28, y + 8, 6, 6);
+      ctx.fillStyle = eq.temp > 58 ? PAL.ledRed : PAL.cold;
+      ctx.fillRect(bx + bw - 28, y + 18, 6, 6);
+      ctx.fillStyle = "#0a0722";
+      for (let i = 0; i < 5; i++) ctx.fillRect(bx + 8 + i * 7, y + h - 5, 4, PX);
+      if (eq.busy && eq.busy.t0) {
+        const p = 1 - eq.busy.t / eq.busy.t0;
+        ctx.fillStyle = PAL.ledCyan;
+        ctx.fillRect(bx + 6, y + h - 14, Math.floor((bw - 40) * p / PX) * PX, 6);
+      }
+      if (blink) pxText(ctx, "TENANT", bx + 6, y + 28, 8, tc);
+    } else {
+      const [txt, col] = eq.state === "booting" ? ["BOOT", PAL.ledCyan] : eq.state === "thermal-shutdown" ? ["HOT!", PAL.ledRed] : ["OFF", PAL.textDark];
+      if (blink || eq.state === "offline") pxText(ctx, txt, bx + 6, y + h - 8, 8, col);
+    }
+    freshFlash(ctx, eq, bx, y, bw, h);
+  }
+
   function drawStorage(ctx, eq, x, bx, bw, y, h, time, blink) {
     ctx.fillStyle = "#120e2e";
     ctx.fillRect(bx, y + 2, bw, h - 4);
@@ -438,6 +486,17 @@ DC.Render = (function () {
       ctx.fillRect(cx, cy, dw, Math.min(dh, 10));
     });
     if (eq.controller === "fault" && blink) pxText(ctx, "CTRL!", bx + 6, y + h - 6, 8, PAL.ledRed);
+    else if (DC.Storage.capState && DC.Storage.capState(eq) !== "ok") {
+      const cs = DC.Storage.capState(eq);
+      const capPct = Math.round(eq.usedPct || 0);
+      const col = cs === "full" ? PAL.ledRed : PAL.ledAmber;
+      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(bx + 44, y + h - 12, bw - 52, 6);
+      ctx.fillStyle = col;
+      ctx.fillRect(bx + 44, y + h - 12, Math.floor((bw - 52) * capPct / 100 / PX) * PX, 6);
+      if (blink && cs === "full") pxText(ctx, "FULL!", bx + 6, y + h - 6, 8, PAL.ledRed);
+      else if (blink) pxText(ctx, String(capPct) + "%", bx + 6, y + h - 6, 8, PAL.ledAmber);
+    }
     else if (eq.rebuild) {
       const d = eq.drives[eq.rebuild.idx];
       const p = d ? d.rebuild / 100 : 0;

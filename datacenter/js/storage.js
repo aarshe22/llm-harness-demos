@@ -17,6 +17,45 @@ DC.Storage = (function () {
     return "lost";
   }
 
+  function capState(st) {
+    if (st.usedPct === undefined) return "ok";
+    if (st.usedPct >= 100) return "full";
+    if (st.usedPct >= 95) return "crit";
+    if (st.usedPct >= 80) return "warn";
+    return "ok";
+  }
+
+  function fillRate(state) {
+    return 0.008 + state.metrics.customers / 2.5e6;
+  }
+
+  function installArray(state, nearSt) {
+    let rack = null;
+    if (nearSt !== undefined && nearSt !== null) rack = DC.Util.rackOf(state, nearSt);
+    if (!rack || DC.Facility.freeForServer(rack) < 4) {
+      rack = null;
+      let best = 0;
+      for (const r of state.racks) {
+        const free = DC.Facility.freeForServer(r);
+        if (free >= 4 && free > best) { best = free; rack = r; }
+      }
+    }
+    if (!rack) return null;
+    const rr = { f: (a, b) => a + Math.random() * (b - a), pick: (a) => a[Math.floor(Math.random() * a.length)], chance: (p) => Math.random() < p };
+    const idx = state.racks.indexOf(rack);
+    const st = DC.Facility.makeStorage(rr, idx);
+    st.age = 0;
+    st.usedPct = 0;
+    rack.equipment.push(st);
+    state.eqById[st.id] = st;
+    DC.Facility.nameServers(state);
+    st.fresh = true;
+    st.freshT = 0;
+    DC.Events.alarm(state, "info", st.name + " installed in " + rack.name + " — capacity restored", st.id);
+    DC.Events.emit("toast", state, st.name + " INSTALLED — " + rack.name, "good");
+    return st;
+  }
+
   function tick(state, dt) {
     const allStor = DC.Util.allEq(state, "storage");
     if (allStor.length) {
@@ -28,6 +67,20 @@ DC.Storage = (function () {
       state.metrics.dataPct = Math.round((healthy / allStor.length) * 100);
     }
     for (const st of allStor) {
+      if (st.usedPct === undefined) st.usedPct = Math.min(72, (st.age || 0.2) * 45);
+      const as = arrayState(st);
+      if (st.controller === "ok" && st.state === "online" && (as === "ok" || as === "degraded")) {
+        if (st.usedPct < 100) {
+          const prev = capState(st);
+          st.usedPct = Math.min(100, st.usedPct + fillRate(state) * dt);
+          const now = capState(st);
+          if (now !== prev) {
+            if (now === "warn") DC.Events.alarm(state, "warn", st.name + " capacity " + Math.round(st.usedPct) + "% — install additional storage", st.id);
+            else if (now === "crit") DC.Events.alarm(state, "crit", st.name + " capacity CRITICAL " + Math.round(st.usedPct) + "% — install storage NOW", st.id);
+            else if (now === "full") DC.Events.alarm(state, "crit", st.name + " FULL — services degraded until new storage installed", st.id);
+          }
+        }
+      }
       if (st.controller === "ok" && st.state === "online") {
         for (const d of st.drives) {
           if (d.state === "ok") {
@@ -114,5 +167,5 @@ DC.Storage = (function () {
     return true;
   }
 
-  return { tick, replaceDrive, failDrive, warnDrive, arrayState, failedCount, redLevel };
+  return { tick, replaceDrive, failDrive, warnDrive, arrayState, failedCount, redLevel, capState, installArray, fillRate };
 })();

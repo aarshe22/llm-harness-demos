@@ -60,7 +60,7 @@ DC.Thermal = (function () {
     }
     for (const rack of state.racks) {
       for (const eq of rack.equipment) {
-        if (eq.type !== "server") continue;
+        if (eq.type !== "server" && eq.type !== "blade") continue;
         const hall = U().hallOf(state, rack);
         const ambient = hall.temp;
         let tgt = ambient + 8 + (eq.load / 100) * 26;

@@ -206,6 +206,78 @@ DC.Facility = (function () {
     return { hall, newRacks };
   }
 
+  function makeBlade(rng, rackIdx, hallIdx) {
+    const n = nextId("BLD");
+    return {
+      id: n,
+      type: "blade",
+      rack: rackIdx,
+      uh: 4,
+      name: n,
+      model: rng.pick(["TenantBlade X2", "TenantBlade X4", "MultiWatt B9"]),
+      state: "online",
+      netState: "ok",
+      load: rng.f(15, 45),
+      baseLoad: rng.f(10, 25),
+      power: rng.pick([340, 420, 520]),
+      temp: 30 + rng.f(0, 5),
+      psuA: "ok", psuB: "ok",
+      fans: "ok", fanHealth: rng.f(0.7, 1),
+      age: rng.f(0.1, 0.9),
+      ecc: 0,
+      diskFull: false,
+      runaway: null,
+      sec: "clean",
+      busy: null,
+      throttle: 0,
+      tenant: null,
+      hall: hallIdx
+    };
+  }
+
+  function createBlades(state, rng) {
+    state.blades = [];
+    const tenants = [
+      { name: "NORTHWIND LTD", crit: 1.2 },
+      { name: "ACME CLOUD", crit: 1.4 },
+      { name: "GLOBEX CORP", crit: 1.6 },
+      { name: "INITECH", crit: 1.0 },
+      { name: "SOYLENT DATA", crit: 1.3 },
+      { name: "PIERRE PAYMENTS", crit: 1.5 }
+    ];
+    const shuffled = rng.shuffle(tenants.slice());
+    for (let i = 0; i < shuffled.length; i++) {
+      let placed = false;
+      for (const rack of state.racks) {
+        if (freeForServer(rack) >= 4) {
+          const b = makeBlade(rng, state.racks.indexOf(rack), rack.hall);
+          b.tenant = shuffled[i];
+          rack.equipment.push(b);
+          state.eqById[b.id] = b;
+          state.blades.push(b);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) break;
+    }
+    if (state.blades.length) {
+      DC.Events && 0;
+      const bladeSvc = {
+        id: "SVCB0",
+        name: "TENANT BLADES",
+        type: { key: "TENANT BLADES", customers: 1, crit: 1.2, tickets: 0.4 },
+        customers: 1,
+        crit: 1.2 * state.dna.criticality,
+        deps: state.blades.map((b) => b.id),
+        state: "healthy",
+        outageSince: 0, outageTotal: 0, openTickets: 0, degradedSince: 0,
+        bladeService: true
+      };
+      state.services.push(bladeSvc);
+    }
+  }
+
   function nameServers(state) {
     const counters = {};
     for (const rack of state.racks) {
@@ -360,6 +432,7 @@ DC.Facility = (function () {
     state.clusters = [];
     const cl = createCluster(state, rng);
     if (cl) state.clusters.push(cl);
+    createBlades(state, rng);
     if (DC.Maintenance) DC.Maintenance.initState(state);
     state.incidents = [];
     state.alarms = [];
@@ -476,5 +549,5 @@ DC.Facility = (function () {
     });
   }
 
-  return { generate, applyExpansion, generateExpansionOptions, makeServer, makeStorage, makeSwitch, makePDU, nameServers, freeForServer, hallFull, createHall };
+  return { generate, applyExpansion, generateExpansionOptions, makeServer, makeStorage, makeSwitch, makePDU, makeBlade, nameServers, freeForServer, hallFull, createHall };
 })();

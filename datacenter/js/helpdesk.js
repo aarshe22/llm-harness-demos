@@ -22,7 +22,7 @@ DC.Helpdesk = (function () {
         else if (eq.type === "switch") switches.push(eq);
       }
       const onlineServers = servers.filter((s) => s.state === "online" && DC.Network.netHealth(state, s) !== "down").length;
-      const storOk = storage.every((s) => DC.Storage.arrayState(s) !== "lost" && s.controller === "ok");
+      const storOk = storage.every((s) => DC.Storage.arrayState(s) !== "lost" && s.controller === "ok" && (s.usedPct === undefined || s.usedPct < 100));
       const swOk = switches.every((s) => s.state === "online");
       let hot = 0;
       for (const s of servers) if (s.throttle > 0.2) hot++;
@@ -92,5 +92,5 @@ DC.Helpdesk = (function () {
     return svc.openTickets;
   }
 
-  return { tick, ticketRate, svcSeverity };
+  return { tick, ticketRate, svcSeverity, evalServices };
 })();

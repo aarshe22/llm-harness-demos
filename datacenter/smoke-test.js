@@ -22,7 +22,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "security.js", "helpdesk.js", "incidents.js", "maintenance.js", "growth.js", "save.js", "tutorial.js"];
+const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "security.js", "helpdesk.js", "incidents.js", "maintenance.js", "requests.js", "growth.js", "save.js", "tutorial.js"];
 for (const f of files) {
   const code = fs.readFileSync(path.join(__dirname, "js", f), "utf8");
   vm.runInContext(code, sandbox, { filename: f });
@@ -103,6 +103,48 @@ if (state.halls.length !== halls0 + 1 || state.racks.length !== racks0 + res.new
 if (!DC.Facility.hallFull(state, 0) === false) {} // noop
 console.log("hall creation OK:", state.halls.map(h => h.name).join(","), "racks:", state.racks.length);
 if (DC.Facility.freeForServer(state.racks[0]) < 0) throw new Error("freeU underflow");
+
+// blades: 4U, dedicated tenants, each has a service dependency
+if (!state.blades || state.blades.length < 3) throw new Error("blades not generated: " + (state.blades || []).length);
+for (const b of state.blades) {
+  if (b.type !== "blade" || b.uh !== 4 || !b.tenant) throw new Error("bad blade: " + b.id);
+  const tenantSvcs = state.services.filter((s) => s.deps.indexOf(b.id) !== -1);
+  if (!tenantSvcs.length) throw new Error("blade " + b.id + " not referenced by the blade service");
+}
+console.log("blades OK:", state.blades.length);
+
+// field requests: spawn a request, complete it via eq.done
+state.requests = [];
+state.requestTimer = 999;
+DC.FieldRequests.spawn(state);
+if (!state.requests.length) throw new Error("no request spawned");
+const req = state.requests[0];
+const reqEq = state.eqById[req.targetId];
+reqEq.done = req.id;
+DC.FieldRequests.tick(state, 0.1);
+if (state.requests.length !== 0) throw new Error("request not completed via eq.done");
+console.log("field requests OK (spawn -> done -> cleared)");
+
+// storage capacity: fill -> warn -> full degrades service -> install relieves
+const stor0 = DC.Util.allEq(state, "storage").find((s) => !s.isClusterStorage && state.services.some((sv) => sv.deps.indexOf(s.id) !== -1));
+if (!stor0) throw new Error("no service-dependent storage found");
+stor0.usedPct = 79.9;
+DC.Storage.tick(state, 60);
+if (DC.Storage.capState(stor0) === "ok") throw new Error("capacity not filling: " + stor0.usedPct);
+const svcDep = state.services.find((sv) => sv.deps.indexOf(stor0.id) !== -1);
+stor0.usedPct = 100;
+for (const s of DC.Util.allEq(state, "server")) { s.state = "online"; s.netState = "ok"; s.throttle = 0; s.badPatch = false; }
+DC.Helpdesk.evalServices(state, 0.1);
+if (svcDep.state !== "degraded") throw new Error("full array did not degrade service: " + svcDep.state);
+const storCount = DC.Util.allEq(state, "storage").length;
+const ns = DC.Storage.installArray(state, stor0);
+if (!ns) throw new Error("installArray failed despite free U");
+if (DC.Util.allEq(state, "storage").length !== storCount + 1) throw new Error("array not registered in eqById");
+if (ns.usedPct !== 0) throw new Error("new array not empty");
+DC.Helpdesk.evalServices(state, 0.1);
+console.log("storage capacity OK: fill -> warn -> full -> degraded -> installed " + ns.name);
+
+
 
 // CRAC repair flow: fault -> busy -> finish -> no fault
 const crac = state.coolingUnits[0];

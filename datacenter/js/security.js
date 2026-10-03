@@ -3,7 +3,7 @@ window.DC = window.DC || {};
 DC.Security = (function () {
   function secState(state) {
     let worst = "NORMAL";
-    for (const s of DC.Util.allEq(state, "server")) {
+    for (const s of DC.Util.allEq(state).filter((e) => e.type === "server" || e.type === "blade")) {
       if (s.sec === "spreading" || s.sec === "compromised") worst = "CRITICAL";
       else if (s.sec === "suspect" && worst === "NORMAL") worst = "SUSPICIOUS";
     }
@@ -39,7 +39,7 @@ DC.Security = (function () {
   function tick(state, dt) {
     state.metrics.sec = secState(state);
     let healthy = 0, total = 0;
-    for (const s of DC.Util.allEq(state, "server")) {
+    for (const s of DC.Util.allEq(state).filter((e) => e.type === "server" || e.type === "blade")) {
       total++;
       if (s.sec === "clean") healthy++;
     }

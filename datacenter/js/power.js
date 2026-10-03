@@ -14,6 +14,7 @@ DC.Power = (function () {
       let rackDraw = 0;
       for (const eq of rack.equipment) {
         if (eq.type === "server" && eq.state === "online") rackDraw += (eq.power * (0.45 + eq.load / 160)) / 1000;
+        else if (eq.type === "blade" && eq.state === "online") rackDraw += (eq.power * (0.45 + eq.load / 160)) / 1000;
         else if (eq.type === "storage" && eq.state === "online") rackDraw += 0.55;
         else if (eq.type === "switch" && eq.state === "online") rackDraw += 0.15;
       }

@@ -15,7 +15,7 @@ DC.Network = (function () {
   }
 
   function netHealth(state, eq) {
-    if (eq.type === "server") {
+    if (eq.type === "server" || eq.type === "blade") {
       if (!serverConnected(state, eq)) return "down";
       const rack = DC.Util.rackOf(state, eq);
       if (rack && rackSwitchDown(state, rack) && !state.upgrades.includes("NET_FABRIC")) return "down";
@@ -41,7 +41,7 @@ DC.Network = (function () {
         }
       }
     }
-    for (const srv of DC.Util.allEq(state, "server")) {
+    for (const srv of DC.Util.allEq(state).filter((e) => e.type === "server" || e.type === "blade")) {
       if (srv.sec === "spreading") {
         srv.secTimer = (srv.secTimer || 0) - dt;
         if (srv.secTimer <= 0) spread(state, srv);
@@ -94,6 +94,9 @@ DC.Network = (function () {
       eq.badPatch = false;
       DC.Events.resolve(state, eq.id, "Patch recovered");
       DC.Events.alarm(state, "info", eq.name + " recovered to last-known-good state", eq.id);
+    } else if (kind === "reboot-request" || kind === "pull-logs" || kind === "patch-check" || kind === "reseat" || kind === "pwreset") {
+      if (kind === "reseat") eq.netState = "ok";
+      DC.Events.alarm(state, "info", eq.name + " task complete", eq.id);
     } else if (kind === "stop-proc") {
       srv.runaway = null;
       srv.load = Math.max(10, srv.load - 30);

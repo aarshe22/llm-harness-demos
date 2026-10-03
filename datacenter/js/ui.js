@@ -182,8 +182,12 @@ DC.UI = (function () {
 
   function eqSig(eq) {
     if (!eq) return "";
-    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
+    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
     if (eq.type === "storage") eq.drives.forEach((d) => parts.push(d.state));
+    if (eq.type === "blade" || eq.type === "server") {
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      parts.push(req ? req.id + ":" + Math.ceil(req.exp / 5) : "none", !!eq.done);
+    }
     return parts.join("|");
   }
 
@@ -211,15 +215,32 @@ DC.UI = (function () {
       set("net", eq.netState === "ok" ? "CONNECTED" : "DISCONNECTED", eq.netState === "ok" ? "g" : "a");
       set("sec", eq.sec.toUpperCase(), eq.sec === "clean" ? "g" : "r");
       set("state", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
-      set("ecc", eq.ecc + "/3", eq.ecc >= 3 ? "r" : "a");
       set("patch", eq.badPatch ? "BAD PATCH" : "OK", eq.badPatch ? "r" : "g");
       if (eq.maint) set("maint", eq.maint.name + " " + Math.ceil(eq.maint.t) + "s", "b");
       else if (eq.busy) set("maint", eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s", "b");
       else set("maint", "—", "");
+    } else if (eq.type === "blade") {
+      set("load", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g");
+      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g");
+      set("psu-a", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r");
+      set("psu-b", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r");
+      set("fans", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
+      set("state", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
+      set("maint", eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b");
     } else if (eq.type === "storage") {
       const as = DC.Storage.arrayState(eq);
       set("array", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r");
       set("controller", eq.controller.toUpperCase(), eq.controller === "ok" ? "g" : "r");
+      if (eq.usedPct !== undefined) {
+        const capPct = Math.round(eq.usedPct);
+        const capCls = capPct >= 95 ? "r" : capPct >= 80 ? "o" : "g";
+        set("cap", capPct + "%", capCls);
+        const capbar = body.querySelector('[data-pk="capbar"]');
+        if (capbar) {
+          capbar.style.width = capPct + "%";
+          capbar.style.background = capPct >= 95 ? "var(--red)" : capPct >= 80 ? "var(--orange)" : "var(--green)";
+        }
+      }
       if (eq.rebuild) {
         const d = eq.drives[eq.rebuild.idx];
         set("rebuild", Math.round(d.rebuild) + "%", "b");
@@ -271,6 +292,8 @@ DC.UI = (function () {
       if (eq.diskFull) html += statRow("DISK", "LOG VOLUME FULL", "r");
       html += statRow("TASK", eq.maint ? eq.maint.name + " " + Math.ceil(eq.maint.t) + "s" : eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
       if (eq.clRole) html += statRow("CLUSTER", "NODE " + eq.clRole + " — " + Math.round(DC.Cluster.assignedLoad(DC.Cluster.clusterOf(state, eq.id), eq.clRole)) + "% workload", "b");
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      if (req) html += '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + '</span></div><div style="margin-top:6px"><button id="req-done">DONE — CLEAR TICKET</button></div>';
       if (eq.state === "online") {
         actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
         actions.push(["NET", () => { DC.Network.toggleNet(state, eq); }]);
@@ -289,12 +312,44 @@ DC.UI = (function () {
           actions.push(["REIMAGE", () => { DC.Security.reimage(state, eq); select(null); }]);
         }
         if (eq.backupFailed) actions.push(["RETRY BACKUP", () => { eq.backupFailed = false; DC.Events.resolve(state, eq.id, "backup"); }]);
+      } else       if (eq.state === "offline" || eq.state === "thermal-shutdown") {
+        actions.push(["PWR ON", () => { DC.Network.pwr(state, eq, true); select(null); }]);
+      }
+    } else if (eq.type === "blade") {
+      html += statRow("MODEL", eq.model);
+      if (eq.tenant) {
+        html += statRow("TENANT", eq.tenant.name);
+        html += statRow("CRITICALITY", "x" + eq.tenant.crit.toFixed(1), eq.tenant.crit >= 1.4 ? "a" : "g");
+      }
+      html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g", "load");
+      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g", "temp");
+      html += statRow("PSU A", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r", "psu-a");
+      html += statRow("PSU B", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r", "psu-b");
+      html += statRow("FANS", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a", "fans");
+      html += statRow("STATE", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a", "state");
+      html += statRow("TASK", eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      if (req) html += '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + '</span></div><div style="margin-top:6px"><button id="req-done">DONE — CLEAR TICKET</button></div>';
+      if (eq.state === "online") {
+        actions.push(["REBOOT", () => { eq.busy = { kind: "reboot-request", t: 8 }; select(null); }]);
+        actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
+        if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed") actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; select(null); }]);
+        if (eq.runaway) actions.push(["STOP PROCESS", () => { eq.busy = { kind: "stop-proc", t: 5 }; select(null); }]);
+        if (eq.diskFull) actions.push(["CLEAR LOGS", () => { eq.busy = { kind: "clear-logs", t: 4 }; select(null); }]);
+        if (eq.sec === "spreading" || eq.sec === "infected" || eq.sec === "compromised") {
+          actions.push(["QUARANTINE", () => { DC.Security.quarantine(state, eq); select(null); }]);
+          actions.push(["REIMAGE", () => { DC.Security.reimage(state, eq); select(null); }]);
+        }
       } else if (eq.state === "offline" || eq.state === "thermal-shutdown") {
         actions.push(["PWR ON", () => { DC.Network.pwr(state, eq, true); select(null); }]);
       }
     } else if (eq.type === "storage") {
       html += statRow("MODEL", eq.model);
       html += statRow("RAID", "RAID " + eq.raid + (eq.isClusterStorage ? " — CLUSTER DEDICATED" : ""));
+      const capPct = Math.round(eq.usedPct === undefined ? Math.min(72, (eq.age || 0.2) * 45) : eq.usedPct);
+      const capCls = capPct >= 95 ? "r" : capPct >= 80 ? "o" : "g";
+      html += '<div class="statrow"><span class="k">CAPACITY</span><span class="v ' + capCls + '" data-pk="cap">' + capPct + '%</span></div>';
+      html += '<div style="margin:2px 0 6px;height:8px;background:var(--line-dim);position:relative"><div data-pk="capbar" style="position:absolute;inset:0;width:' + capPct + "%;background:" + (capPct >= 95 ? "var(--red)" : capPct >= 80 ? "var(--orange)" : "var(--green)") + '"></div></div>';
       const as = DC.Storage.arrayState(eq);
       html += statRow("ARRAY", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r", "array");
       html += statRow("CONTROLLER", eq.controller.toUpperCase(), eq.controller === "ok" ? "g" : "r", "controller");
@@ -304,6 +359,7 @@ DC.UI = (function () {
       });
       html += "</div>";
       html += statRow("REBUILD", "—", "", "rebuild");
+      if (capPct >= 80) actions.push(["ADD ARRAY", () => { const ns = DC.Storage.installArray(state, eq); if (!ns) DC.Events.emit("toast", state, "NO FREE U — EXPAND FACILITY FIRST", "bad"); select(null); }]);
       if (eq.controller === "fault") {
         actions.push(["RESET CTRL", () => { eq.busy = { kind: "ctrl-reset", t: 8 }; select(null); }]);
         actions.push(["REPLACE CTRL", () => { eq.busy = { kind: "ctrl-replace", t: 16 }; select(null); }]);
@@ -339,11 +395,27 @@ DC.UI = (function () {
       if (eq.state === "standby" || eq.state === "fault") actions.push(["START", () => { DC.Power.startGenerator(state, eq); select(null); }]);
     }
     body.innerHTML = html;
+    const doneBtn = body.querySelector("#req-done");
+    if (doneBtn) {
+      doneBtn.onclick = (e) => {
+        e.stopPropagation();
+        DC.Audio.click();
+        eq.done = (state.requests.find((r) => r.targetId === eq.id) || {}).id;
+        renderPanel();
+      };
+    }
     body.querySelectorAll(".drive").forEach((dEl) => {
       dEl.onclick = (e) => {
         e.stopPropagation();
         const idx = parseInt(dEl.getAttribute("data-drive"), 10);
         DC.Storage.replaceDrive(state, eq, idx);
+        renderPanel();
+      };
+    });
+    body.querySelectorAll(".drive[data-batt]").forEach((dEl) => {
+      dEl.onclick = (e) => {
+        e.stopPropagation();
+        DC.Maintenance.replaceBattery(state, parseInt(dEl.getAttribute("data-batt"), 10));
         renderPanel();
       };
     });
@@ -601,6 +673,8 @@ DC.UI = (function () {
       <p>Some racks hold a 2-node HA cluster (CLU-A / CLU-B) sharing one dedicated RAID-6 array. If a node fails, its workloads can MIGRATE to the healthy node — but the shared array is a single point of failure. Protect it.</p>
       <h3>MAINTENANCE</h3>
       <p>OS updates, app patches, cooling service and generator maintenance come due over time. Apply them from the MAINT chip. Occasionally a patch goes BAD — the service degrades until you RECOVER it from the server panel.</p>
+      <h3>FIELD TICKETS</h3>
+      <p>Customers open high-priority tickets asking for menial work: reboots, log pulls, cable reseats. Each has a countdown — ignore it and it escalates: reputation and score hit. Jump to the server from the alarm and do the task.</p>
       <h3>UPS & POWER</h3>
       <p>The UPS has a grid of 8 battery strings. Batteries age, die under stress, and shrink runtime — replace worn strings from the POWER panel. Generators need refuelling and periodic service; neglected units may fail to start.</p>
       <h3>GROWTH</h3>
@@ -640,7 +714,8 @@ DC.UI = (function () {
       ["PATCHES APPLIED", String(s.patches || 0)],
       ["BAD PATCHES", String(s.badPatches || 0)],
       ["WORKLOAD MIGRATIONS", String(s.migrations || 0)],
-      ["BATTERIES REPLACED", String(s.batteriesReplaced || 0)]
+      ["BATTERIES REPLACED", String(s.batteriesReplaced || 0)],
+      ["FIELD REQUESTS DONE", String(s.requestsDone || 0)]
     ];
     let html = '<div class="statgrid">';
     for (const [k, v] of rows) html += '<div class="statrow"><span class="k">' + k + '</span><span class="v">' + v + "</span></div>";
