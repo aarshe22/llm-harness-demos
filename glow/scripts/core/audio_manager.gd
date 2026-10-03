@@ -4,6 +4,12 @@ extends Node
 var _player: AudioStreamPlayer
 var _rng = RandomNumberGenerator.new()
 
+var _ambience := false
+var _chirp_in := 0.4
+var _frog_in := 2.2
+var _owl_in := 7.0
+
+
 func _ready() -> void:
 	_player = AudioStreamPlayer.new()
 	add_child(_player)
@@ -11,6 +17,27 @@ func _ready() -> void:
 	_ensure_bus("Environment")
 	_ensure_bus("Predators")
 	_ensure_bus("UI")
+
+
+func start_night_forest() -> void:
+	_ambience = true
+
+
+func _process(delta: float) -> void:
+	if not _ambience:
+		return
+	_chirp_in -= delta
+	_frog_in -= delta
+	_owl_in -= delta
+	if _chirp_in <= 0.0:
+		play_tone(2400.0 + _rng.randf() * 900.0, 0.04, 0.02)
+		_chirp_in = 0.2 + _rng.randf() * 0.7
+	if _frog_in <= 0.0:
+		play_tone(320.0 + _rng.randf() * 80.0, 0.14, 0.03)
+		_frog_in = 2.5 + _rng.randf() * 5.0
+	if _owl_in <= 0.0:
+		hoot()
+		_owl_in = 10.0 + _rng.randf() * 14.0
 
 
 func _ensure_bus(bus_name: String) -> void:

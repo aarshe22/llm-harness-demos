@@ -70,6 +70,11 @@ void defaults;
 
 const input = createInput(canvas);
 const audio = createAudio();
+function unlockForestAudio() {
+  audio.unlock();
+}
+addEventListener("pointerdown", unlockForestAudio);
+addEventListener("keydown", unlockForestAudio);
 const moth = createMoth(scene, settings.fidelity);
 const trail = new LogicalTrail();
 trail.attach(scene);
@@ -167,7 +172,7 @@ function lockPointer() {
 }
 
 function play() {
-  audio.unlock();
+  unlockForestAudio();
   resetRun();
   phase = "play";
   paused = false;
@@ -371,6 +376,7 @@ function die() {
 function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(0.05, clock.getDelta());
+  audio.tick?.(dt);
   const st = input.poll();
   if (phase === "play" && !paused) {
     playTime += dt;
