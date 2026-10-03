@@ -2,7 +2,7 @@ window.DC = window.DC || {};
 
 DC.Game = (function () {
   let state = null, canvas = null, ctx = null;
-  let cam = { x: 0, zoom: 0.75 };
+  let cam = { x: 0, y: 0, zoom: 0.75 };
   let dragging = false, dragMoved = false, lastMx = 0, draggingMid = false;
   let keys = {};
   let raf = null, lastT = 0, simAcc = 0, uiAcc = 0, saveAcc = 0;
@@ -15,6 +15,10 @@ DC.Game = (function () {
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    if (!inMenu && state) {
+      cam.y = DC.Render.CAM_Y;
+      cam.zoom = DC.Util.clamp(cam.zoom, 0.26, 1.6);
+    }
   }
 
   function init() {
@@ -96,9 +100,9 @@ DC.Game = (function () {
     document.getElementById("ui-root").innerHTML = "";
     DC.Events.handlers = {};
     DC.UI.init(state);
-    cam.x = 0; cam.zoom = Math.min(1, Math.max(0.5, window.innerWidth / 1600));
-    DC.Events.on("expansion", () => { setTimeout(() => { if (running()) DC.UI.showExpansion(); }, 600); });
-    DC.Events.on("upgrade", () => { setTimeout(() => { if (running()) DC.UI.showUpgrade(); }, 600); });
+    cam.x = DC.Render.totalWidth(state) / 2;
+    cam.y = DC.Render.CAM_Y;
+    cam.zoom = DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H, 0.3, 0.9);
     DC.Audio.startAmbient();
   }
 
@@ -235,10 +239,14 @@ DC.Game = (function () {
 
   function clampCam() {
     if (!state) return;
-    const w = DC.Render.totalWidth(state) * cam.zoom;
-    const lim = Math.max(0, w / 2 - window.innerWidth / 2 + 200);
-    cam.x = DC.Util.clamp(cam.x, -lim, lim);
-    cam.zoom = DC.Util.clamp(cam.zoom, 0.28, 1.8);
+    const halfView = (window.innerWidth / 2) / cam.zoom;
+    const pad = 140;
+    const total = DC.Render.totalWidth(state);
+    const min = -pad + halfView, max = total + pad - halfView;
+    if (min > max) cam.x = total / 2;
+    else cam.x = DC.Util.clamp(cam.x, min, max);
+    cam.zoom = DC.Util.clamp(cam.zoom, 0.26, 1.6);
+    cam.y = DC.Render.CAM_Y;
   }
 
   function bindInput() {

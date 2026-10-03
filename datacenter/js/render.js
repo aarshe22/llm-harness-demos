@@ -1,237 +1,433 @@
 window.DC = window.DC || {};
 
 DC.Render = (function () {
-  const RACK_W = 110, GAP = 44, U = 22, RACK_U = 42;
-  const FLOOR_PAD = 90;
+  const PX = 2;
+  const RACK_W = 128, GAP = 48, U = 24, RACK_U = 42;
+  const RACK_H = RACK_U * U;
+  const FLOOR_H = 240;
+  const CEIL_H = 130;
+  const CAM_Y = RACK_H / 2;
 
-  function rackX(idx) { return idx * (RACK_W + GAP) + 60; }
+  const PAL = {
+    bgTop: "#1a1245", bgBot: "#080418",
+    wall: "#120d30", wallSeam: "#1b1445", wallVent: "#0a0722",
+    floorA: "#1c1547", floorB: "#161040", floorLine: "#2b1f66", floorEdge: "#4d3dff",
+    rack: "#181233", rackIn: "#100c26", rackEdge: "#4d3dff", rackHi: "#7a5cff", rivet: "#3d3585",
+    ledGreen: "#3dff8f", ledCyan: "#3de1ff", ledAmber: "#ffc23d", ledRed: "#ff3d6e", ledBlue: "#6b7bff", ledPink: "#ff7ad9",
+    text: "#c8c2ff", textDim: "#7d74d0", textDark: "#4d4494",
+    cable: ["#ff3d6e", "#3de1ff", "#ffc23d", "#3dff8f"],
+    hot: "#ff7a3d", cold: "#3de1ff"
+  };
 
-  function totalWidth(state) {
-    return state.racks.length * (RACK_W + GAP) + 160;
+  function snap(v) { return Math.round(v / PX) * PX; }
+
+  function rackX(idx) { return 60 + idx * (RACK_W + GAP); }
+  function totalWidth(state) { return state.racks.length * (RACK_W + GAP) + 180; }
+
+  function screenCenter(w, h) { return { x: w / 2, y: 44 + (h - 44) / 2 + 14 }; }
+
+  function worldFromScreen(mx, my, w, h, cam) {
+    const c = screenCenter(w, h);
+    return {
+      x: (mx - c.x) / cam.zoom + cam.x,
+      y: (my - c.y) / cam.zoom + cam.y
+    };
   }
 
   function eqRect(eq, rack) {
     let y = 0;
-    const sorted = rack.equipment;
-    const idx = sorted.indexOf(eq);
-    for (let i = 0; i < idx; i++) y += sorted[i].uh;
-    return { x: 0, yTop: y, h: eq.uh };
+    const idx = rack.equipment.indexOf(eq);
+    for (let i = 0; i < idx; i++) y += rack.equipment[i].uh;
+    return { yTop: y, h: eq.uh };
+  }
+
+  function glowRect(ctx, x, y, w, h, color, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(x - PX, y - PX, w + PX * 2, h + PX * 2);
+    ctx.globalAlpha = 1;
+  }
+
+  function pxText(ctx, txt, x, y, size, color, align) {
+    ctx.font = size + 'px "Press Start 2P", monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = align || "left";
+    ctx.fillText(txt, x, y);
+    ctx.textAlign = "left";
   }
 
   function draw(state, ctx, cam, w, h, time) {
-    ctx.save();
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#060a12");
-    grad.addColorStop(0.6, "#070c14");
-    grad.addColorStop(1, "#04070c");
+    grad.addColorStop(0, PAL.bgTop);
+    grad.addColorStop(1, PAL.bgBot);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    ctx.translate(w / 2 + cam.x, h * 0.72);
+    ctx.imageSmoothingEnabled = false;
+    ctx.save();
+    const c = screenCenter(w, h);
+    ctx.translate(snap(c.x), snap(c.y));
     ctx.scale(cam.zoom, cam.zoom);
-    ctx.translate(-cam.x, 0);
+    ctx.translate(-cam.x, -cam.y);
 
-    const floorY = RACK_U * U + 26;
     const worldW = totalWidth(state);
-    ctx.fillStyle = "#080d15";
-    ctx.fillRect(-100, floorY, worldW + 200, 300);
-    ctx.strokeStyle = "#101b28";
-    ctx.lineWidth = 1;
-    for (let x = -100; x < worldW + 200; x += 60) {
-      ctx.beginPath(); ctx.moveTo(x, floorY); ctx.lineTo(x, floorY + 260); ctx.stroke();
-    }
-    ctx.fillStyle = "#0a1019";
-    ctx.fillRect(-100, floorY, worldW + 200, 8);
+    const floorY = RACK_H;
 
-    const halfW = (w / 2) / cam.zoom;
-    const visX0 = cam.x - halfW - 200, visX1 = cam.x + halfW + 200;
+    drawWall(ctx, worldW, floorY, time);
+    drawCeiling(ctx, worldW, time);
+    drawFloor(ctx, worldW, floorY);
+    drawLightCones(ctx, worldW, floorY, time);
+    drawHalls(ctx, state, floorY);
+    drawCRACs(ctx, state, floorY, time);
 
     state.racks.forEach((rack, i) => {
       const x = rackX(i);
-      if (x < visX0 - 200 || x > visX1) return;
       drawRack(ctx, state, rack, x, floorY, time);
     });
 
-    drawHalls(ctx, state, floorY);
-    drawCRACs(ctx, state, floorY, time);
     ctx.restore();
+    drawCRT(ctx, w, h, time);
+  }
+
+  function drawWall(ctx, worldW, floorY, time) {
+    ctx.fillStyle = PAL.wall;
+    ctx.fillRect(-140, -CEIL_H, worldW + 280, CEIL_H + floorY);
+    ctx.fillStyle = PAL.wallSeam;
+    for (let x = -140; x < worldW + 140; x += 120) ctx.fillRect(x, -CEIL_H, PX, CEIL_H + floorY);
+    ctx.fillStyle = PAL.wallVent;
+    for (let x = 40; x < worldW + 100; x += 260) {
+      ctx.fillRect(x, -CEIL_H + 30, 44, 20);
+      ctx.fillStyle = PAL.wallSeam;
+      for (let i = 0; i < 4; i++) ctx.fillRect(x, -CEIL_H + 34 + i * 4, 44, PX);
+      ctx.fillStyle = PAL.wallVent;
+    }
+  }
+
+  function drawCeiling(ctx, worldW, time) {
+    ctx.fillStyle = "#0b0722";
+    ctx.fillRect(-140, -CEIL_H, worldW + 280, CEIL_H - 24);
+    ctx.fillStyle = "#1b1445";
+    ctx.fillRect(-140, -30, worldW + 280, 8);
+    ctx.fillStyle = "#0b0722";
+    for (let x = -100; x < worldW + 100; x += 24) ctx.fillRect(x, -34, 10, 6);
+    let ci = 0;
+    for (let x = 20; x < worldW + 40; x += 220) {
+      ctx.fillStyle = "#2b1f66";
+      ctx.fillRect(x, -CEIL_H + 18, 44, PX);
+      ctx.fillStyle = "#4d3dff";
+      ctx.fillRect(x + 18, -CEIL_H + 18, PX, 10);
+      const flick = Math.sin(time * 7 + ci * 2.7) > -0.96 ? 1 : 0.3;
+      ctx.globalAlpha = flick;
+      ctx.fillStyle = "#ffe9a8";
+      ctx.fillRect(x + 2, -CEIL_H + 20, 40, 6);
+      ctx.globalAlpha = 1;
+      ci++;
+    }
+    ctx.fillStyle = "#0d0a26";
+    for (let x = 60; x < worldW; x += 90) ctx.fillRect(x, -CEIL_H, 6, CEIL_H - 26);
+  }
+
+  function drawFloor(ctx, worldW, floorY) {
+    ctx.fillStyle = PAL.floorA;
+    ctx.fillRect(-140, floorY, worldW + 280, FLOOR_H);
+    ctx.fillStyle = PAL.floorB;
+    const tile = 48;
+    for (let y = floorY; y < floorY + FLOOR_H; y += tile) {
+      for (let x = -140, k = 0; x < worldW + 140; x += tile, k++) {
+        if (((x / tile) | 0) % 2 === 0) ctx.fillRect(x, y, tile, tile);
+      }
+    }
+    ctx.fillStyle = PAL.floorLine;
+    for (let x = -140; x < worldW + 140; x += tile) ctx.fillRect(x, floorY, PX, FLOOR_H);
+    for (let y = floorY; y < floorY + FLOOR_H; y += tile) ctx.fillRect(-140, y, worldW + 280, PX);
+    ctx.fillStyle = PAL.floorEdge;
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(-140, floorY, worldW + 280, PX);
+    ctx.globalAlpha = 1;
+    PAL.cable.forEach((col, i) => {
+      const cy = floorY + 34 + i * 14;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.55;
+      for (let x = -140; x < worldW + 100; x += 26) ctx.fillRect(x + ((i * 7) % 13), cy, 14, PX);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function drawLightCones(ctx, worldW, floorY, time) {
+    let ci = 0;
+    for (let x = 20; x < worldW + 40; x += 220) {
+      const flick = 0.05 + 0.02 * Math.sin(time * 2 + ci);
+      ctx.globalAlpha = Math.max(0.03, flick);
+      ctx.fillStyle = "#ffe9a8";
+      ctx.beginPath();
+      ctx.moveTo(x + 2, -CEIL_H + 26);
+      ctx.lineTo(x + 42, -CEIL_H + 26);
+      ctx.lineTo(x + 130, floorY);
+      ctx.lineTo(x - 86, floorY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ci++;
+    }
   }
 
   function drawHalls(ctx, state, floorY) {
-    ctx.font = "bold 16px monospace";
     let i = 0;
     while (i < state.racks.length) {
       const hallIdx = state.racks[i].hall;
       let j = i;
       while (j < state.racks.length && state.racks[j].hall === hallIdx) j++;
       const hall = state.halls[hallIdx] || state.halls[0];
-      const x0 = rackX(i) - 30, x1 = rackX(j - 1) + RACK_W + 30;
-      ctx.strokeStyle = "rgba(74,168,255,0.18)";
-      ctx.setLineDash([6, 8]);
-      ctx.strokeRect(x0, -46, x1 - x0, floorY + 60);
+      const x0 = rackX(i) - 34, x1 = rackX(j - 1) + RACK_W + 34;
+      ctx.strokeStyle = hall.leak ? "#ff3d6e" : PAL.rackHi;
+      ctx.globalAlpha = 0.5;
+      ctx.setLineDash([8, 6]);
+      ctx.lineWidth = PX;
+      ctx.strokeRect(x0, -CEIL_H + 42, x1 - x0, floorY + CEIL_H - 20);
       ctx.setLineDash([]);
-      ctx.fillStyle = hall.leak ? "#ff8f9a" : "rgba(122,168,220,0.75)";
-      ctx.fillText(hall.name + (hall.leak ? "  ⚠ WATER LEAK" : ""), x0 + 8, -26);
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 1;
+      const blink = hall.leak && Math.sin(Date.now() / 200) > 0;
+      pxText(ctx, hall.name + (hall.leak ? " !WATER LEAK" : ""), x0 + 8, -CEIL_H + 66, 8, blink ? PAL.ledRed : PAL.ledCyan);
       if (hall.leak) {
-        ctx.fillStyle = "rgba(74,168,255," + (0.25 + 0.15 * Math.sin(Date.now() / 300)) + ")";
-        ctx.fillRect(x0, floorY, x1 - x0, 300);
+        ctx.fillStyle = "rgba(61,225,255," + (0.15 + 0.1 * Math.sin(Date.now() / 250)) + ")";
+        ctx.fillRect(x0, floorY - CEIL_H, x1 - x0, 200);
       }
       i = j;
     }
   }
 
   function drawCRACs(ctx, state, floorY, time) {
-    state.coolingUnits.forEach((cr, i) => {
+    state.coolingUnits.forEach((cr) => {
       const hallRacks = state.racks.filter((r) => r.hall === cr.hall);
       if (!hallRacks.length) return;
-      const groupIdx = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
-      const x = rackX(groupIdx);
-      const on = !cr.fault;
-      const blink = on && Math.sin(time * 2 + i) > 0;
-      ctx.fillStyle = "#0b1220";
-      ctx.strokeStyle = on ? "#173247" : "#4a1f26";
-      ctx.fillRect(x - 20, floorY + 30, 60, 46);
-      ctx.strokeRect(x - 20, floorY + 30, 60, 46);
-      ctx.fillStyle = "#4a5c70";
-      ctx.font = "9px monospace";
-      ctx.fillText(cr.name, x - 16, floorY + 46);
-      ctx.fillStyle = on ? (cr.status === "ok" ? "#34d17c" : "#ffb340") : "#ff4d5e";
-      if (blink || cr.fault) { ctx.beginPath(); ctx.arc(x + 28, floorY + 40, 3, 0, Math.PI * 2); ctx.fill(); }
-      if (cr.fault) {
-        ctx.fillStyle = "#ff4d5e";
-        ctx.font = "bold 9px monospace";
-        ctx.fillText("FAULT", x - 16, floorY + 62);
+      const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
+      const x = rackX(anchor) - 26;
+      const y = floorY + 10;
+      const fault = !!cr.fault;
+      ctx.fillStyle = PAL.rackIn;
+      ctx.fillRect(x, y, 68, 58);
+      ctx.strokeStyle = fault ? PAL.ledRed : PAL.rackEdge;
+      ctx.lineWidth = PX;
+      ctx.strokeRect(x, y, 68, 58);
+      ctx.lineWidth = 1;
+      pxText(ctx, cr.name, x + 6, y + 14, 8, PAL.text);
+      const spin = time * (fault ? 1 : 9);
+      ctx.strokeStyle = fault ? PAL.ledRed : PAL.cold;
+      for (let b = 0; b < 2; b++) {
+        const a = spin + b * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(x + 20, y + 34);
+        ctx.lineTo(x + 20 + Math.cos(a) * 12, y + 34 + Math.sin(a) * 12);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = PAL.rackEdge;
+      ctx.beginPath();
+      ctx.arc(x + 20, y + 34, 13, 0, Math.PI * 2);
+      ctx.stroke();
+      const led = fault ? (Math.sin(time * 8) > 0 ? PAL.ledRed : "#5a1020") : PAL.ledGreen;
+      ctx.fillStyle = led;
+      if (fault || Math.sin(time * 3) > 0) ctx.fillRect(x + 48, y + 26, 6, 6);
+      if (fault) {
+        if (Math.sin(time * 6) > 0) pxText(ctx, "FAULT", x + 6, y + 54, 8, PAL.ledRed);
       }
     });
   }
 
   function drawRack(ctx, state, rack, x, floorY, time) {
-    const h = RACK_U * U;
-    const rackHasCrit = state.alarms.some((a) => a.sev === "crit" && !a.cleared && a.time > state.time - 30 && eqInRack(state, a.targetId) === rack);
-    ctx.fillStyle = "#0a0e15";
-    ctx.fillRect(x - 5, -6, RACK_W + 10, h + 12);
-    if (rackHasCrit) {
-      const pulse = 0.35 + 0.25 * Math.sin(time * 5);
-      ctx.strokeStyle = "rgba(255,77,94," + pulse + ")";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x - 7, -8, RACK_W + 14, h + 16);
-      ctx.lineWidth = 1;
+    const h = RACK_H;
+    const critInRack = rack.equipment.some((eq) => eqAlarm(state, eq) === "crit");
+    if (critInRack) {
+      const pulse = 0.4 + 0.3 * Math.sin(time * 6);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = PAL.ledRed;
+      ctx.fillRect(x - 5, -5, RACK_W + 10, PX);
+      ctx.fillRect(x - 5, h + 3, RACK_W + 10, PX);
+      ctx.fillRect(x - 5, 0, PX, h);
+      ctx.fillRect(x + RACK_W + 3, 0, PX, h);
+      ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = "#0d1320";
+    ctx.fillStyle = "#04030c";
+    ctx.fillRect(x - 4, -2, RACK_W + 8, h + 10);
+    ctx.fillStyle = PAL.rack;
     ctx.fillRect(x, 0, RACK_W, h);
-    ctx.strokeStyle = "#1c2836";
+    ctx.strokeStyle = PAL.rackEdge;
+    ctx.lineWidth = PX;
     ctx.strokeRect(x, 0, RACK_W, h);
-
-    ctx.fillStyle = "#38495c";
-    ctx.font = "8px monospace";
-    for (let u = 42; u >= 1; u -= 3) {
-      const y = (42 - u) * U;
-      ctx.fillText(String(u), x - 17, y + 10);
-      ctx.fillStyle = "#182331";
-      ctx.fillRect(x - 2, y, 2, U - 2);
-      ctx.fillStyle = "#38495c";
+    ctx.lineWidth = 1;
+    ctx.fillStyle = PAL.rackIn;
+    ctx.fillRect(x + 8, 2, RACK_W - 16, h - 4);
+    ctx.fillStyle = PAL.rivet;
+    [[x + 2, 2], [x + RACK_W - 4, 2], [x + 2, h - 4], [x + RACK_W - 4, h - 4]].forEach(([rx, ry]) => ctx.fillRect(rx, ry, PX, PX));
+    ctx.fillStyle = PAL.textDark;
+    for (let u = 42; u >= 3; u -= 3) {
+      const yy = (42 - u) * U;
+      ctx.fillRect(x + 1, yy, 5, PX);
+      if (u % 6 === 0) pxText(ctx, String(u), x - 16, yy + 12, 8, PAL.textDim);
     }
-
     if (rack.fresh && rack.freshT < 1) {
-      ctx.fillStyle = "rgba(20,40,60," + (1 - rack.freshT) * 0.9 + ")";
-      ctx.fillRect(x, 0, RACK_W, h);
-      ctx.fillStyle = "#4aa8ff";
-      ctx.font = "bold 11px monospace";
-      ctx.fillText("INSTALLING…", x + 10, h / 2);
+      ctx.fillStyle = "rgba(10,6,30,0.85)";
+      ctx.fillRect(x + 8, 2, RACK_W - 16, h - 4);
+      const p = Math.floor((time * 6) % 4);
+      ctx.strokeStyle = PAL.ledCyan;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(x + 14, 14, RACK_W - 28, 30);
+      ctx.setLineDash([]);
+      pxText(ctx, "INSTALL", x + 24, 34, 8, PAL.ledCyan);
+      for (let i = 0; i < 8; i++) {
+        ctx.fillStyle = i <= p ? PAL.ledCyan : "#1b1445";
+        ctx.fillRect(x + 24 + i * 10, 42, 8, 6);
+      }
     }
-
-    for (const eq of rack.equipment) {
-      drawEq(ctx, state, eq, rack, x, time);
-    }
+    for (const eq of rack.equipment) drawEq(ctx, state, eq, rack, x, time);
   }
 
-  function eqInRack(state, targetId) {
-    if (!targetId) return null;
-    const eq = state.eqById[targetId];
-    if (!eq) return null;
-    return state.racks[eq.rack] || null;
+  function eqAlarm(state, eq) {
+    if (eq.type === "server" && (eq.state === "thermal-shutdown" || eq.sec === "spreading" || eq.sec === "compromised")) return "crit";
+    if (eq.type === "storage" && (DC.Storage.arrayState(eq) === "critical" || eq.controller === "fault")) return "crit";
+    if (eq.type === "pdu" && eq.tripped) return "crit";
+    if (eq.type === "switch" && eq.state === "failed") return "crit";
+    if (eq.type === "server" && (eq.psuA === "failed" || eq.psuB === "failed" || eq.fans === "failed" || eq.diskFull)) return "warn";
+    return null;
   }
 
   function drawEq(ctx, state, eq, rack, x, time) {
     const rect = eqRect(eq, rack);
-    const y = rect.yTop * U;
-    const h = rect.h * U;
-    const blink = Math.sin(time * 3 + x) > 0;
+    const y = snap(rect.yTop * U);
+    const h = snap(rect.h * U);
+    const bx = x + 10, bw = RACK_W - 20;
+    const blink = Math.sin(time * 5 + bx) > 0;
 
-    if (eq.type === "server") {
-      const tempColor = eq.temp > 72 ? "#ff4d5e" : eq.temp > 60 ? "#ff8c3a" : eq.temp > 48 ? "#ffb340" : null;
-      ctx.fillStyle = eq.state === "online" ? "#111927" : "#0b0f16";
-      ctx.fillRect(x + 3, y + 1, RACK_W - 6, h - 3);
-      ctx.strokeStyle = tempColor || (eq.state === "online" ? "#223140" : "#141c26");
-      ctx.strokeRect(x + 3, y + 1, RACK_W - 6, h - 3);
-      ctx.fillStyle = eq.state === "online" ? "#8aa2b8" : "#3a4a5a";
-      ctx.font = "9px monospace";
-      const label = eq.name + " " + (eq.runaway ? "⚠100%CPU" : "");
-      ctx.fillText(label, x + 8, y + 12);
-      ctx.fillStyle = "#3d5268";
-      ctx.font = "7px monospace";
-      ctx.fillText((eq.state === "online" ? Math.round(eq.load) + "%" : eq.state.toUpperCase()), x + 8, y + h - 5);
-      if (eq.state === "online") {
-        ctx.fillStyle = eq.sec !== "clean" ? "#ff4d5e" : "#34d17c";
-        if (blink || eq.sec !== "clean" || eq.runaway) { ctx.beginPath(); ctx.arc(x + RACK_W - 12, y + 8, 2.5, 0, Math.PI * 2); ctx.fill(); }
-        if (tempColor) { ctx.fillStyle = tempColor; ctx.fillRect(x + RACK_W - 20, y + 5, 4, 6); }
-        if (eq.psuA === "failed" || eq.psuB === "failed" || eq.fans === "failed") { ctx.fillStyle = "#ffb340"; ctx.fillRect(x + RACK_W - 27, y + 5, 4, 6); }
-      } else if (eq.state === "booting") {
-        ctx.fillStyle = "#4aa8ff"; ctx.font = "7px monospace"; ctx.fillText("BOOTING", x + RACK_W - 40, y + 12);
-      } else if (eq.state === "thermal-shutdown") {
-        ctx.fillStyle = "#ff4d5e"; ctx.font = "7px monospace"; ctx.fillText("THERMAL OFF", x + RACK_W - 48, y + 12);
-      } else if (eq.state === "shutdown") {
-        ctx.fillStyle = "#ffb340"; ctx.font = "7px monospace"; ctx.fillText("SHUTTING DOWN", x + RACK_W - 52, y + 12);
-      }
-    } else if (eq.type === "storage") {
-      ctx.fillStyle = "#10161f";
-      ctx.fillRect(x + 3, y + 1, RACK_W - 6, h - 3);
-      ctx.strokeStyle = "#223140";
-      ctx.strokeRect(x + 3, y + 1, RACK_W - 6, h - 3);
-      const cols = Math.min(12, eq.drives.length), rows = Math.ceil(eq.drives.length / cols);
-      const dw = (RACK_W - 20) / cols, dh = Math.min(7, (h - 14) / rows);
-      eq.drives.forEach((d, i) => {
-        const cx = x + 10 + (i % cols) * dw, cy = y + 6 + Math.floor(i / cols) * (dh + 1);
-        let color = "#1d7a4c";
-        if (d.state === "warn") color = "#9a7a1e";
-        else if (d.state === "failed") color = "#ff4d5e";
-        else if (d.state === "rebuilding") color = (blink ? "#4aa8ff" : "#1c4a72");
-        else if (d.state === "missing") color = "#10161d";
-        ctx.fillStyle = color;
-        ctx.fillRect(cx, cy, dw - 1.5, dh);
+    if (eq.type === "server") drawServer(ctx, eq, x, bx, bw, y, h, time, blink);
+    else if (eq.type === "storage") drawStorage(ctx, eq, x, bx, bw, y, h, time, blink);
+    else if (eq.type === "switch") drawSwitch(ctx, eq, bx, bw, y, h, time, blink);
+    else if (eq.type === "pdu") drawPDU(ctx, eq, bx, bw, y, h, time, blink);
+  }
+
+  function drawServer(ctx, eq, x, bx, bw, y, h, time, blink) {
+    const online = eq.state === "online";
+    ctx.fillStyle = online ? "#141038" : "#0b0820";
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    let edge = PAL.rackEdge;
+    if (online && eq.temp > 72) edge = PAL.ledRed;
+    else if (online && eq.temp > 58) edge = PAL.hot;
+    else if (online && eq.temp > 46) edge = PAL.ledAmber;
+    if (eq.runaway && blink) edge = PAL.ledPink;
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(bx, y + 2, bw, h - 4);
+    ctx.lineWidth = 1;
+    pxText(ctx, eq.name, bx + 6, y + 16, 8, online ? PAL.text : PAL.textDim);
+    ctx.fillStyle = PAL.textDim;
+    ctx.font = 8 + 'px "Press Start 2P", monospace';
+    if (online) {
+      const lw = Math.floor((bw - 40) * (eq.load / 100) / PX) * PX;
+      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(bx + 6, y + h - 14, bw - 40, 6);
+      ctx.fillStyle = eq.load > 90 ? PAL.ledPink : eq.load > 75 ? PAL.ledAmber : PAL.ledGreen;
+      ctx.fillRect(bx + 6, y + h - 14, lw, 6);
+      const leds = [[PAL.ledGreen, blink], [eq.netState === "ok" ? PAL.ledCyan : PAL.textDark, blink && Math.random() > 0.3], [eq.temp > 58 ? PAL.ledRed : eq.temp > 46 ? PAL.ledAmber : PAL.cold, true]];
+      leds.forEach(([col, on], i) => {
+        if (!on) col = "#1b1445";
+        ctx.fillStyle = col;
+        ctx.fillRect(bx + bw - 28 + (i % 2) * 10, y + 8 + Math.floor(i / 2) * 10, 6, 6);
       });
-      if (eq.controller === "fault") { ctx.fillStyle = "#ff4d5e"; ctx.font = "bold 8px monospace"; ctx.fillText("CTRL FAULT", x + 8, y + h - 3); }
-    } else if (eq.type === "switch") {
-      ctx.fillStyle = eq.state === "online" ? "#0f1a26" : "#0b0f16";
-      ctx.fillRect(x + 3, y + 1, RACK_W - 6, h - 3);
-      const ports = 12;
-      for (let p = 0; p < ports; p++) {
-        ctx.fillStyle = eq.state === "online" ? (blink && p % 3 === 0 ? "#34d17c" : "#1d5a3c") : "#26303a";
-        ctx.fillRect(x + 8 + p * 8, y + h / 2 - 1.5, 5, 3);
+      ctx.fillStyle = "#0a0722";
+      for (let i = 0; i < 4; i++) ctx.fillRect(bx + 8 + i * 7, y + h - 5, 4, PX);
+    } else {
+      const states = { "booting": ["BOOT", PAL.ledCyan], "shutdown": ["HALT", PAL.ledAmber], "thermal-shutdown": ["HOT!", PAL.ledRed], "offline": ["OFF", PAL.textDark] };
+      const [txt, col] = states[eq.state] || ["OFF", PAL.textDark];
+      if (blink || eq.state === "offline") pxText(ctx, txt, bx + 6, y + h - 8, 8, col);
+      if (eq.state === "booting" && eq.busy) {
+        const p = 1 - eq.busy.t / 12;
+        ctx.fillStyle = "#0a0722";
+        ctx.fillRect(bx + 40, y + h - 16, bw - 50, 6);
+        ctx.fillStyle = PAL.ledCyan;
+        ctx.fillRect(bx + 40, y + h - 16, Math.floor((bw - 50) * p / PX) * PX, 6);
       }
-      ctx.fillStyle = "#5b7285"; ctx.font = "8px monospace";
-      ctx.fillText(eq.name, x + 8, y + 10);
-      if (eq.state === "failed") { ctx.fillStyle = "#ff4d5e"; ctx.font = "bold 8px monospace"; ctx.fillText("LINK DOWN", x + RACK_W - 55, y + 10); }
-    } else if (eq.type === "pdu") {
-      ctx.fillStyle = eq.tripped ? "#1a0d10" : "#0d1420";
-      ctx.fillRect(x + 3, y + 2, RACK_W - 6, h - 5);
-      ctx.fillStyle = eq.tripped ? "#ff4d5e" : "#34d17c";
-      if (blink || eq.tripped) { ctx.beginPath(); ctx.arc(x + 12, y + h / 2, 2.5, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = "#3d5268"; ctx.font = "8px monospace";
-      ctx.fillText(eq.name + " " + eq.loadPct + "%", x + 20, y + h / 2 + 3);
-      if (eq.tripped) { ctx.fillStyle = "#ff4d5e"; ctx.font = "bold 8px monospace"; ctx.fillText("BREAKER TRIPPED", x + 55, y + h / 2 + 3); }
     }
   }
 
+  function drawStorage(ctx, eq, x, bx, bw, y, h, time, blink) {
+    ctx.fillStyle = "#120e2e";
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    const as = DC.Storage.arrayState(eq);
+    ctx.strokeStyle = as === "lost" ? PAL.ledRed : as === "critical" ? PAL.ledRed : as === "degraded" ? PAL.ledAmber : PAL.rackEdge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(bx, y + 2, bw, h - 4);
+    ctx.lineWidth = 1;
+    pxText(ctx, eq.name, bx + 6, y + 15, 8, PAL.text);
+    const cols = 8, rows = Math.ceil(eq.drives.length / cols);
+    const dw = Math.floor((bw - 52) / cols / PX) * PX, dh = Math.floor((h - 26) / rows / PX) * PX;
+    eq.drives.forEach((d, i) => {
+      const cx = bx + 44 + (i % cols) * (dw + 2), cy = y + 8 + Math.floor(i / cols) * (dh + 2);
+      let col = PAL.ledGreen;
+      if (d.state === "warn") col = PAL.ledAmber;
+      else if (d.state === "failed") col = blink ? PAL.ledRed : "#5a1020";
+      else if (d.state === "rebuilding") col = blink ? PAL.ledCyan : "#155a72";
+      else if (d.state === "missing") col = "#0a0722";
+      ctx.fillStyle = col;
+      ctx.fillRect(cx, cy, dw, Math.min(dh, 10));
+    });
+    if (eq.controller === "fault" && blink) pxText(ctx, "CTRL!", bx + 6, y + h - 6, 8, PAL.ledRed);
+    else if (eq.rebuild) {
+      const d = eq.drives[eq.rebuild.idx];
+      const p = d ? d.rebuild / 100 : 0;
+      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(bx + 44, y + h - 12, bw - 52, 6);
+      ctx.fillStyle = PAL.ledBlue;
+      ctx.fillRect(bx + 44, y + h - 12, Math.floor((bw - 52) * p / PX) * PX, 6);
+    }
+  }
+
+  function drawSwitch(ctx, eq, bx, bw, y, h, time, blink) {
+    const on = eq.state === "online";
+    ctx.fillStyle = on ? "#101640" : "#0b0820";
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    ctx.strokeStyle = on ? PAL.rackEdge : PAL.ledRed;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(bx, y + 2, bw, h - 4);
+    ctx.lineWidth = 1;
+    pxText(ctx, eq.name, bx + 6, y + 14, 8, on ? PAL.text : PAL.textDim);
+    if (on) {
+      for (let p = 0; p < 10; p++) {
+        const on2 = Math.sin(time * 6 + p * 1.3) > -0.3;
+        ctx.fillStyle = on2 ? (p % 4 === 0 ? PAL.ledCyan : PAL.ledGreen) : "#1b1445";
+        ctx.fillRect(bx + 6 + p * 7, y + h - 12, 5, 6);
+      }
+    } else if (blink) {
+      pxText(ctx, "DOWN", bx + 40, y + h - 8, 8, PAL.ledRed);
+    }
+  }
+
+  function drawPDU(ctx, eq, bx, bw, y, h, time, blink) {
+    ctx.fillStyle = eq.tripped ? "#1c0a18" : "#0d0a26";
+    ctx.fillRect(bx, y + 2, bw, h - 4);
+    ctx.strokeStyle = eq.tripped ? PAL.ledRed : PAL.rackEdge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(bx, y + 2, bw, h - 4);
+    ctx.lineWidth = 1;
+    const ledCol = eq.tripped ? (blink ? PAL.ledRed : "#5a1020") : PAL.ledGreen;
+    ctx.fillStyle = ledCol;
+    ctx.fillRect(bx + 6, y + h / 2 - 3, 6, 6);
+    ctx.fillStyle = PAL.textDim;
+    ctx.font = 8 + 'px "Press Start 2P", monospace';
+    ctx.fillText(eq.id, bx + 18, y + h / 2 + 4);
+    const lw = Math.floor((bw - 60) * (eq.loadPct / 100) / PX) * PX;
+    ctx.fillStyle = "#0a0722";
+    ctx.fillRect(bx + 52, y + h / 2 - 3, bw - 60, 6);
+    ctx.fillStyle = eq.loadPct > 85 ? PAL.ledAmber : PAL.ledGreen;
+    ctx.fillRect(bx + 52, y + h / 2 - 3, lw, 6);
+  }
+
   function hitTest(state, cam, w, h, mx, my) {
-    const worldX = (mx - w / 2 - cam.x) / cam.zoom + cam.x;
-    const worldY = (my - h * 0.72) / cam.zoom;
+    const p = worldFromScreen(mx, my, w, h, cam);
     for (let i = 0; i < state.racks.length; i++) {
       const x = rackX(i);
-      if (worldX >= x && worldX <= x + RACK_W && worldY >= -20 && worldY <= RACK_U * U) {
+      if (p.x >= x && p.x <= x + RACK_W && p.y >= -20 && p.y <= RACK_H) {
         let u = 0;
         for (const eq of state.racks[i].equipment) {
-          if (worldY >= u * U && worldY < (u + eq.uh) * U) return { eq, rack: state.racks[i] };
+          if (p.y >= u * U && p.y < (u + eq.uh) * U) return { eq, rack: state.racks[i] };
           u += eq.uh;
         }
         return null;
@@ -240,5 +436,25 @@ DC.Render = (function () {
     return null;
   }
 
-  return { draw, hitTest, rackX, RACK_W, GAP, U, totalWidth };
+  let vignetteCache = null, vignetteKey = "";
+  function drawCRT(ctx, w, h, time) {
+    ctx.fillStyle = "rgba(5,2,16,0.16)";
+    const fl = 0.14 + 0.04 * Math.sin(time * 60);
+    ctx.globalAlpha = fl;
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    ctx.globalAlpha = 1;
+    const key = w + "x" + h;
+    if (vignetteKey !== key) {
+      vignetteKey = key;
+      vignetteCache = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.max(w, h) * 0.75);
+      vignetteCache.addColorStop(0, "rgba(0,0,0,0)");
+      vignetteCache.addColorStop(1, "rgba(2,0,10,0.55)");
+    }
+    ctx.fillStyle = vignetteCache;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  return {
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, totalWidth, worldFromScreen
+  };
 })();
