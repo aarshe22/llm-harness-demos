@@ -23,8 +23,8 @@ void main() {
   vec3 soil = vec3(0.028, 0.034, 0.024);
   vec3 duff = vec3(0.045, 0.055, 0.032);
   vec3 col = mix(soil, duff, litter * 0.55);
-  col += glowColor * moss * (0.18 + 0.12 * pulse);
-  col += glowColor * veins * 0.22 * pulse;
+  col += glowColor * moss * (0.28 + 0.14 * pulse);
+  col += glowColor * veins * 0.32 * pulse;
   float specks = smoothstep(0.88, 0.99, sin(p.x * 4.6) * sin(p.y * 4.1) * 0.5 + 0.5);
   col += glowColor * specks * 0.45 * pulse;
   gl_FragColor = vec4(col, 1.0);

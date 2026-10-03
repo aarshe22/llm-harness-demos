@@ -89,10 +89,10 @@ const moon = new THREE.Mesh(
 );
 moon.position.set(90, 72, -190);
 scene.add(moon);
-const moonLight = new THREE.DirectionalLight(0x88a0cc, 0.12 * cfg.moon_brightness);
+const moonLight = new THREE.DirectionalLight(0x88a0cc, 0.14 * cfg.moon_brightness);
 moonLight.position.set(40, 60, -80);
 scene.add(moonLight);
-const amb = new THREE.AmbientLight(0x0a1820, 0.09);
+const amb = new THREE.AmbientLight(0x0c2230, 0.11);
 scene.add(amb);
 
 const starGroup = new THREE.Group();
