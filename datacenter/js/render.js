@@ -228,6 +228,17 @@ DC.Render = (function () {
       const led = fault ? (Math.sin(time * 8) > 0 ? PAL.ledRed : "#5a1020") : PAL.ledGreen;
       ctx.fillStyle = led;
       if (fault || Math.sin(time * 3) > 0) ctx.fillRect(x + 48, y + 26, 6, 6);
+      if (cr.maint) {
+        const p = cr.maint.t0 ? 1 - cr.maint.t / cr.maint.t0 : 0;
+        ctx.fillStyle = "#0a0722";
+        ctx.fillRect(x + 6, y + 44, 44, 6);
+        ctx.fillStyle = PAL.ledCyan;
+        ctx.fillRect(x + 6, y + 44, Math.floor(44 * p / PX) * PX, 6);
+        if (Math.sin(time * 4) > 0) pxText(ctx, "SRV", x + 52, y + 50, 8, PAL.ledCyan);
+      } else if (cr.filterDirty > 0.7 && !fault) {
+        ctx.fillStyle = PAL.ledAmber;
+        if (Math.sin(time * 2) > 0) ctx.fillRect(x + 48, y + 40, 6, 6);
+      }
       if (fault) {
         if (Math.sin(time * 6) > 0) pxText(ctx, "FAULT", x + 6, y + 54, 8, PAL.ledRed);
       }
@@ -334,6 +345,16 @@ DC.Render = (function () {
       });
       ctx.fillStyle = "#0a0722";
       for (let i = 0; i < 4; i++) ctx.fillRect(bx + 8 + i * 7, y + h - 5, 4, PX);
+      if (eq.maint) {
+        const p = eq.maint.t0 ? 1 - eq.maint.t / eq.maint.t0 : 0;
+        ctx.fillStyle = "#0a0722";
+        ctx.fillRect(bx + 6, y + h - 14, bw - 40, 6);
+        ctx.fillStyle = PAL.ledCyan;
+        ctx.fillRect(bx + 6, y + h - 14, Math.floor((bw - 40) * p / PX) * PX, 6);
+        if (blink) pxText(ctx, "UPD", bx + bw - 44, y + 16, 8, PAL.ledCyan);
+      }
+      if (eq.badPatch && blink) pxText(ctx, "BAD!", bx + 6, y + 27, 8, PAL.ledPink);
+      if (eq.clRole) pxText(ctx, eq.clRole, bx + bw - 12, y + h - 6, 8, PAL.ledPink);
     } else {
       const states = { "booting": ["BOOT", PAL.ledCyan], "shutdown": ["HALT", PAL.ledAmber], "thermal-shutdown": ["HOT!", PAL.ledRed], "offline": ["OFF", PAL.textDark] };
       const [txt, col] = states[eq.state] || ["OFF", PAL.textDark];
@@ -455,6 +476,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, totalWidth, worldFromScreen
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen
   };
 })();

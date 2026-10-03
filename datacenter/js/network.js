@@ -90,6 +90,10 @@ DC.Network = (function () {
       srv.busy = { kind: "boot", t: 10 };
       DC.Events.resolve(state, srv.id, "Reimaged");
       DC.Events.alarm(state, "info", srv.name + " reimaged, booting", srv.id);
+    } else if (kind === "recover") {
+      eq.badPatch = false;
+      DC.Events.resolve(state, eq.id, "Patch recovered");
+      DC.Events.alarm(state, "info", eq.name + " recovered to last-known-good state", eq.id);
     } else if (kind === "stop-proc") {
       srv.runaway = null;
       srv.load = Math.max(10, srv.load - 30);

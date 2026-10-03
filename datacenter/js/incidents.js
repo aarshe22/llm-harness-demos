@@ -190,6 +190,36 @@ DC.Incidents = (function () {
           targetId: null
         };
       }
+      case "cluster-node-fail": {
+        if (!state.clusters || !state.clusters.length) return null;
+        const cl = pick(state.clusters);
+        const nodes = cl.nodes.map((id) => state.eqById[id]).filter((n) => n && n.state === "online");
+        if (!nodes.length) return null;
+        const n = pick(nodes);
+        return {
+          run: () => {
+            n.state = "offline";
+            n.busy = null;
+            DC.Events.alarm(state, "crit", n.name + " NODE DOWN — cluster failover pending", n.id);
+          },
+          targetId: n.id
+        };
+      }
+      case "cluster-storage-fail": {
+        if (!state.clusters || !state.clusters.length) return null;
+        const cl = pick(state.clusters);
+        const st = state.eqById[cl.storage];
+        if (!st || st.controller !== "ok") return null;
+        const oks = st.drives.filter((d) => d.state === "ok");
+        if (!oks.length) return null;
+        const d = pick(oks);
+        return { run: () => DC.Storage.failDrive(state, st, st.drives.indexOf(d)), targetId: st.id };
+      }
+      case "battery-stress": {
+        const ups = state.eqById["UPS-1"];
+        if (!ups || !ups.batteries || !ups.batteries.some((b) => !b.dead)) return null;
+        return { run: () => DC.Maintenance.batteryStress(state), targetId: "UPS-1" };
+      }
     }
     return null;
   }
@@ -211,7 +241,10 @@ DC.Incidents = (function () {
       "switch-fail": 5 * cfg().netFail,
       "security": 4 * cfg().securityRate,
       "backup-fail": 3,
-      "water-leak": 1.5 * cfg().leaks
+      "water-leak": 1.5 * cfg().leaks,
+      "cluster-node-fail": state.clusters && state.clusters.length ? 5 : 0,
+      "cluster-storage-fail": state.clusters && state.clusters.length ? 4 * cfg().driveFail : 0,
+      "battery-stress": 2.5
     };
     if (dna.failurePersonality === "storage") { w["drive-fail"] *= 2; w["controller"] *= 2; }
     if (dna.failurePersonality === "thermal") w["crac"] *= 2;

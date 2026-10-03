@@ -153,6 +153,7 @@ DC.Facility = (function () {
     const counters = {};
     for (const rack of state.racks) {
       for (const eq of rack.equipment) {
+        if (eq.name) continue;
         if (eq.type === "server") {
           let tag = eq.role.split(" ")[0].toUpperCase().slice(0, 4);
           counters[tag] = (counters[tag] || 0) + 1;
@@ -165,6 +166,47 @@ DC.Facility = (function () {
         }
       }
     }
+  }
+
+  function rackUsedU(rack) { return rack.equipment.reduce((a, e) => a + e.uh, 0); }
+
+  function createCluster(state, rng) {
+    let best = null, bestN = 0;
+    for (const r of state.racks) {
+      const n = r.equipment.filter((e) => e.type === "server").length;
+      if (n > bestN) { bestN = n; best = r; }
+    }
+    if (!best || bestN < 2) return null;
+    const servers = best.equipment.filter((e) => e.type === "server");
+    const A = servers[0], B = servers[1];
+    for (const [eq, role] of [[A, "A"], [B, "B"]]) {
+      eq.role = "VIRTUALIZATION";
+      eq.name = "CLU-" + role;
+      eq.clRole = role;
+      eq.baseLoad = rng.f(8, 18);
+      eq.load = eq.baseLoad;
+    }
+    const storRack = rackUsedU(best) + 4 <= 42 ? best : state.racks.reduce((a, r) => (rackUsedU(r) < rackUsedU(a) ? r : a), best);
+    const stor = makeStorage(rng, state.racks.indexOf(storRack));
+    stor.drives = [];
+    for (let i = 0; i < 12; i++) stor.drives.push({ state: "ok", wear: rng.f(0, 8), rebuild: 0 });
+    stor.raid = 6;
+    stor.name = "STOR-CL";
+    stor.isClusterStorage = true;
+    storRack.equipment.push(stor);
+    state.eqById[stor.id] = stor;
+    const cl = {
+      id: "CL-01",
+      nodes: [A.id, B.id],
+      storage: stor.id,
+      workloads: [{ node: "A", load: 40 }, { node: "B", load: 20 }],
+      migrating: null
+    };
+    const svc = state.services.find((s) => /DATABASE|FILE SERVICE|API|CHECKOUT/.test(s.name)) || state.services[0];
+    if (svc) {
+      for (const dep of [stor.id, A.id, B.id]) if (svc.deps.indexOf(dep) === -1) svc.deps.push(dep);
+    }
+    return cl;
   }
 
   function generateServices(rng, racks, dna, eqById, cfg) {
@@ -248,6 +290,10 @@ DC.Facility = (function () {
       state.powerUnits.push(g);
     }
     state.services = generateServices(rng, state.racks, dna, state.eqById, cfg);
+    state.clusters = [];
+    const cl = createCluster(state, rng);
+    if (cl) state.clusters.push(cl);
+    if (DC.Maintenance) DC.Maintenance.initState(state);
     state.incidents = [];
     state.alarms = [];
     state.tickets = { open: 0, peak: 0, perService: {}, recent: [], stats: { total: 0, resolved: 0, prevented: 0, worst: 0 } };
@@ -263,7 +309,8 @@ DC.Facility = (function () {
     state.stats = {
       serversRepaired: 0, drivesReplaced: 0, arraysSaved: 0, dataLoss: 0, hvacFailures: 0,
       powerIncidents: 0, secIncidents: 0, preventions: 0, peakTemp: 21.5, peakPower: 0,
-      impactTime: 0, longestClean: 0, expansions: 0, upgradesInstalled: 0
+      impactTime: 0, longestClean: 0, expansions: 0, upgradesInstalled: 0,
+      patches: 0, badPatches: 0, batteriesReplaced: 0, migrations: 0
     };
     state.achievements = [];
     state.time = 0;

@@ -37,7 +37,13 @@ DC.Power = (function () {
       p.utilityTimer -= dt;
       const ups = state.eqById["UPS-1"];
       const upsCap = ups ? (state.upgrades.includes("BIG_UPS") ? 2.2 : 1) : 1;
-      p.upsDischarge += (dt * 100) / (90 * upsCap);
+      const uf = DC.Maintenance ? DC.Maintenance.upsFactor(state) : 1;
+      p.upsDischarge += (dt * 100) / (90 * upsCap * Math.max(0.2, uf));
+      p.stressT = (p.stressT || 0) + dt;
+      if (p.stressT > 18) {
+        p.stressT = 0;
+        if (DC.Maintenance) DC.Maintenance.batteryStress(state);
+      }
       if (p.upsDischarge >= 100) {
         if (p.generatorRunning) {
           p.upsDischarge = 100;
@@ -99,7 +105,9 @@ DC.Power = (function () {
     DC.Events.stat(state, "powerIncidents", 1);
     for (const g of state.powerUnits) {
       if (g.state === "standby") {
-        if (DC.Rng.make(g.id + state.time).chance(0.1)) {
+        const health = g.health === undefined ? 100 : g.health;
+        const failP = 0.06 + (1 - health / 100) * 0.3;
+        if (DC.Rng.make(g.id + state.time).chance(failP)) {
           g.state = "fault";
           DC.Events.alarm(state, "crit", g.name + " failed to start — manual start required", g.id);
         } else {

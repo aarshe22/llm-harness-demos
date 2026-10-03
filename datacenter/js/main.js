@@ -1,9 +1,10 @@
-window.DC = window.DC || {};
+  window.DC = window.DC || {};
 
 DC.Game = (function () {
   let state = null, canvas = null, ctx = null;
   let cam = { x: 0, y: 0, zoom: 0.75 };
-  let dragging = false, dragMoved = false, lastMx = 0, draggingMid = false;
+  let ptr = { id: null, down: false, dist: 0, x: 0, y: 0 };
+  let dragMoved = false;
   let keys = {};
   let raf = null, lastT = 0, simAcc = 0, uiAcc = 0, saveAcc = 0;
   let inMenu = true;
@@ -92,6 +93,10 @@ DC.Game = (function () {
     const st = DC.Save.load();
     if (!st) { showMenu(); return; }
     state = st;
+    if (!state.clusters) state.clusters = [];
+    if (!state.maintenance && DC.Maintenance) DC.Maintenance.initState(state);
+    if (!state.upgrades) state.upgrades = [];
+    ["patches", "badPatches", "batteriesReplaced", "migrations"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     bootRun();
   }
 
@@ -182,11 +187,13 @@ DC.Game = (function () {
 
   function tick(dt) {
     if (!state || state.paused || inMenu) return;
+    DC.Cluster.tick(state, dt);
     DC.Thermal.tick(state, dt);
     DC.Power.tick(state, dt);
     DC.Storage.tick(state, dt);
     DC.Network.tick(state, dt);
     DC.Security.tick(state, dt);
+    DC.Maintenance.tick(state, dt);
     DC.Helpdesk.tick(state, dt);
     DC.Incidents.tick(state, dt);
     DC.Growth.tick(state, dt);
@@ -230,8 +237,12 @@ DC.Game = (function () {
 
   function handleCamKeys(dt) {
     const spd = 600 / cam.zoom * dt;
-    if (keys["a"] || keys["ArrowLeft"]) { cam.x += spd; markMoved(); }
-    if (keys["d"] || keys["ArrowRight"]) { cam.x -= spd; markMoved(); }
+    let moved = false;
+    if (keys["a"] || keys["ArrowLeft"]) { cam.x += spd; moved = true; }
+    if (keys["d"] || keys["ArrowRight"]) { cam.x -= spd; moved = true; }
+    if (keys["w"] || keys["ArrowUp"]) { cam.y += spd; moved = true; }
+    if (keys["s"] || keys["ArrowDown"]) { cam.y -= spd; moved = true; }
+    if (moved) markMoved();
     clampCam();
   }
 
@@ -245,38 +256,71 @@ DC.Game = (function () {
     const min = -pad + halfView, max = total + pad - halfView;
     if (min > max) cam.x = total / 2;
     else cam.x = DC.Util.clamp(cam.x, min, max);
+    const viewH = window.innerHeight / cam.zoom;
+    const worldTop = -DC.Render.CEIL_H - 20, worldBottom = DC.Render.RACK_H + DC.Render.FLOOR_H;
+    const minY = worldTop + viewH / 2, maxY = worldBottom - viewH / 2;
+    cam.y = minY > maxY ? (worldTop + worldBottom) / 2 : DC.Util.clamp(cam.y, minY, maxY);
     cam.zoom = DC.Util.clamp(cam.zoom, 0.26, 1.6);
-    cam.y = DC.Render.CAM_Y;
+  }
+
+  function endPointer(e, allowSelect) {
+    if (!ptr.down) return;
+    if (e.pointerId !== undefined && ptr.id !== null && e.pointerId !== ptr.id) return;
+    ptr.down = false;
+    ptr.id = null;
+    canvas.classList.remove("dragging");
+    if (allowSelect && !dragMoved && state && !inMenu) {
+      const hit = DC.Render.hitTest(state, cam, canvas.width, canvas.height, e.clientX, e.clientY);
+      if (hit) { DC.Audio.click(); DC.UI.select(hit.eq); }
+      else DC.UI.select(null);
+    }
+    dragMoved = false;
   }
 
   function bindInput() {
     window.addEventListener("keydown", (e) => {
       keys[e.key] = true;
-      if (e.key === "a" || e.key === "d") markMoved();
+      if (["a", "d", "w", "s", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1) markMoved();
     });
     window.addEventListener("keyup", (e) => { keys[e.key] = false; });
-    canvas.addEventListener("mousedown", (e) => {
-      dragging = true; dragMoved = false; lastMx = e.clientX;
-      canvas.classList.add("dragging");
-    });
-    window.addEventListener("mousemove", (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastMx;
-      if (Math.abs(dx) > 3) { dragMoved = true; markMoved(); }
-      cam.x += dx / cam.zoom;
-      lastMx = e.clientX;
-      clampCam();
-    });
-    window.addEventListener("mouseup", (e) => {
-      if (!dragging) return;
-      dragging = false;
+    const clearInput = () => {
+      keys = {};
+      ptr.down = false;
+      ptr.id = null;
+      dragMoved = false;
       canvas.classList.remove("dragging");
-      if (!dragMoved && state && !inMenu && e.target === canvas) {
-        const hit = DC.Render.hitTest(state, cam, canvas.width, canvas.height, e.clientX, e.clientY);
-        if (hit) { DC.Audio.click(); DC.UI.select(hit.eq); }
-        else DC.UI.select(null);
+    };
+    window.addEventListener("blur", clearInput);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) clearInput(); });
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (ptr.down) return;
+      e.preventDefault();
+      ptr = { id: e.pointerId, down: true, dist: 0, x: e.clientX, y: e.clientY };
+      dragMoved = false;
+      canvas.classList.add("dragging");
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!ptr.down || e.pointerId !== ptr.id) return;
+      const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
+      ptr.x = e.clientX; ptr.y = e.clientY;
+      ptr.dist += Math.abs(dx) + Math.abs(dy);
+      if (ptr.dist > 6) {
+        dragMoved = true;
+        markMoved();
+        cam.x -= dx / cam.zoom;
+        cam.y -= dy / cam.zoom;
+        clampCam();
       }
     });
+    window.addEventListener("pointerup", (e) => {
+      if (!ptr.down) return;
+      const onCanvas = e.target === canvas || ptr.id === e.pointerId;
+      endPointer(e, onCanvas);
+    });
+    window.addEventListener("pointercancel", (e) => endPointer(e, false));
+
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1;

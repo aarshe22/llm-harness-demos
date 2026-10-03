@@ -26,12 +26,14 @@ DC.Helpdesk = (function () {
       const swOk = switches.every((s) => s.state === "online");
       let hot = 0;
       for (const s of servers) if (s.throttle > 0.2) hot++;
+      const badPatched = servers.some((s) => s.badPatch);
       let newState;
       if (servers.length === 0) newState = "healthy";
       else if (onlineServers === 0) newState = "offline";
       else if (onlineServers < servers.length) newState = "partial-outage";
       else if (!storOk || !swOk) newState = "degraded";
       else if (hot === servers.length) newState = "degraded";
+      else if (badPatched) newState = "degraded";
       else newState = "healthy";
       if (newState !== "healthy" && svc.state === "healthy") svc.outageSince = state.time;
       if (newState === "healthy" && svc.state !== "healthy") svc.outageSince = 0;

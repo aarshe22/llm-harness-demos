@@ -23,6 +23,7 @@ DC.UI = (function () {
         <div class="chip" id="${chipId("net")}"><div class="lbl">NET</div><div class="val">—</div></div>
         <div class="chip" id="${chipId("data")}"><div class="lbl">DATA</div><div class="val">—</div></div>
         <div class="chip" id="${chipId("sec")}"><div class="lbl">SEC</div><div class="val">NORMAL</div></div>
+        <div class="chip clickable" id="${chipId("maint")}"><div class="lbl">MAINT</div><div class="val">0</div></div>
         <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
         <div id="tb-right">
           <button id="btn-help">HELP [F1]</button>
@@ -30,6 +31,7 @@ DC.UI = (function () {
         </div>
       </div>
       <div id="alarmbar" style="display:none">
+        <div class="resize-handle" id="alarm-resize" title="drag to resize"></div>
         <div class="hdr"><span>ALARMS</span><span id="alarm-count"></span></div>
         <div class="list" id="alarm-list"></div>
       </div>
@@ -46,7 +48,44 @@ DC.UI = (function () {
     el(chipId("tickets")).onclick = () => showHelpdesk();
     el(chipId("cooling")).onclick = () => showCooling();
     el(chipId("power")).onclick = () => showPower();
+    el(chipId("maint")).onclick = () => showMaintenance();
+    bindAlarmResize();
+    applyAlarmHeight();
     built = true;
+  }
+
+  let alarmH = 240;
+  function applyAlarmHeight() {
+    const s = DC.Save.loadSettings();
+    alarmH = DC.Util.clamp(s.alarmH || 240, 110, Math.max(110, window.innerHeight * 0.7));
+    const ab = el("alarmbar");
+    if (ab) ab.style.height = alarmH + "px";
+  }
+
+  function bindAlarmResize() {
+    const handle = el("alarm-resize");
+    if (!handle) return;
+    let startY = 0, startH = 0, active = false;
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      active = true;
+      startY = e.clientY;
+      startH = el("alarmbar").offsetHeight;
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (!active) return;
+      alarmH = DC.Util.clamp(startH + (startY - e.clientY), 110, Math.max(110, window.innerHeight * 0.7));
+      el("alarmbar").style.height = alarmH + "px";
+    });
+    handle.addEventListener("pointerup", (e) => {
+      if (!active) return;
+      active = false;
+      const s = DC.Save.loadSettings();
+      s.alarmH = alarmH;
+      DC.Save.saveSettings(s);
+    });
   }
 
   function toast(msg, cls) {
@@ -89,6 +128,8 @@ DC.UI = (function () {
     set("net", m.netPct + "%", m.netPct < 80 ? "a" : "g");
     set("data", m.dataPct + "%", m.dataPct < 80 ? "r" : m.dataPct < 95 ? "a" : "g");
     set("sec", m.sec, m.sec === "CRITICAL" ? "r" : m.sec === "SUSPICIOUS" ? "a" : "g", m.sec === "CRITICAL");
+    const mCount = DC.Maintenance ? DC.Maintenance.pendingCount(state) : 0;
+    set("maint", String(mCount), mCount > 0 ? "a" : "g", mCount > 2);
     set("inc", String(activeIncidents(state)), activeIncidents(state) > 0 ? "a" : "g");
 
     const ab = el("alarmbar");
@@ -96,18 +137,27 @@ DC.UI = (function () {
     if (recent.length) {
       ab.style.display = "flex";
       el("alarm-count").textContent = recent.length;
+      const sig = recent.slice(0, 10).map((a) => a.id + a.sev).join("|");
       const list = el("alarm-list");
-      list.innerHTML = "";
-      recent.slice(0, 7).forEach((a) => {
-        const d = document.createElement("div");
-        d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info");
-        d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + DC.Util.fmtUptime(a.time) + "</div>";
-        d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
-        list.appendChild(d);
-      });
-    } else ab.style.display = "none";
-    if (selected) renderPanel();
+      if (sig !== alarmListSig) {
+        alarmListSig = sig;
+        list.innerHTML = "";
+        recent.slice(0, 7).forEach((a) => {
+          const d = document.createElement("div");
+          d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info");
+          d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + DC.Util.fmtUptime(a.time) + "</div>";
+          d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
+          list.appendChild(d);
+        });
+      }
+    } else {
+      ab.style.display = "none";
+      alarmListSig = "";
+    }
+    if (selected) patchPanel();
   }
+
+  let alarmListSig = "";
 
   function activeIncidents(state) {
     return state.alarms.filter((a) => a.sev === "crit" && !a.cleared && state.time - a.time < 120).length;
@@ -123,13 +173,78 @@ DC.UI = (function () {
     renderPanel();
   }
 
-  function statRow(k, v, cls) {
-    return '<div class="statrow"><span class="k">' + k + '</span><span class="v ' + (cls || "") + '">' + v + "</span></div>";
+  function statRow(k, v, cls, pk) {
+    return '<div class="statrow"><span class="k">' + k + '</span><span class="v ' + (cls || "") + '"' + (pk ? ' data-pk="' + pk + '"' : "") + ">" + v + "</span></div>";
+  }
+
+  function eqSig(eq) {
+    if (!eq) return "";
+    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
+    if (eq.type === "storage") eq.drives.forEach((d) => parts.push(d.state));
+    return parts.join("|");
+  }
+
+  let renderedSig = "";
+
+  function patchPanel() {
+    const eq = selected;
+    if (!eq) return;
+    const sig = eqSig(eq);
+    if (sig !== renderedSig) { renderPanel(); return; }
+    const body = el("sp-body");
+    const set = (pk, v, cls) => {
+      const n = body.querySelector('[data-pk="' + pk + '"]');
+      if (n) {
+        if (n.textContent !== String(v)) n.textContent = v;
+        if (cls !== undefined) n.className = "v " + cls;
+      }
+    };
+    if (eq.type === "server") {
+      set("load", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g");
+      set("temp", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g");
+      set("psu-a", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r");
+      set("psu-b", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r");
+      set("fans", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
+      set("net", eq.netState === "ok" ? "CONNECTED" : "DISCONNECTED", eq.netState === "ok" ? "g" : "a");
+      set("sec", eq.sec.toUpperCase(), eq.sec === "clean" ? "g" : "r");
+      set("state", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
+      set("ecc", eq.ecc + "/3", eq.ecc >= 3 ? "r" : "a");
+      set("patch", eq.badPatch ? "BAD PATCH" : "OK", eq.badPatch ? "r" : "g");
+      if (eq.maint) set("maint", eq.maint.name + " " + Math.ceil(eq.maint.t) + "s", "b");
+      else if (eq.busy) set("maint", eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s", "b");
+      else set("maint", "—", "");
+    } else if (eq.type === "storage") {
+      const as = DC.Storage.arrayState(eq);
+      set("array", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r");
+      set("controller", eq.controller.toUpperCase(), eq.controller === "ok" ? "g" : "r");
+      if (eq.rebuild) {
+        const d = eq.drives[eq.rebuild.idx];
+        set("rebuild", Math.round(d.rebuild) + "%", "b");
+      } else set("rebuild", "—", "");
+      body.querySelectorAll(".drive").forEach((dEl) => {
+        const i = parseInt(dEl.getAttribute("data-drive"), 10);
+        const d = eq.drives[i];
+        if (d && dEl.className !== "drive " + d.state) dEl.className = "drive " + d.state;
+      });
+    } else if (eq.type === "pdu") {
+      set("pdu-load", eq.loadPct + "%", eq.loadPct > 85 ? "a" : "g");
+      set("pdu-breaker", eq.tripped ? "TRIPPED" : "OK", eq.tripped ? "r" : "g");
+    } else if (eq.type === "crac") {
+      set("crac-status", eq.fault ? "FAULT: " + eq.fault.desc : (eq.maint ? "SERVICING" : "OK"), eq.fault ? "r" : "g");
+      set("crac-output", Math.round(eq.fault ? 8 : 100) + "%", eq.fault ? "r" : "g");
+    } else if (eq.type === "ups") {
+      set("ups-charge", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g");
+      set("ups-state", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a");
+    } else if (eq.type === "generator") {
+      set("gen-state", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a");
+      set("gen-fuel", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g");
+    }
   }
 
   function renderPanel() {
     const eq = selected;
-    if (!eq) return;
+    renderedSig = eqSig(eq);
+    if (!eq) { renderedSig = ""; return; }
     el("sp-title").textContent = eq.name || eq.id;
     const body = el("sp-body");
     let html = "";
@@ -139,22 +254,28 @@ DC.UI = (function () {
       html += statRow("ROLE", eq.role);
       html += statRow("CPU", eq.cpu + " cores");
       html += statRow("MEM", eq.mem + " GB");
-      html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g");
-      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g");
+      html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 90 ? "r" : eq.load > 75 ? "a" : "g", "load");
+      html += statRow("TEMP", eq.temp.toFixed(1) + "C", eq.temp > 72 ? "r" : eq.temp > 60 ? "o" : eq.temp > 48 ? "a" : "g", "temp");
       if (eq.throttle > 0.1) html += statRow("STATUS", "THERMAL THROTTLING", "r");
-      html += statRow("PSU A", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r");
-      html += statRow("PSU B", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r");
-      html += statRow("FANS", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a");
-      html += statRow("NET", eq.netState === "ok" ? "CONNECTED" : "DISCONNECTED", eq.netState === "ok" ? "g" : "a");
-      html += statRow("SECURITY", eq.sec.toUpperCase(), eq.sec === "clean" ? "g" : "r");
-      html += statRow("STATE", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
-      if (eq.ecc > 0) html += statRow("ECC ERRORS", eq.ecc + "/3", eq.ecc >= 3 ? "r" : "a");
+      html += statRow("PSU A", eq.psuA.toUpperCase(), eq.psuA === "ok" ? "g" : "r", "psu-a");
+      html += statRow("PSU B", eq.psuB.toUpperCase(), eq.psuB === "ok" ? "g" : "r", "psu-b");
+      html += statRow("FANS", eq.fans.toUpperCase(), eq.fans === "ok" ? "g" : "a", "fans");
+      html += statRow("NET", eq.netState === "ok" ? "CONNECTED" : "DISCONNECTED", eq.netState === "ok" ? "g" : "a", "net");
+      html += statRow("SECURITY", eq.sec.toUpperCase(), eq.sec === "clean" ? "g" : "r", "sec");
+      html += statRow("STATE", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a", "state");
+      html += statRow("PATCH", eq.badPatch ? "BAD PATCH" : "OK", eq.badPatch ? "r" : "g", "patch");
+      if (eq.ecc > 0) html += statRow("ECC ERRORS", eq.ecc + "/3", eq.ecc >= 3 ? "r" : "a", "ecc");
       if (eq.diskFull) html += statRow("DISK", "LOG VOLUME FULL", "r");
-      if (eq.busy) html += statRow("BUSY", eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s", "b");
+      html += statRow("TASK", eq.maint ? eq.maint.name + " " + Math.ceil(eq.maint.t) + "s" : eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
+      if (eq.clRole) html += statRow("CLUSTER", "NODE " + eq.clRole + " — " + Math.round(DC.Cluster.assignedLoad(DC.Cluster.clusterOf(state, eq.id), eq.clRole)) + "% workload", "b");
       if (eq.state === "online") {
         actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
         actions.push(["NET", () => { DC.Network.toggleNet(state, eq); }]);
         actions.push(["KVM", () => { DC.KVM.show(state, eq); }]);
+        if (eq.clRole) {
+          actions.push(["MIGRATE →" + (eq.clRole === "A" ? "B" : "A"), () => { const cl = DC.Cluster.clusterOf(state, eq.id); if (cl) DC.Cluster.migrate(state, cl.id, eq.clRole); select(null); }]);
+        }
+        if (eq.badPatch) actions.push(["RECOVER", () => { eq.busy = { kind: "recover", t: 15 }; select(null); }]);
         if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed" || (eq.ecc >= 3)) actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; DC.Audio.click(); select(null); }]);
         if (eq.runaway) actions.push(["STOP PROCESS", () => { eq.busy = { kind: "stop-proc", t: 5 }; select(null); }]);
         if (eq.diskFull) actions.push(["CLEAR LOGS", () => { eq.busy = { kind: "clear-logs", t: 4 }; select(null); }]);
@@ -168,22 +289,18 @@ DC.UI = (function () {
       } else if (eq.state === "offline" || eq.state === "thermal-shutdown") {
         actions.push(["PWR ON", () => { DC.Network.pwr(state, eq, true); select(null); }]);
       }
-      if (eq.state === "shutdown" || eq.busy) actions.push(["(busy...)", null]);
     } else if (eq.type === "storage") {
       html += statRow("MODEL", eq.model);
-      html += statRow("RAID", "RAID " + eq.raid);
+      html += statRow("RAID", "RAID " + eq.raid + (eq.isClusterStorage ? " — CLUSTER DEDICATED" : ""));
       const as = DC.Storage.arrayState(eq);
-      html += statRow("ARRAY", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r");
-      html += statRow("CONTROLLER", eq.controller.toUpperCase(), eq.controller === "ok" ? "g" : "r");
+      html += statRow("ARRAY", as.toUpperCase(), as === "ok" ? "g" : as === "degraded" ? "a" : as === "critical" ? "o" : "r", "array");
+      html += statRow("CONTROLLER", eq.controller.toUpperCase(), eq.controller === "ok" ? "g" : "r", "controller");
       html += '<div class="drives">';
       eq.drives.forEach((d, i) => {
         html += '<div class="drive ' + d.state + '" data-drive="' + i + '" title="Drive ' + (i + 1) + (d.state === "rebuilding" ? " — REBUILD " + Math.round(d.rebuild) + "%" : "") + '"></div>';
       });
       html += "</div>";
-      if (eq.rebuild) {
-        const d = eq.drives[eq.rebuild.idx];
-        html += statRow("REBUILD", Math.round(d.rebuild) + "%", "b");
-      }
+      html += statRow("REBUILD", "—", "", "rebuild");
       if (eq.controller === "fault") {
         actions.push(["RESET CTRL", () => { eq.busy = { kind: "ctrl-reset", t: 8 }; select(null); }]);
         actions.push(["REPLACE CTRL", () => { eq.busy = { kind: "ctrl-replace", t: 16 }; select(null); }]);
@@ -194,19 +311,28 @@ DC.UI = (function () {
       html += statRow("STATE", eq.state.toUpperCase(), eq.state === "online" ? "g" : "r");
       if (eq.state === "failed") actions.push(["RESTART", () => { eq.busy = { kind: "restart", t: 10 }; select(null); }]);
     } else if (eq.type === "pdu") {
-      html += statRow("LOAD", eq.loadPct + "%", eq.loadPct > 85 ? "a" : "g");
-      html += statRow("BREAKER", eq.tripped ? "TRIPPED" : "OK", eq.tripped ? "r" : "g");
+      html += statRow("LOAD", eq.loadPct + "%", eq.loadPct > 85 ? "a" : "g", "pdu-load");
+      html += statRow("BREAKER", eq.tripped ? "TRIPPED" : "OK", eq.tripped ? "r" : "g", "pdu-breaker");
       if (eq.tripped) actions.push(["RESET BREAKER", () => { DC.Power.resetBreaker(state, eq); select(null); }]);
     } else if (eq.type === "crac") {
-      html += statRow("STATUS", (eq.fault ? "FAULT: " + eq.fault.desc : "OK"), eq.fault ? "r" : "g");
-      html += statRow("OUTPUT", Math.round((eq.fault ? 8 : 100)) + "%", eq.fault ? "r" : "g");
+      html += statRow("STATUS", (eq.fault ? "FAULT: " + eq.fault.desc : "OK"), eq.fault ? "r" : "g", "crac-status");
+      html += statRow("OUTPUT", Math.round((eq.fault ? 8 : 100)) + "%", eq.fault ? "r" : "g", "crac-output");
       if (eq.fault) actions.push(["REPAIR (" + Math.round(eq.fault.repair) + "s)", () => { eq.busy = { kind: "repair", t: eq.fault.repair }; select(null); }]);
     } else if (eq.type === "ups") {
-      html += statRow("CHARGE", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g");
-      html += statRow("STATE", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a");
+      html += statRow("CHARGE", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g", "ups-charge");
+      html += statRow("STATE", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a", "ups-state");
+      if (eq.batteries) {
+        html += '<div class="drives">';
+        eq.batteries.forEach((b, i) => {
+          const cls = b.dead ? "failed" : b.health < 30 ? "warn" : "ok";
+          html += '<div class="drive ' + cls + '" data-batt="' + i + '" title="Battery string ' + (i + 1) + " — " + Math.round(b.health) + '%"></div>';
+        });
+        html += "</div>";
+      }
     } else if (eq.type === "generator") {
-      html += statRow("STATE", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a");
-      html += statRow("FUEL", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g");
+      html += statRow("STATE", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a", "gen-state");
+      html += statRow("FUEL", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g", "gen-fuel");
+      html += statRow("HEALTH", Math.round(eq.health || 100) + "%", (eq.health || 100) < 50 ? "a" : "g");
       if (eq.state === "standby" || eq.state === "fault") actions.push(["START", () => { DC.Power.startGenerator(state, eq); select(null); }]);
     }
     body.innerHTML = html;
@@ -346,6 +472,36 @@ DC.UI = (function () {
     });
   }
 
+  function targetName(id) {
+    const e = state.eqById[id];
+    return e ? (e.name || e.id) : id;
+  }
+
+  function showMaintenance() {
+    const m = state.maintenance;
+    if (!m) { modal("MAINTENANCE", "<p>No maintenance system data.</p>"); return; }
+    let html = "";
+    const pend = m.items.filter((i) => i.state === "pending");
+    const act = m.items.filter((i) => i.state === "active");
+    if (!pend.length && !act.length) html += "<p style='color:var(--green)'>No maintenance due. Enjoy the quiet.</p>";
+    for (const i of act) {
+      html += '<div class="optcard"><div class="opt-title">' + i.name + " — " + targetName(i.targetId) + '</div><div class="opt-line"><span class="k">IN PROGRESS</span><span class="v b">' + Math.max(0, Math.ceil(i.t)) + "s remaining</span></div></div>";
+    }
+    for (const i of pend) {
+      html += '<div class="optcard"><div class="opt-title">' + i.name + " — " + targetName(i.targetId) + "</div>";
+      html += '<div class="opt-line"><span class="k">WINDOW</span><span class="v ' + (i.overdue > 150 ? "r" : "a") + '">' + (i.overdue > 150 ? "OVERDUE" : Math.round(150 - i.overdue) + "s left") + "</span></div>";
+      html += '<div style="margin-top:6px"><button id="mt-apply-' + i.id + '">APPLY NOW</button></div></div>';
+    }
+    const body = modal("MAINTENANCE", html, true);
+    body.querySelectorAll("button[id^=mt-apply]").forEach((b) => {
+      b.onclick = () => {
+        DC.Maintenance.apply(state, b.id.replace("mt-apply-", ""));
+        closeModal();
+        DC.Audio.click();
+      };
+    });
+  }
+
   function showPower() {
     const p = state.power;
     let html = '<div class="statrow"><span class="k">UTILITY</span><span class="v ' + (p.utility === "ok" ? "g" : "r") + '">' + (p.utility === "ok" ? "OK" : "OUT — " + Math.ceil(p.utilityTimer) + "s to restore") + "</span></div>";
@@ -354,9 +510,22 @@ DC.UI = (function () {
     html += '<div class="statrow"><span class="k">GENERATOR</span><span class="v ' + (p.generatorRunning ? "g" : "a") + '">' + (p.generatorRunning ? "RUNNING" : state.powerUnits.length ? "STANDBY" : "NOT INSTALLED") + "</span></div>";
     html += "<h3 style='color:var(--blue);margin:12px 0 4px;font-size:11px;letter-spacing:1px'>UNITS</h3>";
     for (const g of state.powerUnits) {
-      html += '<div class="optcard"><div class="opt-title">' + g.name + "</div><div class='opt-line'><span class='k'>STATE</span><span class='v " + (g.state === "running" ? "g" : g.state === "fault" ? "r" : "a") + "'>" + g.state.toUpperCase() + '</span></div><div class="opt-line"><span class="k">FUEL</span><span>' + Math.round(g.fuel) + '%</span></div>';
+      html += '<div class="optcard"><div class="opt-title">' + g.name + "</div><div class='opt-line'><span class='k'>STATE</span><span class='v " + (g.state === "running" ? "g" : g.state === "fault" ? "r" : "a") + "'>" + g.state.toUpperCase() + '</span></div><div class="opt-line"><span class="k">FUEL</span><span>' + Math.round(g.fuel) + '%</span></div><div class="opt-line"><span class="k">HEALTH</span><span>' + Math.round(g.health || 100) + "%</span></div>";
       if (g.state === "standby" || g.state === "fault") html += '<div style="margin-top:6px"><button id="gen-start-' + g.id + '">START GENERATOR</button></div>';
+      if (g.fuel < 100) html += '<div style="margin-top:6px"><button id="gen-refuel-' + g.id + '">REFUEL</button></div>';
       html += "</div>";
+    }
+    const ups = state.eqById["UPS-1"];
+    if (ups && ups.batteries) {
+      html += "<h3 style='color:var(--blue);margin:12px 0 4px;font-size:11px;letter-spacing:1px'>UPS BATTERY GRID</h3>";
+      html += '<div class="drives" style="grid-template-columns:repeat(4,1fr)">';
+      ups.batteries.forEach((b, i) => {
+        const cls = b.dead ? "failed" : b.health < 30 ? "warn" : "ok";
+        html += '<div class="drive ' + cls + '" data-batt-grid="' + i + '" title="String ' + (i + 1) + " — " + Math.round(b.health) + '%"></div>';
+      });
+      html += "</div>";
+      const needs = ups.batteries.map((b, i) => ({ b, i })).filter((x) => x.b.dead || x.b.health < 50);
+      for (const x of needs) html += '<div style="margin-bottom:6px"><button id="batt-fix-' + x.i + '">REPLACE STRING ' + (x.i + 1) + "</button></div>";
     }
     let tripped = [];
     for (const r of state.racks) for (const e of r.equipment) if (e.type === "pdu" && e.tripped) tripped.push(e);
@@ -376,6 +545,18 @@ DC.UI = (function () {
       b.onclick = () => {
         const pdu = state.eqById[b.id.replace("pdu-reset-", "")];
         if (pdu) DC.Power.resetBreaker(state, pdu);
+        closeModal();
+      };
+    });
+    body.querySelectorAll("button[id^=gen-refuel]").forEach((b) => {
+      b.onclick = () => {
+        DC.Maintenance.refuel(state, b.id.replace("gen-refuel-", ""));
+        closeModal();
+      };
+    });
+    body.querySelectorAll("button[id^=batt-fix]").forEach((b) => {
+      b.onclick = () => {
+        DC.Maintenance.replaceBattery(state, parseInt(b.id.replace("batt-fix-", ""), 10));
         closeModal();
       };
     });
@@ -410,6 +591,12 @@ DC.UI = (function () {
       <p>Rack PDUs can trip breakers. Utility failures drain the UPS; start the generator if you have one, or shed load by shutting servers down.</p>
       <h3>SECURITY</h3>
       <p>Suspicious servers can spread malware across their rack. QUARANTINE stops spread but disconnects the server (may impact services). REIMAGE guarantees cleanup.</p>
+      <h3>CLUSTERS</h3>
+      <p>Some racks hold a 2-node HA cluster (CLU-A / CLU-B) sharing one dedicated RAID-6 array. If a node fails, its workloads can MIGRATE to the healthy node — but the shared array is a single point of failure. Protect it.</p>
+      <h3>MAINTENANCE</h3>
+      <p>OS updates, app patches, cooling service and generator maintenance come due over time. Apply them from the MAINT chip. Occasionally a patch goes BAD — the service degrades until you RECOVER it from the server panel.</p>
+      <h3>UPS & POWER</h3>
+      <p>The UPS has a grid of 8 battery strings. Batteries age, die under stress, and shrink runtime — replace worn strings from the POWER panel. Generators need refuelling and periodic service; neglected units may fail to start.</p>
       <h3>GROWTH</h3>
       <p>Good performance raises REPUTATION, which raises DEMAND. At the threshold you choose an expansion: new racks physically appear and the facility grows. UPGRADES offer permanent facility improvements with tradeoffs.</p>
       <h3>SCORING</h3>
@@ -443,7 +630,11 @@ DC.UI = (function () {
       ["PEAK OPEN TICKETS", String(state.tickets.peak)],
       ["TICKETS PREVENTED", String(state.tickets.stats.prevented)],
       ["CUSTOMER IMPACT TIME", DC.Util.fmtUptime(s.impactTime)],
-      ["LONGEST CLEAN STREAK", DC.Util.fmtUptime(s.longestClean)]
+      ["LONGEST CLEAN STREAK", DC.Util.fmtUptime(s.longestClean)],
+      ["PATCHES APPLIED", String(s.patches || 0)],
+      ["BAD PATCHES", String(s.badPatches || 0)],
+      ["WORKLOAD MIGRATIONS", String(s.migrations || 0)],
+      ["BATTERIES REPLACED", String(s.batteriesReplaced || 0)]
     ];
     let html = '<div class="statgrid">';
     for (const [k, v] of rows) html += '<div class="statrow"><span class="k">' + k + '</span><span class="v">' + v + "</span></div>";
@@ -479,7 +670,7 @@ DC.UI = (function () {
   }
 
   return {
-    init, update, select, toast, showExpansion, showUpgrade, showHelpdesk, showCooling, showPower,
+    init, update, select, toast, showExpansion, showUpgrade, showHelpdesk, showCooling, showPower, showMaintenance,
     showHelp, showStats, showAchievements, closeModal, modalOpen, helpContent, setSelected: select
   };
 })();
