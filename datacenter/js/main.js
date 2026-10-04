@@ -38,6 +38,7 @@ DC.Game = (function () {
     DC.applySettings(s);
     DC.Audio.setEnabled(!!s.audio);
     DC.Audio.setVolume(s.volume);
+    document.body.classList.toggle("light", !!s.light);
     return s;
   }
 
@@ -124,6 +125,10 @@ DC.Game = (function () {
     ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
     if (!state.speed) state.speed = 1;
+    // tenant satisfaction (new field)
+    for (const b of state.blades || []) {
+      if (b.tenant && b.tenant.sat === undefined) b.tenant.sat = 50;
+    }
     bootRun();
   }
 
@@ -247,6 +252,7 @@ DC.Game = (function () {
     DC.Storage.tick(state, dt);
     DC.Network.tick(state, dt);
     DC.Security.tick(state, dt);
+    DC.Conditions.tick(state, dt);
     DC.Maintenance.tick(state, dt);
     DC.Helpdesk.tick(state, dt);
     DC.FieldRequests.tick(state, dt);

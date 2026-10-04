@@ -220,6 +220,36 @@ DC.Incidents = (function () {
         if (!ups || !ups.batteries || !ups.batteries.some((b) => !b.dead)) return null;
         return { run: () => DC.Maintenance.batteryStress(state), targetId: "UPS-1" };
       }
+      case "mem-leak": {
+        const servers = DC.Util.allEq(state).filter((s) => (s.type === "server" || s.type === "blade") && s.state === "online" && !s.memLeak && s.load < 85);
+        if (!servers.length) return null;
+        const srv = pick(servers);
+        return {
+          run: () => DC.Conditions.startLeak(state, srv, pick(["worker-svc", "java-heap", "nginx-cache", "auditd", "backup-agent"])),
+          targetId: srv.id
+        };
+      }
+      case "cert-expiring": {
+        const servers = DC.Util.allEq(state).filter((s) => (s.type === "server" || s.type === "blade") && s.state === "online" && s.certDays !== undefined && s.certDays > 21);
+        if (!servers.length) return null;
+        const srv = pick(servers);
+        return {
+          run: () => { srv.certDays = Math.min(srv.certDays, 6 + Math.random() * 6); DC.Events.alarm(state, "warn", srv.name + " TLS certificate expires in " + Math.ceil(srv.certDays) + "d — renew soon", srv.id); },
+          targetId: srv.id
+        };
+      }
+      case "ntp-skew": {
+        const servers = DC.Util.allEq(state).filter((s) => (s.type === "server" || s.type === "blade") && s.state === "online" && (!s.clockSkew || s.clockSkew === 0));
+        if (!servers.length) return null;
+        const srv = pick(servers);
+        return { run: () => DC.Conditions.startSkew(state, srv), targetId: srv.id };
+      }
+      case "flap-link": {
+        const servers = DC.Util.allEq(state).filter((s) => (s.type === "server" || s.type === "blade") && s.state === "online" && s.netState === "ok");
+        if (!servers.length) return null;
+        const srv = pick(servers);
+        return { run: () => DC.Conditions.flapLink(state, srv), targetId: srv.id };
+      }
     }
     return null;
   }
@@ -244,7 +274,11 @@ DC.Incidents = (function () {
       "water-leak": 1.5 * cfg().leaks,
       "cluster-node-fail": state.clusters && state.clusters.length ? 5 : 0,
       "cluster-storage-fail": state.clusters && state.clusters.length ? 4 * cfg().driveFail : 0,
-      "battery-stress": 2.5
+      "battery-stress": 2.5,
+      "mem-leak": 5,
+      "cert-expiring": 4,
+      "ntp-skew": 3,
+      "flap-link": 4
     };
     if (dna.failurePersonality === "storage") { w["drive-fail"] *= 2; w["controller"] *= 2; }
     if (dna.failurePersonality === "thermal") w["crac"] *= 2;
@@ -274,7 +308,7 @@ DC.Incidents = (function () {
   function activeLoad(state) {
     let crit = 0, warn = 0;
     for (const a of state.alarms) {
-      if (state.time - a.time > 40) continue;
+      if (a.cleared || state.time - a.time > 40) continue;
       if (a.sev === "crit") crit++; else if (a.sev === "warn") warn++;
     }
     return crit * 2 + warn;

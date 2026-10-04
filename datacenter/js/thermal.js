@@ -72,7 +72,8 @@ DC.Thermal = (function () {
         if (eq.state === "online") {
           if (eq.temp > 65) eq.throttle = DC.Util.clamp((eq.temp - 65) / 13, 0, 1);
           else eq.throttle = 0;
-          if (eq.temp > 78) {
+          // an active repair keeps the box alive — the tech is hands-on
+          if (eq.temp > 78 && !(eq.busy && (eq.busy.kind === "repair" || eq.busy.kind === "reseat" || eq.busy.kind === "reimage"))) {
             eq.state = "thermal-shutdown";
             eq.busy = null;
             DC.Events.onThermalShutdown(state, eq);

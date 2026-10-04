@@ -40,6 +40,16 @@ DC.Helpdesk = (function () {
       svc.state = newState;
       if (newState !== "healthy") svc.outageTotal += dt;
       svc.degradedSince = newState === "degraded" ? svc.degradedSince + dt : 0;
+      // tenant satisfaction drift: blade tenants feel their blade's state
+      if (svc.bladeService) {
+        for (const depId of svc.deps) {
+          const eq = state.eqById[depId];
+          if (eq && eq.tenant && eq.tenant.sat !== undefined) {
+            const drift = newState === "healthy" ? 0.05 : -0.4 * (eq.tenant.crit || 1);
+            eq.tenant.sat = DC.Util.clamp(eq.tenant.sat + drift * dt, 0, 100);
+          }
+        }
+      }
     }
   }
 

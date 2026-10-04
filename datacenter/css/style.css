@@ -15,6 +15,16 @@
   --pink: #ff7ad9;
   --shadow: 4px 4px 0 #04030c;
 }
+body.light {
+  --bg: #e8e6f5;
+  --panel: #ffffff;
+  --panel2: #f0eefa;
+  --line: #5a48d8;
+  --line-dim: #c2bce8;
+  --txt: #2a2444;
+  --dim: #6a639a;
+  --shadow: 3px 3px 0 rgba(40, 30, 90, 0.25);
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
 body { font-family: "Press Start 2P", monospace; color: var(--txt); font-size: 10px; }

@@ -17,13 +17,13 @@ DC.Tech = (function () {
   let tasks = [];          // [{id, kind:'work'|'look'}]
   let seenAlarm = new Set();
   let didSet = new Set();  // jobs he already visited — cleared when the job truly ends
-  let guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [] };
+  let guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
   let scanAcc = 1, sipT = 0;
   let camEl = null, camCtx = null;
 
   function reset() {
     tasks = []; seenAlarm = new Set(); didSet = new Set();
-    guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [] };
+    guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
     camEl = null; camCtx = null;
   }
 
@@ -59,6 +59,13 @@ DC.Tech = (function () {
       const eq = state.eqById[id];
       if (!eq || (!eq.busy && !eq.maint)) didSet.delete(id);
     }
+    // drop queued tasks whose job was resolved elsewhere (never walk to a dead job)
+    tasks = tasks.filter((t) => {
+      if (guy.cur && guy.cur.id === t.id) return true;
+      const eq = state.eqById[t.id];
+      if (t.kind === "work") return !!(eq && (eq.busy || eq.maint));
+      return true; // look tasks are one-shot visits
+    });
     for (const eq of DC.Util.allEq(state)) {
       if ((eq.busy || eq.maint) && eq.id) {
         if (didSet.has(eq.id)) continue;
@@ -122,6 +129,13 @@ DC.Tech = (function () {
       }
     } else if (guy.state === "work") {
       guy.workT += dt;
+      // hammer/saw sounds while the cloud is animating
+      const phase = Math.floor(guy.workT * 5) % 2;
+      if (phase !== guy.lastPhase) {
+        guy.lastPhase = phase;
+        if (phase === 0) DC.Audio.beep(180, 0.07, "square", 0.05);       // hammer thud
+        else DC.Audio.beep(1400, 0.09, "sawtooth", 0.03);                // saw rasp
+      }
       const dur = guy.cur.kind === "work" ? 1.8 + (guy.cur.id.length % 3) * 0.5 : 2.2;
       if (guy.workT > dur) nextTask(state);
     }
@@ -311,15 +325,20 @@ DC.Tech = (function () {
 
   let lastT = 0;
 
+  // deterministic driver for tests/tooling: advance Dave's sim by dt directly
+  function step(state, dt) {
+    scanAcc += dt;
+    if (scanAcc > 0.25) { scanAcc = 0; scan(state, state.time); }
+    if (!state.paused && !state.gameOver) tick(state, dt, state.time);
+  }
+
   function frame(state, t) {
     if (!state) return;
     const dt = Math.min(0.09, Math.max(0.001, t - lastT || 1 / 60));
     lastT = t;
-    scanAcc += dt;
-    if (scanAcc > 0.25) { scanAcc = 0; scan(state, state.time); }
-    if (!state.paused && !state.gameOver) tick(state, dt, state.time);
+    step(state, dt);
     drawPanel(t);
   }
 
-  return { reset, frame, drawWorld, status: () => guy.state, pos: () => ({ x: guy.x, y: guy.y, state: guy.state, cur: guy.cur ? guy.cur.id : null }) };
+  return { reset, frame, drawWorld, step, status: () => guy.state, pos: () => ({ x: guy.x, y: guy.y, state: guy.state, cur: guy.cur ? guy.cur.id : null }) };
 })();

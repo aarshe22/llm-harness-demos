@@ -156,6 +156,15 @@ DC.Maintenance = (function () {
   function complete(state, item) {
     const eq = state.eqById[item.targetId];
     item.state = "done";
+    // on-time maintenance builds rep; dragging your feet on planned work erodes it
+    if (item.overdue > 60) {
+      state.metrics.rep = Math.max(0, state.metrics.rep - Math.min(2, item.overdue / 100) * DC.CFG.repLoss);
+      DC.Events.emit("toast", state, item.name + " DONE LATE — rep hit", "info");
+    } else if (item.overdue > 5) {
+      state.metrics.rep = Math.min(100, state.metrics.rep + 0.3 * DC.CFG.repGain);
+    } else {
+      state.metrics.rep = Math.min(100, state.metrics.rep + 0.6 * DC.CFG.repGain);
+    }
     if (item.kind === "os" || item.kind === "app") {
       if (!eq) return;
       delete eq.maint;

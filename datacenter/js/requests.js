@@ -33,6 +33,24 @@ DC.FieldRequests = (function () {
       eligible: (s) => s.state === "online" },
     { id: "share", name: "MOUNT SHARE", action: "MOUNT SHARE", busy: "mount-share", t: 5, exp: 55, crit: false,
       msg: "user can't see the shared folder mounted from {eq}",
+      eligible: (s) => s.state === "online" },
+    { id: "cert", name: "RENEW CERT", action: "RENEW CERT", busy: "cert-renew", t: 7, exp: 90, crit: false,
+      msg: "security team wants the TLS cert on {eq} renewed before it lapses",
+      eligible: (s) => s.state === "online" },
+    { id: "svc-restart", name: "RESTART SERVICE", action: "RESTART SERVICE", busy: "svc-restart", t: 8, exp: 70, crit: true,
+      msg: "memory graphs on {eq} look wrong — restart the leaky service",
+      eligible: (s) => s.state === "online" },
+    { id: "fix-link", name: "FIX FLAPPING LINK", action: "RESEAT CABLES", busy: "reseat", t: 9, exp: 75, crit: false,
+      msg: "monitoring shows the link on {eq} bouncing — reseat cables",
+      eligible: (s) => s.state === "online" },
+    { id: "dns", name: "FLUSH DNS", action: "FLUSH DNS", busy: "dns-flush", t: 3, exp: 50, crit: false,
+      msg: "name resolution is stale on {eq} — flush the resolver cache",
+      eligible: (s) => s.state === "online" },
+    { id: "clock", name: "SYNC CLOCK", action: "SYNC CLOCK", busy: "clock-sync", t: 4, exp: 60, crit: false,
+      msg: "audit flagged clock skew on {eq} — resync to NTP",
+      eligible: (s) => s.state === "online" },
+    { id: "backup-run", name: "RUN BACKUP", action: "RUN BACKUP", busy: "run-backup", t: 10, exp: 85, crit: true,
+      msg: "last backup on {eq} failed — kick one off now",
       eligible: (s) => s.state === "online" }
   ];
 
@@ -132,11 +150,24 @@ DC.FieldRequests = (function () {
   function fail(state, req) {
     const idx = state.requests.indexOf(req);
     if (idx === -1) return;
-    state.requests.splice(idx, 1);
+    // SLA missed — but the work still needs doing. Ticket stays, marked LATE.
+    req.late = true;
+    req.exp = 90 + Math.random() * 60; // second window; if this expires too, it's gone for good
     state.metrics.rep = Math.max(0, state.metrics.rep - 4 * DC.CFG.repLoss);
     state.metrics.score = Math.max(0, state.metrics.score - 300);
-    DC.Events.alarm(state, "crit", "TICKET MISSED: " + req.name + " — customer escalated", req.targetId);
-    DC.Events.emit("toast", state, "TICKET MISSED — " + req.name, "bad");
+    tenantDing(state, req, -8);
+    DC.Events.alarm(state, "crit", "SLA MISSED: " + req.name + " — still open, complete it late", req.targetId);
+    DC.Events.emit("toast", state, "SLA MISSED — " + req.name + " (still completable)", "bad");
+  }
+
+  function tenantOf(state, req) {
+    const eq = state.eqById[req.targetId];
+    return (eq && eq.tenant) ? eq.tenant : null;
+  }
+
+  function tenantDing(state, req, delta) {
+    const t = tenantOf(state, req);
+    if (t && t.sat !== undefined) t.sat = DC.Util.clamp(t.sat + delta, 0, 100);
   }
 
   function complete(state, req, eq) {
@@ -146,9 +177,19 @@ DC.FieldRequests = (function () {
     DC.Events.stat(state, "requestsDone", 1);
     const pts = req.crit ? 200 : 100;
     state.metrics.score += pts;
-    state.metrics.rep = Math.min(100, state.metrics.rep + 0.5 * DC.CFG.repGain);
+    // in-SLA work is worth real reputation; late work just stops the bleeding
+    const repDelta = req.late ? 0.15 * DC.CFG.repGain : 1.4 * DC.CFG.repGain;
+    state.metrics.rep = Math.min(100, state.metrics.rep + repDelta);
+    if (req.late) {
+      // salvaged: small score, no rep gain, satisfaction partially restored
+      tenantDing(state, req, +4);
+      DC.Events.emit("toast", state, req.name + " DONE LATE +" + Math.round(pts / 4), "info");
+      state.metrics.score += Math.round(pts / 4);
+    } else {
+      tenantDing(state, req, +2.5);
+      DC.Events.emit("toast", state, req.name + " DONE +" + pts, "good");
+    }
     DC.Events.resolve(state, eq ? eq.id : req.targetId, req.name + " completed");
-    DC.Events.emit("toast", state, req.name + " DONE +" + pts, "good");
     DC.Audio.good();
   }
 

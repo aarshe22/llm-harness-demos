@@ -11,17 +11,31 @@ DC.Growth = (function () {
 
   function tick(state, dt) {
     const m = state.metrics;
-    const clean = DC.Incidents.activeLoad(state) === 0 && state.tickets.open < 3;
+    // "keeping on top of it": no unresolved alarms, few open tickets.
+    // busy-but-handled (Dave working jobs) still counts as clean.
+    const clean = DC.Incidents.activeLoad(state) === 0 && state.tickets.open < 8;
 
     if (clean) {
       state.growth.cleanTime += dt;
       state.stats.longestClean = Math.max(state.stats.longestClean, state.growth.cleanTime);
     } else state.growth.cleanTime = 0;
 
-    const repRate = (0.018 + (m.sla - 95) * 0.004) * cfg().repGain;
+    // ---- reputation: responsive to operator performance ----
+    // build: clean operations, healthy services, and completed work all lift rep.
+    const allSvc = state.services;
+    const healthyFrac = allSvc.length ? allSvc.filter((s) => s.state === "healthy").length / allSvc.length : 1;
+    const repRate = (0.02 + (m.sla - 95) * 0.004 + healthyFrac * 0.025) * cfg().repGain;
     if (clean) m.rep = Math.min(100, m.rep + repRate * dt);
+    else if (m.rep > 40 && healthyFrac > 0.5) m.rep = Math.min(100, m.rep + repRate * 0.4 * dt);
+    // drain: ticket pressure
     if (state.tickets.open > 30) m.rep = Math.max(0, m.rep - dt * 0.02 * cfg().repLoss);
     if (state.tickets.open > 80) m.rep = Math.max(0, m.rep - dt * 0.06 * cfg().repLoss);
+    // drain: overdue maintenance (slow response to planned work)
+    if (state.maintenance) {
+      let over = 0;
+      for (const it of state.maintenance.items) if (it.state === "pending") over += Math.min(4, it.overdue / 60);
+      if (over > 0) m.rep = Math.max(0, m.rep - over * dt * 0.004 * cfg().repLoss);
+    }
 
     let outageWeight = 0;
     for (const svc of state.services) {
@@ -35,7 +49,7 @@ DC.Growth = (function () {
     m.demand += DC.Util.clamp(demandTarget - m.demand, -1, 1) * dt * 0.1 * cfg().demandGrowth * (state.dna.growthRate || 1);
     m.demand = DC.Util.clamp(m.demand, 0, 100);
 
-    const growthFactor = clean ? 1 : -0.2;
+    const growthFactor = clean ? 1 : (m.rep > 40 ? 0.5 : -0.2);
     const custDelta = m.customers * 0.00012 * growthFactor * cfg().customerGrowth * (state.dna.growthRate || 1) * dt;
     m.customers = Math.max(100, Math.round(m.customers + custDelta));
     if (m.customers > state.growth.customersPeak) state.growth.customersPeak = m.customers;

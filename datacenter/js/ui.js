@@ -25,8 +25,10 @@ DC.UI = (function () {
         <div class="chip" id="${chipId("data")}"><div class="lbl">DATA</div><div class="val">—</div></div>
         <div class="chip" id="${chipId("sec")}"><div class="lbl">SEC</div><div class="val">NORMAL</div></div>
         <div class="chip clickable" id="${chipId("maint")}"><div class="lbl">MAINT</div><div class="val">0</div></div>
+        <div class="chip clickable" id="${chipId("tenants")}"><div class="lbl">TENANTS</div><div class="val" id="chip-tenants-val">—</div></div>
         <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
         <div id="tb-right">
+          <button id="btn-theme" title="dark/light mode">☀</button>
           <button id="btn-speed" title="simulation speed (1/2/3 keys)">SPD ×1</button>
           <button id="btn-help">HELP [F1]</button>
           <button id="btn-pause">PAUSE [SPC]</button>
@@ -48,11 +50,13 @@ DC.UI = (function () {
     el("sp-close").onclick = () => select(null);
     el("btn-pause").onclick = () => DC.Game.togglePause();
     el("btn-speed").onclick = () => DC.Game.cycleSpeed();
+    el("btn-theme").onclick = () => { const on = document.body.classList.toggle("light"); const s = DC.Save.loadSettings(); s.light = on; DC.Save.saveSettings(s); DC.Audio.click(); };
     el("btn-help").onclick = () => showHelp();
     el(chipId("tickets")).onclick = () => showHelpdesk();
     el(chipId("cooling")).onclick = () => showCooling();
     el(chipId("power")).onclick = () => showPower();
     el(chipId("maint")).onclick = () => showMaintenance();
+    el(chipId("tenants")).onclick = () => showTenants();
     bindAlarmResize();
     applyAlarmHeight();
     built = true;
@@ -136,6 +140,12 @@ DC.UI = (function () {
     set("sec", m.sec, m.sec === "CRITICAL" ? "r" : m.sec === "SUSPICIOUS" ? "a" : "g", m.sec === "CRITICAL");
     const mCount = DC.Maintenance ? DC.Maintenance.pendingCount(state) : 0;
     set("maint", String(mCount), mCount > 0 ? "a" : "g", mCount > 2);
+    const tenants = state.blades ? state.blades.map((b) => b.tenant).filter(Boolean) : [];
+    if (tenants.length) {
+      const avg = Math.round(tenants.reduce((a, t) => a + (t.sat === undefined ? 50 : t.sat), 0) / tenants.length);
+      const worst = Math.round(Math.min(...tenants.map((t) => t.sat === undefined ? 50 : t.sat)));
+      set("tenants", avg + "%", worst < 25 ? "r" : avg >= 70 ? "g" : "a", worst < 25);
+    }
     set("inc", String(activeIncidents(state)), activeIncidents(state) > 0 ? "a" : "g");
 
     const ab = el("alarmbar");
@@ -184,7 +194,8 @@ DC.UI = (function () {
   }
 
   function ticketHtml(req, eq) {
-    let html = '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">TICKET ' + Math.ceil(req.exp) + "s</span><span class='v r'>" + req.name + "</span></div>";
+    const hdr = req.late ? "TICKET LATE " + Math.ceil(req.exp) + "s" : "TICKET " + Math.ceil(req.exp) + "s";
+    let html = '<div class="statrow" style="margin-top:6px;border-top:2px solid var(--line-dim);padding-top:6px"><span class="k" style="color:var(--red)">' + hdr + '</span><span class="v r">' + req.name + "</span></div>";
     let label = req.action, disabled = false;
     if (req.busyKind === null) {
       label = "RUN CHECK";
@@ -203,7 +214,7 @@ DC.UI = (function () {
 
   function eqSig(eq) {
     if (!eq) return "";
-    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
+    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, !!eq.memLeak, eq.certExpired || (eq.certDays !== undefined && eq.certDays < 14), eq.clockSkew > 0, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
     if (eq.type === "storage") eq.drives.forEach((d) => parts.push(d.state));
     const anyReq = state.requests && state.requests.find((r) => r.targetId === eq.id);
     parts.push("req:" + (anyReq ? anyReq.id + ":" + Math.ceil(anyReq.exp / 5) : "none"));
@@ -236,6 +247,9 @@ DC.UI = (function () {
       set("sec", eq.sec.toUpperCase(), eq.sec === "clean" ? "g" : "r");
       set("state", eq.state.toUpperCase(), eq.state === "online" ? "g" : "a");
       set("patch", eq.badPatch ? "BAD PATCH" : "OK", eq.badPatch ? "r" : "g");
+      set("memleak", eq.memLeak ? eq.memLeak.name : "—", eq.memLeak ? "a" : "g");
+      if (eq.certDays !== undefined) set("cert", eq.certExpired ? "EXPIRED" : Math.ceil(eq.certDays) + "d", eq.certExpired ? "r" : eq.certDays < 14 ? "a" : "g");
+      set("skew", eq.clockSkew > 0 ? "+" + eq.clockSkew.toFixed(1) + "s" : "—", eq.clockSkew > 0 ? "a" : "g");
       if (eq.maint) set("maint", eq.maint.name + " " + Math.ceil(eq.maint.t) + "s", "b");
       else if (eq.busy) set("maint", eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s", "b");
       else set("maint", "—", "");
@@ -316,6 +330,9 @@ DC.UI = (function () {
       html += statRow("PATCH", eq.badPatch ? "BAD PATCH" : "OK", eq.badPatch ? "r" : "g", "patch");
       if (eq.ecc > 0) html += statRow("ECC ERRORS", eq.ecc + "/3", eq.ecc >= 3 ? "r" : "a", "ecc");
       if (eq.diskFull) html += statRow("DISK", "LOG VOLUME FULL", "r");
+      if (eq.memLeak) html += statRow("MEM LEAK", eq.memLeak.name + " climbing", "a", "memleak");
+      if (eq.certDays !== undefined) html += statRow("CERT", eq.certExpired ? "EXPIRED" : Math.ceil(eq.certDays) + "d left", eq.certExpired ? "r" : eq.certDays < 14 ? "a" : "g", "cert");
+      if (eq.clockSkew > 0) html += statRow("CLOCK SKEW", "+" + eq.clockSkew.toFixed(1) + "s", "a", "skew");
       html += statRow("TASK", eq.maint ? eq.maint.name + " " + Math.ceil(eq.maint.t) + "s" : eq.busy ? eq.busy.kind.toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "—", "b", "maint");
       if (eq.clRole) html += statRow("CLUSTER", "NODE " + eq.clRole + " — " + Math.round(DC.Cluster.assignedLoad(DC.Cluster.clusterOf(state, eq.id), eq.clRole)) + "% workload", "b");
       const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
@@ -328,6 +345,11 @@ DC.UI = (function () {
           actions.push(["MIGRATE →" + (eq.clRole === "A" ? "B" : "A"), () => { const cl = DC.Cluster.clusterOf(state, eq.id); if (cl) DC.Cluster.migrate(state, cl.id, eq.clRole); select(null); }]);
         }
         if (eq.badPatch) actions.push(["RECOVER", () => { eq.busy = { kind: "recover", t: 15 }; select(null); }]);
+        if (eq.memLeak) actions.push(["RESTART SERVICE", () => { eq.busy = { kind: "svc-restart", t: 8 }; select(null); }]);
+        if (eq.certDays !== undefined && (eq.certExpired || eq.certDays < 21)) actions.push(["RENEW CERT", () => { eq.busy = { kind: "cert-renew", t: 7 }; select(null); }]);
+        if (eq.clockSkew > 0) actions.push(["SYNC CLOCK", () => { eq.busy = { kind: "clock-sync", t: 4 }; select(null); }]);
+        if (eq.netState === "flapping") actions.push(["RESEAT CABLES", () => { eq.busy = { kind: "reseat", t: 9 }; select(null); }]);
+        if (eq.backupFailed) actions.push(["RUN BACKUP", () => { eq.busy = { kind: "run-backup", t: 10 }; select(null); }]);
         if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed" || (eq.ecc >= 3)) actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; DC.Audio.click(); select(null); }]);
         if (eq.runaway) actions.push(["STOP PROCESS", () => { eq.busy = { kind: "stop-proc", t: 5 }; select(null); }]);
         if (eq.diskFull) actions.push(["CLEAR LOGS", () => { eq.busy = { kind: "clear-logs", t: 4 }; select(null); }]);
@@ -338,8 +360,11 @@ DC.UI = (function () {
           actions.push(["REIMAGE", () => { DC.Security.reimage(state, eq); select(null); }]);
         }
         if (eq.backupFailed) actions.push(["RETRY BACKUP", () => { eq.backupFailed = false; DC.Events.resolve(state, eq.id, "backup"); }]);
-      } else       if (eq.state === "offline" || eq.state === "thermal-shutdown") {
+      } else if (eq.state === "offline" || eq.state === "thermal-shutdown") {
         actions.push(["PWR ON", () => { DC.Network.pwr(state, eq, true); select(null); }]);
+        // hands-on repairs work with the box down
+        if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed") actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; DC.Audio.click(); select(null); }]);
+        if (eq.netState !== "ok") actions.push(["RESEAT CABLES", () => { eq.busy = { kind: "reseat", t: 9 }; select(null); }]);
       }
     } else if (eq.type === "blade") {
       html += statRow("MODEL", eq.model);
@@ -359,6 +384,11 @@ DC.UI = (function () {
       if (eq.state === "online") {
         actions.push(["REBOOT", () => { eq.busy = { kind: "reboot-request", t: 8 }; select(null); }]);
         actions.push(["PWR", () => { DC.Network.pwr(state, eq, false); select(null); }]);
+        if (eq.memLeak) actions.push(["RESTART SERVICE", () => { eq.busy = { kind: "svc-restart", t: 8 }; select(null); }]);
+        if (eq.certDays !== undefined && (eq.certExpired || eq.certDays < 21)) actions.push(["RENEW CERT", () => { eq.busy = { kind: "cert-renew", t: 7 }; select(null); }]);
+        if (eq.clockSkew > 0) actions.push(["SYNC CLOCK", () => { eq.busy = { kind: "clock-sync", t: 4 }; select(null); }]);
+        if (eq.netState === "flapping") actions.push(["RESEAT CABLES", () => { eq.busy = { kind: "reseat", t: 9 }; select(null); }]);
+        if (eq.backupFailed) actions.push(["RUN BACKUP", () => { eq.busy = { kind: "run-backup", t: 10 }; select(null); }]);
         if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed") actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; select(null); }]);
         if (eq.runaway) actions.push(["STOP PROCESS", () => { eq.busy = { kind: "stop-proc", t: 5 }; select(null); }]);
         if (eq.diskFull) actions.push(["CLEAR LOGS", () => { eq.busy = { kind: "clear-logs", t: 4 }; select(null); }]);
@@ -368,6 +398,7 @@ DC.UI = (function () {
         }
       } else if (eq.state === "offline" || eq.state === "thermal-shutdown") {
         actions.push(["PWR ON", () => { DC.Network.pwr(state, eq, true); select(null); }]);
+        if (eq.fans !== "ok" || eq.psuA === "failed" || eq.psuB === "failed") actions.push(["MAINT", () => { eq.busy = { kind: "repair", t: 12 }; select(null); }]);
       }
     } else if (eq.type === "storage") {
       html += statRow("MODEL", eq.model);
@@ -525,6 +556,30 @@ DC.UI = (function () {
         DC.Audio.click();
       };
     });
+  }
+
+  function showTenants() {
+    const seen = new Map();
+    for (const b of state.blades || []) {
+      if (b.tenant && !seen.has(b.tenant.name)) seen.set(b.tenant.name, b.tenant);
+    }
+    // old saves without sat: default 50
+    for (const t of seen.values()) if (t.sat === undefined) t.sat = 50;
+    let rows = "";
+    for (const [name, t] of seen) {
+      const sat = Math.round(t.sat);
+      const cls = sat >= 70 ? "g" : sat >= 40 ? "a" : "r";
+      const mood = sat >= 80 ? "DELIGHTED" : sat >= 65 ? "HAPPY" : sat >= 45 ? "CONTENT" : sat >= 25 ? "UNHAPPY" : "FURIOUS";
+      rows += '<div class="optcard"><div class="opt-title">' + name + '</div>';
+      rows += '<div class="opt-line"><span class="k">SATISFACTION</span><span class="v ' + cls + '" data-tenant="' + name + '">' + sat + "% — " + mood + "</span></div>";
+      rows += '<div class="opt-line"><span class="k">CRITICALITY</span><span class="v">x' + t.crit.toFixed(1) + "</span></div>";
+      // count this tenant's blades
+      const cnt = (state.blades || []).filter((b) => b.tenant && b.tenant.name === name).length;
+      rows += '<div class="opt-line"><span class="k">DEDICATED BLADES</span><span class="v">' + cnt + "</span></div>";
+      rows += "</div>";
+    }
+    if (!rows) rows = '<div class="opt-line">No tenants hosted yet.</div>';
+    modal("TENANT RELATIONS", rows);
   }
 
   function showExpansion() {
@@ -778,7 +833,7 @@ DC.UI = (function () {
   }
 
   return {
-    init, update, select, toast, showExpansion, showUpgrade, showHelpdesk, showCooling, showPower, showMaintenance,
+    init, update, select, toast, showExpansion, showUpgrade, showHelpdesk, showCooling, showPower, showMaintenance, showTenants,
     showHelp, showStats, showAchievements, closeModal, modalOpen, helpContent, setSelected: select
   };
 })();

@@ -49,7 +49,10 @@ DC.Facility = (function () {
       runaway: null,
       sec: "clean",
       busy: null,
-      throttle: 0
+      throttle: 0,
+      memLeak: null,
+      certDays: Math.floor(rng.f(30, 240)),
+      clockSkew: 0
     };
   }
 
@@ -230,6 +233,9 @@ DC.Facility = (function () {
       sec: "clean",
       busy: null,
       throttle: 0,
+      memLeak: null,
+      certDays: Math.floor(rng.f(30, 240)),
+      clockSkew: 0,
       tenant: null,
       hall: hallIdx
     };
@@ -238,12 +244,12 @@ DC.Facility = (function () {
   function createBlades(state, rng) {
     state.blades = [];
     const tenants = [
-      { name: "NORTHWIND LTD", crit: 1.2 },
-      { name: "ACME CLOUD", crit: 1.4 },
-      { name: "GLOBEX CORP", crit: 1.6 },
-      { name: "INITECH", crit: 1.0 },
-      { name: "SOYLENT DATA", crit: 1.3 },
-      { name: "PIERRE PAYMENTS", crit: 1.5 }
+      { name: "NORTHWIND LTD", crit: 1.2, sat: 72 },
+      { name: "ACME CLOUD", crit: 1.4, sat: 72 },
+      { name: "GLOBEX CORP", crit: 1.6, sat: 72 },
+      { name: "INITECH", crit: 1.0, sat: 72 },
+      { name: "SOYLENT DATA", crit: 1.3, sat: 72 },
+      { name: "PIERRE PAYMENTS", crit: 1.5, sat: 72 }
     ];
     const shuffled = rng.shuffle(tenants.slice());
     for (let i = 0; i < shuffled.length; i++) {

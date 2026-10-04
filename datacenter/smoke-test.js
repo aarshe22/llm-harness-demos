@@ -22,7 +22,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "security.js", "helpdesk.js", "incidents.js", "maintenance.js", "requests.js", "growth.js", "save.js", "tutorial.js"];
+const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "security.js", "conditions.js", "helpdesk.js", "incidents.js", "maintenance.js", "requests.js", "growth.js", "save.js", "tutorial.js"];
 for (const f of files) {
   const code = fs.readFileSync(path.join(__dirname, "js", f), "utf8");
   vm.runInContext(code, sandbox, { filename: f });
@@ -136,6 +136,125 @@ if (req.busyKind) {
   DC.Network.tick(state, 0.02);
   if (state.requests.includes(req)) throw new Error("ticket not completed after correct task finished");
   console.log("field requests OK (start -> busy -> finishServerBusy -> complete, wrong-kind ignored)");
+
+// late ticket: SLA miss keeps ticket completable
+const lateReq = { id: "FRL", kind: "logs", name: "PULL LOGS", action: "PULL LOGS", busyKind: "pull-logs", t: 5, exp: -1, crit: false, targetId: null, born: 0, started: false };
+const srvLate = DC.Util.allEq(state, "server").find((s) => s.state === "online" && !s.busy);
+if (srvLate) {
+  lateReq.targetId = srvLate.id;
+  state.requests.push(lateReq);
+  DC.FieldRequests.tick(state, 0.1); // exp <= 0 -> fail() marks late, keeps ticket
+  if (!state.requests.includes(lateReq)) throw new Error("late ticket was removed");
+  if (!lateReq.late) throw new Error("ticket not marked late");
+  if (lateReq.exp <= 0) throw new Error("late ticket got no second window");
+  if (!DC.FieldRequests.start(state, lateReq)) throw new Error("start refused late ticket");
+  srvLate.busy.t = 0.01;
+  DC.Network.tick(state, 0.02);
+  if (state.requests.includes(lateReq)) throw new Error("late ticket not completable");
+  console.log("late tickets OK (SLA miss -> late -> still completable)");
+}
+
+// tenant satisfaction: objects exist and respond to outcomes
+const anyBlade = (state.blades || [])[0];
+if (anyBlade && anyBlade.tenant) {
+  if (anyBlade.tenant.sat === undefined) throw new Error("tenant missing sat");
+  const before = anyBlade.tenant.sat;
+  anyBlade.tenant.sat = 10;
+  const satReq = { id: "FRS", kind: "blade-reboot", name: "BLADE REBOOT", action: "REBOOT", busyKind: "reboot-request", t: 4, exp: 60, crit: true, targetId: anyBlade.id, born: 0, started: false };
+  state.requests.push(satReq);
+  DC.FieldRequests.complete(state, satReq, anyBlade);
+  if (anyBlade.tenant.sat <= 10) throw new Error("complete did not raise tenant satisfaction");
+  console.log("tenant satisfaction OK (complete +ding, objects persist)");
+
+// fan repair: must survive thermal pressure and complete even if hot
+const fanSrv = DC.Util.allEq(state, "server").find((s) => s.state === "online");
+if (fanSrv) {
+  fanSrv.fans = "failed";
+  fanSrv.temp = 77; // about to cook
+  fanSrv.busy = { kind: "repair", t: 12 };
+  for (let i = 0; i < 130; i++) { DC.Thermal.tick(state, 0.1); DC.Network.tick(state, 0.1); }
+  if (fanSrv.state !== "online") throw new Error("repair did not protect server from thermal shutdown");
+  if (fanSrv.fans !== "ok") throw new Error("fan repair did not complete under heat: fans=" + fanSrv.fans);
+  console.log("fan repair under heat OK");
+}
+
+// repair works on a powered-down server too
+const downSrv = DC.Util.allEq(state, "server").find((s) => s.state === "online" && s !== fanSrv);
+if (downSrv) {
+  downSrv.fans = "failed";
+  downSrv.state = "thermal-shutdown";
+  downSrv.busy = null;
+  downSrv.busy = { kind: "repair", t: 12 };
+  for (let i = 0; i < 130; i++) DC.Network.tick(state, 0.1);
+  if (downSrv.fans !== "ok") throw new Error("repair did not finish while server was down");
+  console.log("fan repair while down OK");
+}
+
+// new conditions: leak, cert, skew, flap — full lifecycle
+const condSrv = DC.Util.allEq(state, "server").find((s) => s.state === "online" && !s.busy);
+if (condSrv) {
+  DC.Conditions.startLeak(state, condSrv, "worker-svc");
+  if (!condSrv.memLeak) throw new Error("leak did not start");
+  condSrv.busy = { kind: "svc-restart", t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (condSrv.memLeak) throw new Error("svc-restart did not clear leak");
+
+  condSrv.certDays = 5;
+  condSrv.busy = { kind: "cert-renew", t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (condSrv.certDays < 100) throw new Error("cert-renew did not reset certDays");
+
+  DC.Conditions.startSkew(state, condSrv);
+  if (!(condSrv.clockSkew > 0)) throw new Error("skew did not start");
+  condSrv.busy = { kind: "clock-sync", t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (condSrv.clockSkew !== 0) throw new Error("clock-sync did not clear skew");
+
+  DC.Conditions.flapLink(state, condSrv);
+  if (condSrv.netState !== "flapping") throw new Error("flap did not start");
+  condSrv.busy = { kind: "reseat", t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (condSrv.netState !== "ok") throw new Error("reseat did not fix flapping link");
+
+  condSrv.backupFailed = true;
+  condSrv.busy = { kind: "run-backup", t: 0.01 };
+  DC.Network.tick(state, 0.02);
+  if (condSrv.backupFailed) throw new Error("run-backup did not clear flag");
+
+  console.log("conditions OK (leak/cert/skew/flap/backup lifecycles)");
+
+// reputation responsiveness: in-SLA ticket completion builds rep meaningfully
+const repSrv = DC.Util.allEq(state, "server").find((s) => s.state === "online" && !s.busy);
+if (repSrv) {
+  const repReq = { id: "FRR", kind: "logs", name: "PULL LOGS", action: "PULL LOGS", busyKind: "pull-logs", t: 2, exp: 60, crit: false, targetId: repSrv.id, born: 0, started: false };
+  state.requests.push(repReq);
+  DC.FieldRequests.start(state, repReq);
+  const repBefore = state.metrics.rep;
+  repSrv.busy.t = 0.01;
+  DC.Network.tick(state, 0.02);
+  if (state.metrics.rep - repBefore < 0.5) throw new Error("in-SLA completion did not build rep (delta=" + (state.metrics.rep - repBefore) + ")");
+  console.log("rep build OK (in-SLA completion +" + (state.metrics.rep - repBefore).toFixed(2) + ")");
+
+  // slow maintenance completion costs rep
+  const m2 = state.maintenance;
+  const mBefore = state.metrics.rep;
+  const slowItem = { kind: "app", name: "SLOWPATCH", t: 0, t0: 1, badChance: 0, targetId: repSrv.id, state: "active", overdue: 180 };
+  m2.items.push(slowItem);
+  DC.Maintenance.tick(state, 0.1);
+  if (state.metrics.rep > mBefore) throw new Error("late maintenance did not cost rep");
+  // prompt maintenance earns rep
+  const mBefore2 = state.metrics.rep;
+  const quickItem = { kind: "app", name: "QUICKPATCH", t: 0, t0: 1, badChance: 0, targetId: repSrv.id, state: "active", overdue: 1 };
+  m2.items.push(quickItem);
+  DC.Maintenance.tick(state, 0.1);
+  if (state.metrics.rep <= mBefore2) throw new Error("prompt maintenance did not earn rep");
+  console.log("rep responsiveness OK (late maint -rep, prompt maint +rep)");
+}
+
+}
+
+}
+
 } else {
   if (!DC.FieldRequests.start(state, req)) throw new Error("ups-check start refused");
   if (reqEq.done !== req.id) throw new Error("ups-check start did not mark done");

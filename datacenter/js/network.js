@@ -27,6 +27,9 @@ DC.Network = (function () {
     return "ok";
   }
 
+  // hands-on jobs that proceed even with the OS down
+  const OFFLINE_OK = { repair: 1, reseat: 1, reimage: 1 };
+
   function tick(state, dt) {
     let online = 0, total = 0;
     for (const sw of DC.Util.allEq(state, "switch")) {
@@ -47,6 +50,9 @@ DC.Network = (function () {
         if (srv.secTimer <= 0) spread(state, srv);
       }
       if (srv.state === "online" && srv.busy) {
+        srv.busy.t -= dt;
+        if (srv.busy.t <= 0) finishServerBusy(state, srv);
+      } else if (srv.state !== "online" && srv.state !== "booting" && srv.state !== "shutdown" && srv.busy && OFFLINE_OK[srv.busy.kind]) {
         srv.busy.t -= dt;
         if (srv.busy.t <= 0) finishServerBusy(state, srv);
       }
@@ -96,6 +102,10 @@ DC.Network = (function () {
       DC.Events.alarm(state, "info", srv.name + " recovered to last-known-good state", srv.id);
     } else if (kind === "reboot-request" || kind === "pull-logs" || kind === "patch-check" || kind === "reseat" || kind === "pwreset" || kind === "mount-share") {
       if (kind === "reseat") srv.netState = "ok";
+      if (DC.FieldRequests) DC.FieldRequests.notifyBusyDone(state, srv, kind);
+      DC.Events.alarm(state, "info", srv.name + " task complete", srv.id);
+    } else if (kind === "svc-restart" || kind === "cert-renew" || kind === "clock-sync" || kind === "dns-flush" || kind === "run-backup") {
+      if (DC.Conditions) DC.Conditions.finish(state, srv, kind);
       if (DC.FieldRequests) DC.FieldRequests.notifyBusyDone(state, srv, kind);
       DC.Events.alarm(state, "info", srv.name + " task complete", srv.id);
     } else if (kind === "stop-proc") {
