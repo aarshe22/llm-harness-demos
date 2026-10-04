@@ -380,7 +380,7 @@ DC.Tech = (function () {
     const scale = 3.4;
     // head 12x10 px art centered in the 80x67 tube area; wobble shakes it when stressed
     const wob = f.wob ? Math.round(Math.sin(t * (mood === "onfire" ? 18 : 8)) * f.wob) : 0;
-    c.translate(40 + wob, 34); // 40 = center of the 80px-wide tube, 34 centers the 20-px head (scaled 3.4)
+    c.translate(40 + wob, 48); // 40 = center of the 80px-wide tube; head art spans -12..+2, so +17 scaled centers it in the 63px tube height
     c.scale(scale, scale);
     const r2 = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
     // hair (catches fire at onfire; charred edges)
