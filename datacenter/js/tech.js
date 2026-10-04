@@ -197,9 +197,10 @@ DC.Tech = (function () {
   }
 
   // desk scene, origin at left edge, feet baseline y=0
-  function drawDeskScene(ctx, ox, fy, occupied, t) {
+  function drawDeskScene(ctx, ox, fy, occupied, t, scale) {
     ctx.save();
     ctx.translate(ox, fy);
+    ctx.scale(scale || 2, scale || 2); // desk scene drawn at 2x (100% larger than original)
     // desk
     r(ctx, 0, -12, 26, 3, COL.deskHi);
     r(ctx, 0, -9, 26, 2, COL.desk);
@@ -331,7 +332,7 @@ DC.Tech = (function () {
     // mini floor
     c.fillStyle = "#1c1547";
     c.fillRect(0, 22, 60, 2);
-    drawDeskScene(c, 10, 24, guy.state === "idle", t);
+    drawDeskScene(c, 10, 24, guy.state === "idle", t, 1);
     c.restore();
     const st = document.getElementById("tech-status");
     if (st) {
