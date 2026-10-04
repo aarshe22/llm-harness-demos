@@ -371,9 +371,9 @@ DC.Tech = (function () {
     const hair = female ? "#6e3a20" : COL.hair;
     c.save();
     const scale = 3.4;
-    // head 12x10 px art centered, wobble shakes it when stressed
+    // head 12x10 px art centered in the 80x67 tube area; wobble shakes it when stressed
     const wob = f.wob ? Math.round(Math.sin(t * (mood === "onfire" ? 18 : 8)) * f.wob) : 0;
-    c.translate(48 + wob, 54);
+    c.translate(40 + wob, 34); // 40 = center of the 80px-wide tube, 34 centers the 20-px head (scaled 3.4)
     c.scale(scale, scale);
     const r2 = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
     // hair (catches fire at onfire; charred edges)
@@ -458,7 +458,7 @@ DC.Tech = (function () {
     c.beginPath();
     c.rect(sx + 2, sy + 2, sw - 4, sh - 4);
     c.clip();
-    c.translate(sx + 2, sy - 6);
+    c.translate(sx + 2, sy + 2);
     drawMoodFaceInner(c, mood, t);
     c.restore();
     // phosphor flicker (subtle whole-tube brightness wobble)
