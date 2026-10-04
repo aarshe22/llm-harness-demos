@@ -10,7 +10,6 @@ DC.UI = (function () {
     const root = el("ui-root");
     root.innerHTML = `
       <div id="topbar">
-        <canvas id="mood-cam" width="96" height="96" title="operator's current emotional state" class="topbar-mood"></canvas>
         <div class="tb-logo">DATACENTER</div>
         <div class="chip" id="${chipId("uptime")}"><div class="lbl">UPTIME</div><div class="val">00:00:00</div></div>
         <div class="chip" id="${chipId("score")}"><div class="lbl">SCORE</div><div class="val">0</div></div>
@@ -46,6 +45,7 @@ DC.UI = (function () {
         <div id="tech-strip"><canvas id="tech-cam" width="144" height="88"></canvas><div id="tech-status">OPERATOR CAM</div></div>
       </div>
       <div class="toast-wrap" id="toasts"></div>
+      <canvas id="mood-cam" width="96" height="96" title="operator's current emotional state"></canvas>
       <div id="tutorial-banner" style="display:none"></div>
     `;
     el("sp-close").onclick = () => select(null);

@@ -119,40 +119,39 @@ DC.Render = (function () {
   let camZoomDefault = CAM_ZOOM_DEFAULT;
 
   function drawThermometer(ctx, w, h, pct, time, panelOpen) {
-    const x = w - 46 - (panelOpen ? 324 : 0);
-    const bulbR = 15;
-    const top = 78;
-    const tubeH = DC.Util.clamp(h - top - 190, 90, 250);
+    const x = w - 40 - (panelOpen ? 324 : 0);
+    const top = 116; // pushed down: zoom-reset button lives above
+    const barW = 16; // same width as the bulb at the bottom
+    const tubeH = DC.Util.clamp(h - top - 150, 90, 260);
     const bot = top + tubeH;
+    // simple vertical bar, bulb-width
     ctx.fillStyle = "#0b0820";
-    ctx.fillRect(x - 9, top, 18, tubeH);
+    ctx.fillRect(x - barW / 2, top, barW, tubeH);
     ctx.strokeStyle = PAL.rackEdge;
     ctx.lineWidth = PX;
-    ctx.strokeRect(x - 9, top, 18, tubeH);
+    ctx.strokeRect(x - barW / 2, top, barW, tubeH);
     ctx.lineWidth = 1;
-    ctx.fillStyle = PAL.rivet;
-    for (let i = 0; i <= 10; i++) {
-      const ty = Math.round(bot - (tubeH * i) / 10);
-      ctx.fillRect(x + 11, ty, i % 5 === 0 ? 8 : 4, PX);
-    }
+    // fill: rises with % towards growth
     const col = pct > 85 ? PAL.ledAmber : pct > 60 ? PAL.ledGreen : PAL.ledCyan;
     const fillH = Math.max(PX, Math.round((tubeH - 4) * DC.Util.clamp(pct, 0, 100) / 100));
     ctx.fillStyle = col;
-    ctx.fillRect(x - 6, bot - 2 - fillH, 12, fillH);
+    ctx.fillRect(x - barW / 2 + 2, bot - 2 - fillH, barW - 4, fillH);
+    // glow pulse when nearly full
     if (pct > 85 && Math.sin(time * 6) > 0) {
       ctx.globalAlpha = 0.35;
-      ctx.fillRect(x - 12, top, 24, tubeH);
+      ctx.fillRect(x - barW, top, barW * 2, tubeH);
       ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = col;
-    ctx.beginPath();
-    ctx.arc(x, bot + bulbR, bulbR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = PAL.rackEdge;
-    ctx.stroke();
-    pxText(ctx, "GROWTH", x - 24, bot + bulbR * 2 + 20, 8, PAL.textDim);
+    // tick marks on the right edge
+    ctx.fillStyle = PAL.rivet;
+    for (let i = 0; i <= 10; i++) {
+      const ty = Math.round(bot - (tubeH * i) / 10);
+      ctx.fillRect(x + barW / 2 + 1, ty, i % 5 === 0 ? 8 : 4, PX);
+    }
+    pxText(ctx, Math.round(pct) + "%", x - 12, top - 12, 8, col);
+    pxText(ctx, "GROWTH", x - 24, bot + 18, 8, PAL.textDim);
     // zoom-reset touchpoint sits above the % label
-    const zy = top - 24;
+    const zy = top - 56;
     const active = Math.abs(camZoomDefault - lastZoom) > 0.01;
     ctx.fillStyle = "#0b0820";
     ctx.fillRect(x - 9, zy, 18, 12);
@@ -162,7 +161,6 @@ DC.Render = (function () {
     ctx.lineWidth = 1;
     pxText(ctx, "1:1", x - 5, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
     lastZoomRect = { x: x - 13, y: zy - 4, w: 26, h: 20 };
-    pxText(ctx, Math.round(pct) + "%", x - 14, top - 10, 8, col);
   }
 
   let lastZoomRect = null;
