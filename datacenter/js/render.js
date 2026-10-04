@@ -276,7 +276,7 @@ DC.Render = (function () {
   function drawUPS(ctx, state, floorY, time) {
     const ups = state.eqById["UPS-1"];
     if (!ups) return;
-    const x = upsX(state), w = 46, h = 90;
+    const x = upsX(state), w = 58, h = 90;
     const y = floorY + 10;
     ctx.fillStyle = "#0d0a26";
     ctx.fillRect(x, y, w, h);
@@ -320,7 +320,7 @@ DC.Render = (function () {
   }
 
   function wanGeom(state) {
-    const bx = upsX(state) + 46 + 22; // right of the UPS cabinet + gap
+    const bx = upsX(state) + 58 + 22; // right of the widened UPS cabinet + gap
     return { bx, rowH: 46, pipeLen: 84, wanW: 38, wanH: 30, fwW: 44, fwH: 36 };
   }
 
@@ -399,11 +399,12 @@ DC.Render = (function () {
       const x = rackX(anchor) - 26;
       const y = floorY + 10;
       const fault = !!cr.fault;
+      const CH = 90; // same height as the UPS panel
       ctx.fillStyle = PAL.rackIn;
-      ctx.fillRect(x, y, 68, 58);
+      ctx.fillRect(x, y, 68, CH);
       ctx.strokeStyle = fault ? PAL.ledRed : PAL.rackEdge;
       ctx.lineWidth = PX;
-      ctx.strokeRect(x, y, 68, 58);
+      ctx.strokeRect(x, y, 68, CH);
       ctx.lineWidth = 1;
       pxText(ctx, cr.name, x + 6, y + 14, 8, PAL.text);
       const spin = time * (fault ? 1 : 9);
@@ -411,30 +412,30 @@ DC.Render = (function () {
       for (let b = 0; b < 2; b++) {
         const a = spin + b * Math.PI;
         ctx.beginPath();
-        ctx.moveTo(x + 20, y + 34);
-        ctx.lineTo(x + 20 + Math.cos(a) * 12, y + 34 + Math.sin(a) * 12);
+        ctx.moveTo(x + 20, y + 44);
+        ctx.lineTo(x + 20 + Math.cos(a) * 13, y + 44 + Math.sin(a) * 13);
         ctx.stroke();
       }
       ctx.strokeStyle = PAL.rackEdge;
       ctx.beginPath();
-      ctx.arc(x + 20, y + 34, 13, 0, Math.PI * 2);
+      ctx.arc(x + 20, y + 44, 14, 0, Math.PI * 2);
       ctx.stroke();
       const led = fault ? (Math.sin(time * 8) > 0 ? PAL.ledRed : "#5a1020") : PAL.ledGreen;
       ctx.fillStyle = led;
-      if (fault || Math.sin(time * 3) > 0) ctx.fillRect(x + 48, y + 26, 6, 6);
+      if (fault || Math.sin(time * 3) > 0) ctx.fillRect(x + 48, y + 36, 6, 6);
       if (cr.maint) {
         const p = cr.maint.t0 ? 1 - cr.maint.t / cr.maint.t0 : 0;
         ctx.fillStyle = "#0a0722";
-        ctx.fillRect(x + 6, y + 44, 44, 6);
+        ctx.fillRect(x + 6, y + 66, 44, 6);
         ctx.fillStyle = PAL.ledCyan;
-        ctx.fillRect(x + 6, y + 44, Math.floor(44 * p / PX) * PX, 6);
-        if (Math.sin(time * 4) > 0) pxText(ctx, "SRV", x + 52, y + 50, 8, PAL.ledCyan);
+        ctx.fillRect(x + 6, y + 66, Math.floor(44 * p / PX) * PX, 6);
+        if (Math.sin(time * 4) > 0) pxText(ctx, "SRV", x + 52, y + 72, 8, PAL.ledCyan);
       } else if (cr.filterDirty > 0.7 && !fault) {
         ctx.fillStyle = PAL.ledAmber;
-        if (Math.sin(time * 2) > 0) ctx.fillRect(x + 48, y + 40, 6, 6);
+        if (Math.sin(time * 2) > 0) ctx.fillRect(x + 48, y + 52, 6, 6);
       }
       if (fault) {
-        if (Math.sin(time * 6) > 0) pxText(ctx, "FAULT", x + 6, y + 54, 8, PAL.ledRed);
+        if (Math.sin(time * 6) > 0) pxText(ctx, "FAULT", x + 6, y + 80, 8, PAL.ledRed);
       }
     });
   }
@@ -705,7 +706,7 @@ DC.Render = (function () {
     const ups = state.eqById["UPS-1"];
     if (ups) {
       const ux = upsX(state);
-      if (p.x >= ux - 4 && p.x <= ux + 50 && p.y >= RACK_H + 6 && p.y <= RACK_H + 104) return { eq: ups, rack: null };
+      if (p.x >= ux - 4 && p.x <= ux + 62 && p.y >= RACK_H + 6 && p.y <= RACK_H + 104) return { eq: ups, rack: null };
     }
     // WAN pipes + firewalls (bottom row, right of UPS)
     if (state.wans) {
