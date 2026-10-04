@@ -115,7 +115,7 @@ DC.Render = (function () {
     drawCRT(ctx, w, h, time);
   }
 
-  const CAM_ZOOM_DEFAULT = 0.75; // matched by main.js default zoom
+  const CAM_ZOOM_DEFAULT = 0.73; // matched by main.js defaultZoom (3% out from 0.75)
   let camZoomDefault = CAM_ZOOM_DEFAULT;
 
   function drawThermometer(ctx, w, h, pct, time, panelOpen) {
@@ -159,8 +159,9 @@ DC.Render = (function () {
     ctx.lineWidth = PX;
     ctx.strokeRect(x - 9, zy, 18, 12);
     ctx.lineWidth = 1;
-    pxText(ctx, "1:1", x - 5, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
-    lastZoomRect = { x: x - 13, y: zy - 4, w: 26, h: 20 };
+    // [*] — the square reads as "zoom frame"; asterisk = "fit/reset"
+    pxText(ctx, "[*]", x - 12, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
+    lastZoomRect = { x: x - 15, y: zy - 4, w: 30, h: 20 };
   }
 
   let lastZoomRect = null;
