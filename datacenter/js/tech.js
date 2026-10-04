@@ -151,12 +151,12 @@ DC.Tech = (function () {
   // ---------- drawing ----------
   function r(ctx, x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
 
-  // standing / walking guy, feet at (x, fy), facing dir
+  // standing / walking guy, feet at (x, fy), facing dir — drawn 1.5x scale
   function drawGuy(ctx, x, fy, dir, frame) {
-    const f = dir; // 1 right, -1 left
+    const f = dir * 1.5; // 1.5x size, mirrored by dir
     ctx.save();
     ctx.translate(x, fy);
-    ctx.scale(f, 1);
+    ctx.scale(f, 1.5);
     // shoes (walk frames)
     if (frame === 0) { r(ctx, -4, -2, 4, 2, COL.shoes); r(ctx, 1, -2, 4, 2, COL.shoes); }
     else { r(ctx, -6, -2, 4, 2, COL.shoes); r(ctx, 3, -2, 4, 2, COL.shoes); }
