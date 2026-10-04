@@ -18,7 +18,7 @@ DC.ROLES = {
   DNS: { load: [8, 20], heat: 0.6, net: 1.1 },
   VIRTUALIZATION: { load: [55, 88], heat: 1.35, net: 1.0 },
   "AI INFERENCE": { load: [65, 95], heat: 1.7, net: 0.9 },
-  ANALYTICS: { load: [50, 85], heat: 1.4, net: 0.8 },
+  "DATA ANALYTICS": { load: [50, 85], heat: 1.4, net: 0.8 },
   RENDERING: { load: [70, 96], heat: 1.6, net: 0.6 },
   VIDEO: { load: [35, 70], heat: 1.1, net: 1.6 },
   BACKUP: { load: [20, 55], heat: 1.0, net: 1.4 },
