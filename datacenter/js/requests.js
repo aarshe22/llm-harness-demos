@@ -98,7 +98,7 @@ DC.FieldRequests = (function () {
     state.requests.push(req);
     const eqName = target === "UPS-1" ? "UPS MAIN" : (state.eqById[target] ? state.eqById[target].name : target);
     DC.Events.alarm(state, "crit", "[TICKET] " + kind.name + " — " + kind.msg.replace("{eq}", eqName), target);
-    DC.Audio.alarm("crit");
+    DC.Audio.ticketVoice();
   }
 
   function reqFor(state, eq) {

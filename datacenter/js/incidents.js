@@ -9,8 +9,8 @@ DC.Events = {
     state.alarms.unshift({ id: "AL" + Math.random().toString(36).slice(2, 8), sev, msg, targetId, time: state.time, new: true });
     if (state.alarms.length > 60) state.alarms.pop();
     DC.Events.emit("alarm", state, sev, msg);
-    if (sev === "crit") DC.Audio.alarm("crit");
-    else if (sev === "warn") DC.Audio.alarm("warn");
+    if (sev === "crit") DC.Audio.alarm("crit", msg);
+    else if (sev === "warn") DC.Audio.alarm("warn", msg);
   },
   resolve: function (state, targetId, what) {
     const inc = state.incidents.find((i) => i.targetId === targetId && !i.resolved);
