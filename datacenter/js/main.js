@@ -239,7 +239,7 @@ DC.Game = (function () {
     DC.UI.init(state);
     cam.x = DC.Render.totalWidth(state) / 2;
     cam.y = DC.Render.CAM_Y;
-    cam.zoom = DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H, 0.3, 0.9);
+    cam.zoom = defaultZoom();
     DC.Audio.startAmbient();
     updateSpeedBtn();
     if (DC.Tech) DC.Tech.reset();
@@ -256,6 +256,18 @@ DC.Game = (function () {
       cam.x = DC.Render.upsX(state) + 20;
     }
     DC.UI.select(eq);
+  }
+
+  function defaultZoom() {
+    return DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H, 0.3, 0.9);
+  }
+
+  function resetZoomView() {
+    if (!state) return;
+    cam.zoom = defaultZoom();
+    cam.y = DC.Render.CAM_Y;
+    cam.x = DC.Render.totalWidth(state) / 2;
+    clampCam();
   }
 
   const SPEEDS = [0.5, 1, 2, 4];
@@ -399,6 +411,7 @@ DC.Game = (function () {
       saveAcc += dt;
       if (saveAcc > 15) { saveAcc = 0; DC.Save.save(state); }
       DC.Render.draw(state, ctx, cam, canvas.width, canvas.height, t / 1000);
+      DC.Render.setZoomRef(cam.zoom);
       if (DC.Tech) DC.Tech.frame(state, t / 1000);
     }
   }
@@ -438,6 +451,12 @@ DC.Game = (function () {
     ptr.id = null;
     canvas.classList.remove("dragging");
     if (allowSelect && !dragMoved && state && !inMenu) {
+      if (DC.Render.zoomResetHit(canvas.width, canvas.height, cam, e.clientX, e.clientY)) {
+        DC.Audio.click();
+        resetZoomView();
+        dragMoved = false;
+        return;
+      }
       const hit = DC.Render.hitTest(state, cam, canvas.width, canvas.height, e.clientX, e.clientY);
       if (hit) { DC.Audio.click(); DC.UI.select(hit.eq); }
       else DC.UI.select(null);

@@ -115,6 +115,9 @@ DC.Render = (function () {
     drawCRT(ctx, w, h, time);
   }
 
+  const CAM_ZOOM_DEFAULT = 0.75; // matched by main.js default zoom
+  let camZoomDefault = CAM_ZOOM_DEFAULT;
+
   function drawThermometer(ctx, w, h, pct, time, panelOpen) {
     const x = w - 46 - (panelOpen ? 324 : 0);
     const bulbR = 15;
@@ -148,7 +151,27 @@ DC.Render = (function () {
     ctx.strokeStyle = PAL.rackEdge;
     ctx.stroke();
     pxText(ctx, "GROWTH", x - 24, bot + bulbR * 2 + 20, 8, PAL.textDim);
+    // zoom-reset touchpoint sits above the % label
+    const zy = top - 24;
+    const active = Math.abs(camZoomDefault - lastZoom) > 0.01;
+    ctx.fillStyle = "#0b0820";
+    ctx.fillRect(x - 9, zy, 18, 12);
+    ctx.strokeStyle = active ? (time * 3 % 1 > 0.5 ? PAL.ledGreen : PAL.rackEdge) : PAL.rackEdge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(x - 9, zy, 18, 12);
+    ctx.lineWidth = 1;
+    pxText(ctx, "1:1", x - 5, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
+    lastZoomRect = { x: x - 13, y: zy - 4, w: 26, h: 20 };
     pxText(ctx, Math.round(pct) + "%", x - 14, top - 10, 8, col);
+  }
+
+  let lastZoomRect = null;
+  let lastZoom = 0.75;
+  function setZoomRef(z) { lastZoom = z; }
+  // lastZoomRect is in screen px (thermometer is drawn post-restore in screen space)
+  function zoomResetHit(w, h, cam, mx, my) {
+    if (!lastZoomRect) return false;
+    return mx >= lastZoomRect.x && mx <= lastZoomRect.x + lastZoomRect.w && my >= lastZoomRect.y && my <= lastZoomRect.y + lastZoomRect.h;
   }
 
   function drawWall(ctx, worldW, floorY, time) {
@@ -753,6 +776,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, zoomResetHit, setZoomRef
   };
 })();
