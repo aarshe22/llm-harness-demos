@@ -147,8 +147,10 @@ DC.Game = (function () {
     const rack = state.racks[eq.rack];
     if (rack) {
       cam.x = DC.Render.rackX(state.racks.indexOf(rack)) + DC.Render.RACK_W / 2;
-      DC.UI.select(eq);
+    } else if (targetId === "UPS-1") {
+      cam.x = -40;
     }
+    DC.UI.select(eq);
   }
 
   const SPEEDS = [1, 2, 4];

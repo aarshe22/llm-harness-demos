@@ -97,6 +97,7 @@ DC.Render = (function () {
     drawCeiling(ctx, worldW, time);
     drawFloor(ctx, worldW, floorY);
     drawLightCones(ctx, worldW, floorY, time);
+    drawUPS(ctx, state, floorY, time);
     drawHalls(ctx, state, floorY);
     drawCRACs(ctx, state, floorY, time);
 
@@ -256,6 +257,49 @@ DC.Render = (function () {
       i = j;
     }
   }
+
+  // the UPS lives on the floor between the operator desk and rack 0
+  const UPS_X = -64;
+
+  function drawUPS(ctx, state, floorY, time) {
+    const ups = state.eqById["UPS-1"];
+    if (!ups) return;
+    const x = UPS_X, w = 46, h = 90;
+    const y = floorY - h;
+    ctx.fillStyle = "#0d0a26";
+    ctx.fillRect(x, y, w, h);
+    const stress = state.power.upsDischarge || 0;
+    let edge = PAL.rackEdge;
+    if (stress > 60) edge = PAL.ledRed;
+    else if (stress > 25) edge = PAL.ledAmber;
+    if (state.power.utility !== "ok" && (time * 4 % 1) > 0.5) edge = PAL.ledRed;
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(x, y, w, h);
+    ctx.lineWidth = 1;
+    pxText(ctx, "UPS", x + 6, y + 12, 8, PAL.text);
+    // charge bar
+    const charge = DC.Util.clamp(100 - stress, 0, 100);
+    ctx.fillStyle = "#0a0722";
+    ctx.fillRect(x + 6, y + 18, w - 12, 6);
+    ctx.fillStyle = charge > 60 ? PAL.ledGreen : charge > 25 ? PAL.ledAmber : PAL.ledRed;
+    ctx.fillRect(x + 6, y + 18, Math.floor((w - 12) * charge / 100 / PX) * PX, 6);
+    // battery strings: 8 LEDs
+    if (ups.batteries) {
+      ups.batteries.forEach((b, i) => {
+        const col = b.dead ? PAL.ledRed : b.health < 30 ? PAL.ledAmber : PAL.ledGreen;
+        ctx.fillStyle = col;
+        ctx.fillRect(x + 7 + (i % 4) * 9, y + 34 + Math.floor(i / 4) * 12, 6, 8);
+      });
+    }
+    // mains LED
+    ctx.fillStyle = state.power.utility === "ok" ? PAL.ledGreen : (blinkFast(time) ? PAL.ledRed : "#1b1445");
+    ctx.fillRect(x + 6, y + h - 12, 6, 6);
+    pxText(ctx, "MAINS", x + 16, y + h - 6, 8, PAL.textDim);
+    if (ups.fresh && ups.freshT < 1) freshFlash(ctx, ups, x, y, w, h);
+  }
+
+  function blinkFast(time) { return (time * 5 % 1) > 0.5; }
 
   function drawCRACs(ctx, state, floorY, time) {
     state.coolingUnits.forEach((cr) => {
@@ -567,6 +611,8 @@ DC.Render = (function () {
 
   function hitTest(state, cam, w, h, mx, my) {
     const p = worldFromScreen(mx, my, w, h, cam);
+    const ups = state.eqById["UPS-1"];
+    if (ups && p.x >= UPS_X - 4 && p.x <= UPS_X + 50 && p.y >= RACK_H - 90 - 4 && p.y <= RACK_H + 4) return { eq: ups, rack: null };
     for (let i = 0; i < state.racks.length; i++) {
       const x = rackX(i);
       if (p.x >= x && p.x <= x + RACK_W && p.y >= -20 && p.y <= RACK_H) {

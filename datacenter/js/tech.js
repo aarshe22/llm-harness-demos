@@ -4,6 +4,8 @@ window.DC = window.DC || {};
 // walks to equipment when work or alarms pop, does the hammer/wrench cloud, walks back.
 DC.Tech = (function () {
   const HOME_X = -118;
+  const BASE_OFF = 26;      // feet baseline below the floor line (rack bottom)
+  const SIDE_OFF = 10;      // stand this far to the right of the rack
   const COL = {
     skin: "#f2c79a", hair: "#33254a", shirt: "#e8e8f4", tie: "#e0485a", pants: "#3a3a5c",
     shoes: "#f5f5ff", glasses: "#3de1ff", pocket: "#ffd23d",
@@ -15,29 +17,40 @@ DC.Tech = (function () {
   let tasks = [];          // [{id, kind:'work'|'look'}]
   let seenAlarm = new Set();
   let didSet = new Set();  // jobs he already visited — cleared when the job truly ends
-  let guy = { x: HOME_X, state: "idle", workT: 0, cur: null };
+  let guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [] };
   let scanAcc = 1, sipT = 0;
   let camEl = null, camCtx = null;
 
   function reset() {
     tasks = []; seenAlarm = new Set(); didSet = new Set();
-    guy = { x: HOME_X, state: "idle", workT: 0, cur: null };
+    guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [] };
     camEl = null; camCtx = null;
   }
 
-  function posFor(state, id) {
+  function baseY() { return DC.Render.RACK_H + BASE_OFF; }
+
+  // where he stands to work on eq: beside the rack at the unit's height
+  // returns null if the eq vanished
+  function spotFor(state, id) {
     const eq = state.eqById[id];
     if (!eq) return null;
+    if (id === "UPS-1") return { x: -14, y: baseY() };  // beside the UPS cabinet
     if (eq.type === "crac") {
       const rs = state.racks.filter((r) => r.hall === eq.hall);
-      if (!rs.length) return HOME_X + 30;
+      if (!rs.length) return { x: HOME_X + 30, y: baseY() };
       const a = DC.Render.rackX(state.racks.indexOf(rs[0]));
       const b = DC.Render.rackX(state.racks.indexOf(rs[rs.length - 1])) + DC.Render.RACK_W;
-      return (a + b) / 2;
+      return { x: (a + b) / 2, y: baseY() };
     }
     const rack = state.racks[eq.rack];
-    if (!rack) return HOME_X + 40;
-    return DC.Render.rackX(eq.rack) + DC.Render.RACK_W / 2;
+    if (!rack) return { x: HOME_X + 40, y: baseY() };
+    const rx = DC.Render.rackX(eq.rack);
+    // vertical: feet at the unit's bottom edge (rack top = y 0)
+    let yu = 0;
+    for (const e of rack.equipment) { if (e === eq) break; yu += e.uh || 2; }
+    const unitH = (eq.uh || 2) * DC.Render.U;
+    const ty = Math.max(30, yu * DC.Render.U + unitH);
+    return { x: rx + DC.Render.RACK_W + SIDE_OFF, y: ty };
   }
 
   function scan(state, now) {
@@ -64,22 +77,49 @@ DC.Tech = (function () {
     }
   }
 
+  // build a waypoint path from his current spot to (tx, ty): descend, cross, climb
+  function planPath(from, to) {
+    const path = [];
+    if (Math.abs(from.y - baseY()) > 1) path.push({ x: from.x, y: baseY() });  // down first
+    path.push({ x: to.x, y: baseY() });                                        // across the floor
+    if (Math.abs(to.y - baseY()) > 1) path.push({ x: to.x, y: to.y });         // up beside the unit
+    return path;
+  }
+
   function tick(state, dt, now) {
     if (guy.state === "idle") {
       sipT += dt;
-      if (tasks.length) { guy.state = "walk"; guy.cur = tasks[0]; }
+      if (tasks.length) {
+        guy.cur = tasks[0];
+        const spot = spotFor(state, guy.cur.id);
+        if (!spot) { nextTask(state); return; }
+        guy.path = planPath({ x: guy.x, y: guy.y }, spot);
+        if (!guy.path.length) { guy.state = "work"; guy.workT = 0; }
+        else guy.state = "walk";
+      }
       return;
     }
     const speed = 230 * Math.sqrt(state.speed || 1);
     if (guy.state === "walk" || guy.state === "homewalk") {
-      const tx = guy.state === "homewalk" ? HOME_X : posFor(state, guy.cur.id);
-      if (tx === null) { nextTask(state); return; }
-      const d = tx - guy.x;
-      if (Math.abs(d) < speed * dt) {
-        guy.x = tx;
-        if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; }
+      if (!guy.path.length) {
+        if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.path = []; }
         else { guy.state = "work"; guy.workT = 0; }
-      } else guy.x += Math.sign(d) * speed * dt;
+        return;
+      }
+      const wp = guy.path[0];
+      const dx = wp.x - guy.x, dy = wp.y - guy.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < speed * dt) {
+        guy.x = wp.x; guy.y = wp.y;
+        guy.path.shift();
+        if (!guy.path.length) {
+          if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.x = HOME_X; guy.y = baseY(); }
+          else { guy.state = "work"; guy.workT = 0; }
+        }
+      } else {
+        guy.x += (dx / dist) * speed * dt;
+        guy.y += (dy / dist) * speed * dt;
+      }
     } else if (guy.state === "work") {
       guy.workT += dt;
       const dur = guy.cur.kind === "work" ? 1.8 + (guy.cur.id.length % 3) * 0.5 : 2.2;
@@ -91,9 +131,21 @@ DC.Tech = (function () {
     if (guy.cur && guy.cur.kind === "work") didSet.add(guy.cur.id);
     tasks.shift();
     guy.cur = null;
-    if (tasks.length) { guy.state = "walk"; guy.cur = tasks[0]; }
-    else if (Math.abs(guy.x - HOME_X) < 2) { guy.x = HOME_X; guy.state = "idle"; }
-    else guy.state = "homewalk";
+    const here = { x: guy.x, y: guy.y };
+    if (tasks.length) {
+      guy.cur = tasks[0];
+      const spot = spotFor(state, guy.cur.id);
+      if (!spot) { tasks.shift(); guy.cur = null; }
+      else guy.path = planPath(here, spot);
+      if (guy.path && guy.path.length) guy.state = "walk";
+      else if (guy.cur) { guy.state = "work"; guy.workT = 0; }
+      else guy.path = planPath(here, { x: HOME_X, y: baseY() }), guy.state = "homewalk";
+    } else if (Math.abs(guy.x - HOME_X) < 2 && Math.abs(guy.y - baseY()) < 2) {
+      guy.x = HOME_X; guy.y = baseY(); guy.state = "idle";
+    } else {
+      guy.path = planPath(here, { x: HOME_X, y: baseY() });
+      guy.state = "homewalk";
+    }
   }
 
   // ---------- drawing ----------
@@ -203,23 +255,31 @@ DC.Tech = (function () {
 
   function drawWorld(ctx, state, floorY, time) {
     // his desk always exists in the world, left of rack 0
-    drawDeskScene(ctx, HOME_X - 12, floorY + 26, guy.state === "idle", time);
+    drawDeskScene(ctx, HOME_X - 12, floorY + BASE_OFF, guy.state === "idle", time);
     // guy in the world when on a job
     if (guy.state === "idle") return;
-    const dir = guy.state === "homewalk" ? -1 : (guy.x < posFor(state, guy.cur.id) ? 1 : -1);
     const frame = Math.floor(time * 8) % 2;
     if (guy.state === "work" && guy.cur) {
-      drawGuy(ctx, guy.x, floorY + 26, 1, 0);
       const eq = state.eqById[guy.cur.id];
+      const facingRack = eq && state.racks[eq.rack];
+      drawGuy(ctx, guy.x, guy.y, facingRack ? -1 : 1, 0);
       let cy = floorY - 40;
       if (eq && state.racks[eq.rack]) {
         let yu = 0;
         for (const e of state.racks[eq.rack].equipment) { if (e === eq) break; yu += e.uh || 2; }
-        cy = Math.max(20, yu * DC.Render.U - 6);
+        const unitH = (eq.uh || 2) * DC.Render.U;
+        cy = Math.max(30, yu * DC.Render.U + unitH / 2);
       }
-      drawWorkCloud(ctx, guy.x, cy, time);
+      drawWorkCloud(ctx, guy.x - 6, cy, time);
     } else {
-      drawGuy(ctx, guy.x, floorY + 26, dir, frame);
+      const wp = guy.path && guy.path[0];
+      let dir = -1;
+      if (wp) dir = wp.x >= guy.x ? 1 : -1;
+      else if (guy.cur) {
+        const spot = spotFor(state, guy.cur.id);
+        if (spot) dir = spot.x >= guy.x ? 1 : -1;
+      }
+      drawGuy(ctx, guy.x, guy.y, dir, frame);
     }
   }
 
@@ -261,5 +321,5 @@ DC.Tech = (function () {
     drawPanel(t);
   }
 
-  return { reset, frame, drawWorld, status: () => guy.state };
+  return { reset, frame, drawWorld, status: () => guy.state, pos: () => ({ x: guy.x, y: guy.y, state: guy.state, cur: guy.cur ? guy.cur.id : null }) };
 })();
