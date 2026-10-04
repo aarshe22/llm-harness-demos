@@ -185,6 +185,18 @@ DC.Tech = (function () {
   // ---------- drawing ----------
   function r(ctx, x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
 
+  // pink pixel bow — two loops + knot; plot(x, y, w, h, col) in local (pre-scale) pixel space
+  function drawPixelBow(plot, bx, by, s) {
+    const p = (x, y, w, h, c) => plot(x * s + bx, y * s + by, w * s, h * s, c);
+    p(0, 0, 2, 2, "#ff6fb5");   // left loop
+    p(2, 1, 2, 1, "#ff6fb5");   // right loop
+    p(0, 1, 1, 1, "#e04a97");   // left shade
+    p(2, 2, 2, 1, "#e04a97");   // right shade
+    p(1, 0, 1, 1, "#ffc3e0");   // highlights
+    p(2, 0, 1, 1, "#ffc3e0");
+    p(1, 1, 1, 1, "#ff9dcd");   // knot
+  }
+
   // standing / walking guy, feet at (x, fy), facing dir — drawn 1.5x scale
   function drawGuy(ctx, x, fy, dir, frame, pose) {
     const female = operator === "diane";
@@ -229,6 +241,7 @@ DC.Tech = (function () {
     r(ctx, -3, -22, 7, 2, hair);
     r(ctx, 3, -22, 1, 4, hair); // sideburn
     if (female) { r(ctx, -4, -22, 1, 5, hair); r(ctx, 4, -22, 1, 5, hair); r(ctx, -4, -18, 1, 3, hair); r(ctx, 4, -18, 1, 3, hair); } // longer locks
+    if (female) drawPixelBow((x, y, w, h, c) => r(ctx, x, y, w, h, c), -2, -24, 1); // pink bow, top of head
     // nerdy glasses
     r(ctx, -1, -19, 2, 1, COL.glasses);
     r(ctx, 2, -19, 2, 1, COL.glasses);
@@ -300,6 +313,7 @@ DC.Tech = (function () {
       r(ctx, 22, -26, 7, 6, skin);
       r(ctx, 22, -27, 7, 2, hair);
       if (female) { r(ctx, 21, -27, 1, 6, hair); r(ctx, 28, -27, 1, 6, hair); r(ctx, 20, -24, 1, 4, hair); r(ctx, 29, -24, 1, 4, hair); }
+      if (female) drawPixelBow((x, y, w, h, c) => r(ctx, x, y, w, h, c), 23, -29, 1); // pink bow, top of head
       r(ctx, 24, -24, 2, 1, COL.glasses);
       r(ctx, 27, -24, 2, 1, COL.glasses);
       // sip: mug lifted
@@ -402,6 +416,7 @@ DC.Tech = (function () {
     const r2 = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
     // hair (catches fire at onfire; charred edges)
     r2(-7, -12, 14, 3, mood === "onfire" ? "#1a1220" : hair);
+    if (female) drawPixelBow(r2, -2.8, -11.5, 1.4); // pink bow, resting on top of the hair
     // face
     r2(-6, -9, 12, 10, skin);
     // chin shade

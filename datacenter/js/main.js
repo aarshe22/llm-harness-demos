@@ -77,6 +77,18 @@ DC.Game = (function () {
     menu.querySelector("#op-back").onclick = () => { stop(); menu.remove(); onBack && onBack(); };
   }
 
+  // pink pixel bow — two loops + knot (matches the one in tech.js)
+  function drawPixelBow(r, bx, by, s) {
+    const p = (x, y, w, h, c) => r(x * s + bx, y * s + by, w * s, h * s, c);
+    p(0, 0, 2, 2, "#ff6fb5");   // left loop
+    p(2, 1, 2, 1, "#ff6fb5");   // right loop
+    p(0, 1, 1, 1, "#e04a97");   // left shade
+    p(2, 2, 2, 1, "#e04a97");   // right shade
+    p(1, 0, 1, 1, "#ffc3e0");   // highlights
+    p(2, 0, 1, 1, "#ffc3e0");
+    p(1, 1, 1, 1, "#ff9dcd");   // knot
+  }
+
   // big idle-animated head portrait for the operator select screen
   function drawAvatarPortrait(c, op, t) {
     const female = op === "diane";
@@ -116,6 +128,7 @@ DC.Game = (function () {
     r2(-9, -8, 2, 8, hair); // side hair
     r2(7, -8, 2, 8, hair);
     if (female) { r2(-11, -6, 2, 10, hair); r2(9, -6, 2, 10, hair); } // long locks
+    if (female) drawPixelBow(r2, -3, -13.8, 1.4); // pink bow, resting on top of the hair
     // brows (lift on the micro-movement)
     r2(-6, -5 - browLift, 4, 1, hair);
     r2(2, -5 - browLift, 4, 1, hair);
