@@ -123,6 +123,7 @@ DC.Game = (function () {
     if (!state.requests) state.requests = [];
     ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
+    if (!state.speed) state.speed = 1;
     bootRun();
   }
 
@@ -135,6 +136,7 @@ DC.Game = (function () {
     cam.y = DC.Render.CAM_Y;
     cam.zoom = DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H, 0.3, 0.9);
     DC.Audio.startAmbient();
+    updateSpeedBtn();
   }
 
   function jumpTo(targetId) {
@@ -146,6 +148,29 @@ DC.Game = (function () {
       cam.x = DC.Render.rackX(state.racks.indexOf(rack)) + DC.Render.RACK_W / 2;
       DC.UI.select(eq);
     }
+  }
+
+  const SPEEDS = [1, 2, 4];
+  const SPEED_NAMES = { 1: "NORMAL", 2: "BOOST", 4: "MAX" };
+
+  function speedBtn() { return document.getElementById("btn-speed"); }
+
+  function updateSpeedBtn() {
+    const b = speedBtn();
+    if (b && state) b.textContent = "SPD ×" + state.speed + " " + (SPEED_NAMES[state.speed] || "");
+  }
+
+  function setSpeed(mult) {
+    if (!state) return;
+    state.speed = mult;
+    updateSpeedBtn();
+    DC.Audio.click();
+  }
+
+  function cycleSpeed() {
+    if (!state) return;
+    const idx = SPEEDS.indexOf(state.speed || 1);
+    setSpeed(SPEEDS[(idx + 1) % SPEEDS.length]);
   }
 
   function togglePause() {
@@ -224,7 +249,7 @@ DC.Game = (function () {
     DC.FieldRequests.tick(state, dt);
     DC.Incidents.tick(state, dt);
     DC.Growth.tick(state, dt);
-    DC.Tutorial.tick(state, dt);
+    try { DC.Tutorial.tick(state, dt); } catch (e) { try { DC.Tutorial.stop(); } catch (e2) {} }
     state.time += dt;
     for (const hall of state.halls) {
       if (hall.leak) {
@@ -255,7 +280,8 @@ DC.Game = (function () {
       handleCamKeys(dt);
       simAcc += dt * state.speed;
       let steps = 0;
-      while (simAcc >= SIM_DT && steps < 6) { tick(SIM_DT); simAcc -= SIM_DT; steps++; }
+      const maxSteps = 6 + (state.speed || 1) * 4;
+      while (simAcc >= SIM_DT && steps < maxSteps) { tick(SIM_DT); simAcc -= SIM_DT; steps++; }
       if (simAcc > 1) simAcc = 0;
       uiAcc += dt;
       if (uiAcc > 0.25) { uiAcc = 0; DC.UI.update(); }
@@ -311,6 +337,7 @@ DC.Game = (function () {
     window.addEventListener("keydown", (e) => {
       keys[e.key] = true;
       if (["a", "d", "w", "s", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1) markMoved();
+      if (running() && (e.key === "1" || e.key === "2" || e.key === "3")) setSpeed(SPEEDS[parseInt(e.key, 10) - 1]);
     });
     window.addEventListener("keyup", (e) => { keys[e.key] = false; });
     const clearInput = () => {
@@ -440,7 +467,7 @@ DC.Game = (function () {
     };
   }
 
-  return { init, running, newGame, togglePause, jumpTo, setSelected: (e) => { selectedId = e ? e.id : null; }, animateExpansion, get state() { return state; }, get cam() { return cam; }, get selectedId() { return selectedId; }, showMenu };
+  return { init, running, newGame, togglePause, cycleSpeed, setSpeed, jumpTo, setSelected: (e) => { selectedId = e ? e.id : null; }, animateExpansion, get state() { return state; }, get cam() { return cam; }, get selectedId() { return selectedId; }, showMenu };
 })();
 
 window.addEventListener("DOMContentLoaded", () => DC.Game.init());

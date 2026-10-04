@@ -48,6 +48,26 @@ DC.Render = (function () {
     ctx.globalAlpha = 1;
   }
 
+  // rotating pixel marquee: dashes crawl clockwise around the rect border
+  function marquee(ctx, x, y, w, h, color, time, seg, gap) {
+    seg = seg || 6; gap = gap === undefined ? 6 : gap;
+    const step = seg + gap;
+    const t = Math.floor(time * 10) % step;
+    ctx.fillStyle = color;
+    // top edge (left->right) and bottom edge (right->left)
+    for (let d = -t; d < w; d += step) {
+      if (d + seg > 0) ctx.fillRect(x + d, y, Math.min(seg, w - d), PX);
+      const b = w - (d + seg);
+      if (b + seg > 0 && b < w) ctx.fillRect(x + Math.max(b, 0), y + h - PX, Math.min(seg, w - Math.max(b, 0)), PX);
+    }
+    // left edge (bottom->top) and right edge (top->bottom)
+    for (let d = -t; d < h; d += step) {
+      if (d + seg > 0) ctx.fillRect(x, y + h - d - PX, PX, Math.min(seg, h - d));
+      const r = d;
+      if (r + seg > 0 && r < h) ctx.fillRect(x + w - PX, y + Math.max(r, 0), PX, Math.min(seg, h - Math.max(r, 0)));
+    }
+  }
+
   function pxText(ctx, txt, x, y, size, color, align) {
     ctx.font = size + 'px "Press Start 2P", monospace';
     ctx.fillStyle = color;
@@ -366,15 +386,12 @@ DC.Render = (function () {
     const online = eq.state === "online";
     ctx.fillStyle = online ? "#141038" : "#0b0820";
     ctx.fillRect(bx, y + 2, bw, h - 4);
-    let edge = PAL.rackEdge;
+    let edge = PAL.ledGreen;
     if (online && eq.temp > 72) edge = PAL.ledRed;
     else if (online && eq.temp > 65) edge = PAL.hot;
     else if (online && eq.temp > 60) edge = PAL.ledAmber;
     if (eq.runaway && blink) edge = PAL.ledPink;
-    ctx.strokeStyle = edge;
-    ctx.lineWidth = PX;
-    ctx.strokeRect(bx, y + 2, bw, h - 4);
-    ctx.lineWidth = 1;
+    if (online || edge !== PAL.ledGreen) marquee(ctx, bx, y + 2, bw, h - 4, edge, time);
     pxText(ctx, eq.name, bx + 6, y + 16, 8, online ? PAL.text : PAL.textDim);
     ctx.fillStyle = PAL.textDim;
     ctx.font = 8 + 'px "Press Start 2P", monospace';
@@ -424,15 +441,12 @@ DC.Render = (function () {
     const tc = TENANT_COLORS[(eq.name || "").split("-").pop() % TENANT_COLORS.length || 0];
     ctx.fillStyle = online ? "#151438" : "#0b0820";
     ctx.fillRect(bx, y + 2, bw, h - 4);
-    let edge = online ? PAL.ledPink : PAL.ledRed;
+    let edge = PAL.ledGreen;
     if (online && eq.temp > 72) edge = PAL.ledRed;
     else if (online && eq.temp > 65) edge = PAL.hot;
     else if (online && eq.temp > 60) edge = PAL.ledAmber;
     if (eq.runaway && blink) edge = PAL.ledPink;
-    ctx.strokeStyle = edge;
-    ctx.lineWidth = PX;
-    ctx.strokeRect(bx, y + 2, bw, h - 4);
-    ctx.lineWidth = 1;
+    if (online || edge !== PAL.ledGreen) marquee(ctx, bx, y + 2, bw, h - 4, edge, time);
     pxText(ctx, eq.name, bx + 6, y + 16, 8, PAL.text);
     ctx.fillStyle = tc;
     ctx.fillRect(bx + bw - 14, y + 6, 8, 8);

@@ -27,6 +27,7 @@ DC.UI = (function () {
         <div class="chip clickable" id="${chipId("maint")}"><div class="lbl">MAINT</div><div class="val">0</div></div>
         <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
         <div id="tb-right">
+          <button id="btn-speed" title="simulation speed (1/2/3 keys)">SPD ×1</button>
           <button id="btn-help">HELP [F1]</button>
           <button id="btn-pause">PAUSE [SPC]</button>
         </div>
@@ -45,6 +46,7 @@ DC.UI = (function () {
     `;
     el("sp-close").onclick = () => select(null);
     el("btn-pause").onclick = () => DC.Game.togglePause();
+    el("btn-speed").onclick = () => DC.Game.cycleSpeed();
     el("btn-help").onclick = () => showHelp();
     el(chipId("tickets")).onclick = () => showHelpdesk();
     el(chipId("cooling")).onclick = () => showCooling();
