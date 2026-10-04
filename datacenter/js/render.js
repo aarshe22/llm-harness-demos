@@ -98,6 +98,7 @@ DC.Render = (function () {
     drawFloor(ctx, worldW, floorY);
     drawLightCones(ctx, worldW, floorY, time);
     drawUPS(ctx, state, floorY, time);
+    drawWANs(ctx, state, floorY, time);
     drawHalls(ctx, state, floorY);
     drawCRACs(ctx, state, floorY, time);
 
@@ -258,14 +259,25 @@ DC.Render = (function () {
     }
   }
 
-  // the UPS lives on the floor between the operator desk and rack 0
-  const UPS_X = -64;
+  // the UPS lives on the bottom row, right of the last CRAC condenser
+  function upsX(state) {
+    const cracs = state.coolingUnits || [];
+    const last = cracs[cracs.length - 1];
+    if (last) {
+      const hallRacks = state.racks.filter((r) => r.hall === last.hall);
+      if (hallRacks.length) {
+        const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
+        return rackX(anchor) - 26 + 68 + 10; // CRAC box is 68 wide
+      }
+    }
+    return -64;
+  }
 
   function drawUPS(ctx, state, floorY, time) {
     const ups = state.eqById["UPS-1"];
     if (!ups) return;
-    const x = UPS_X, w = 46, h = 90;
-    const y = floorY - h;
+    const x = upsX(state), w = 46, h = 90;
+    const y = floorY + 10;
     ctx.fillStyle = "#0d0a26";
     ctx.fillRect(x, y, w, h);
     const stress = state.power.upsDischarge || 0;
@@ -297,6 +309,84 @@ DC.Render = (function () {
     ctx.fillRect(x + 6, y + h - 12, 6, 6);
     pxText(ctx, "MAINS", x + 16, y + h - 6, 8, PAL.textDim);
     if (ups.fresh && ups.freshT < 1) freshFlash(ctx, ups, x, y, w, h);
+  }
+
+  // redundant WAN backbone: two pipes with pulsing flows + firewalls, bottom row right of the UPS
+  function wanStateCol(w, time) {
+    if (w.state === "failed") return PAL.ledRed;
+    if (w.state === "degraded") return PAL.ledAmber;
+    if (w.fw.overloaded) return PAL.ledAmber;
+    return PAL.ledGreen;
+  }
+
+  function wanGeom(state) {
+    const bx = upsX(state) + 46 + 22; // right of the UPS cabinet + gap
+    return { bx, rowH: 46, pipeLen: 84, wanW: 38, wanH: 30, fwW: 44, fwH: 36 };
+  }
+
+  function drawWANs(ctx, state, floorY, time) {
+    if (!state.wans || !state.wans.length) return;
+    const g = wanGeom(state);
+    state.wans.forEach((w, i) => {
+      const y = floorY + 12 + i * g.rowH;
+      const col = wanStateCol(w, time);
+      // handoff box
+      const x0 = g.bx;
+      ctx.fillStyle = "#0d0a26";
+      ctx.fillRect(x0, y, g.wanW, g.wanH);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = PX;
+      ctx.strokeRect(x0, y, g.wanW, g.wanH);
+      ctx.lineWidth = 1;
+      pxText(ctx, w.id, x0 + 4, y + 11, 8, PAL.text);
+      pxText(ctx, w.carrier.split(" ")[0].slice(0, 6).toUpperCase(), x0 + 4, y + 22, 8, PAL.textDim);
+      // pipe
+      const px0 = x0 + g.wanW + 4, px1 = px0 + g.pipeLen, py = y + Math.floor(g.wanH / 2);
+      ctx.strokeStyle = "#1b1445";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(px0, py);
+      ctx.lineTo(px1, py);
+      ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px0, py - 2);
+      ctx.lineTo(px1, py - 2);
+      ctx.moveTo(px0, py + 2);
+      ctx.lineTo(px1, py + 2);
+      ctx.stroke();
+      // pulsing data flow dashes (slower when degraded, none when failed)
+      if (w.state !== "failed") {
+        const spd = w.state === "degraded" ? 14 : 40;
+        ctx.fillStyle = w.state === "degraded" ? PAL.ledAmber : PAL.ledCyan;
+        for (let k = 0; k < 3; k++) {
+          const dx = px0 + ((time * spd + k * (g.pipeLen / 3)) % (g.pipeLen - 8));
+          ctx.fillRect(dx, py - 1, 7, 2);
+        }
+      }
+      // firewall box
+      const fx = px1 + 4, fy = y - 3;
+      const fw = w.fw;
+      const fcol = fw.overloaded ? PAL.ledRed : fw.busy ? PAL.ledAmber : PAL.rackEdge;
+      ctx.fillStyle = "#0d0a26";
+      ctx.fillRect(fx, fy, g.fwW, g.fwH);
+      ctx.strokeStyle = fcol;
+      ctx.lineWidth = PX;
+      ctx.strokeRect(fx, fy, g.fwW, g.fwH);
+      ctx.lineWidth = 1;
+      pxText(ctx, fw.id, fx + 4, fy + 11, 8, PAL.text);
+      // cpu bar
+      const cw = g.fwW - 10;
+      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(fx + 5, fy + 16, cw, 5);
+      const cpu = Math.min(100, fw.cpu || 0);
+      ctx.fillStyle = cpu > 85 ? PAL.ledRed : cpu > 60 ? PAL.ledAmber : PAL.ledGreen;
+      ctx.fillRect(fx + 5, fy + 16, Math.floor(cw * cpu / 100 / PX) * PX, 5);
+      pxText(ctx, "CPU " + Math.round(cpu) + "%", fx + 5, fy + 30, 8, PAL.textDim);
+      if (fw.overloaded && (time * 3 % 1) > 0.5) { ctx.fillStyle = PAL.ledRed; ctx.fillRect(fx + g.fwW - 10, fy + 3, 5, 5); }
+      pxText(ctx, "MAINT", x0, y + g.wanH + 10, 8, w.maintT > 0 ? PAL.ledAmber : "#3a3570");
+    });
   }
 
   function blinkFast(time) { return (time * 5 % 1) > 0.5; }
@@ -611,8 +701,24 @@ DC.Render = (function () {
 
   function hitTest(state, cam, w, h, mx, my) {
     const p = worldFromScreen(mx, my, w, h, cam);
+    let hitWan = null;
     const ups = state.eqById["UPS-1"];
-    if (ups && p.x >= UPS_X - 4 && p.x <= UPS_X + 50 && p.y >= RACK_H - 90 - 4 && p.y <= RACK_H + 4) return { eq: ups, rack: null };
+    if (ups) {
+      const ux = upsX(state);
+      if (p.x >= ux - 4 && p.x <= ux + 50 && p.y >= RACK_H + 6 && p.y <= RACK_H + 104) return { eq: ups, rack: null };
+    }
+    // WAN pipes + firewalls (bottom row, right of UPS)
+    if (state.wans) {
+      const g = wanGeom(state);
+      state.wans.forEach((w) => {
+        const i = state.wans.indexOf(w);
+        const y = RACK_H + 12 + i * g.rowH;
+        const fx = g.bx + g.wanW + 4 + g.pipeLen + 4;
+        if (p.x >= g.bx - 2 && p.x <= g.bx + g.wanW + 2 && p.y >= y - 2 && p.y <= y + g.wanH + 2) { hitWan = w; }
+        if (p.x >= fx - 2 && p.x <= fx + g.fwW + 2 && p.y >= y - 5 && p.y <= y - 5 + g.fwH + 2) { hitWan = w.fw; }
+      });
+      if (hitWan) return { eq: hitWan, rack: null };
+    }
     for (let i = 0; i < state.racks.length; i++) {
       const x = rackX(i);
       if (p.x >= x && p.x <= x + RACK_W && p.y >= -20 && p.y <= RACK_H) {
@@ -646,6 +752,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX
   };
 })();

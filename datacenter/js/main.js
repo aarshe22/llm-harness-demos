@@ -124,6 +124,7 @@ DC.Game = (function () {
     if (!state.requests) state.requests = [];
     ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
+    if (DC.Wan) DC.Wan.ensure(state);
     if (!state.speed) state.speed = 1;
     // tenant satisfaction (new field)
     for (const b of state.blades || []) {
@@ -153,7 +154,7 @@ DC.Game = (function () {
     if (rack) {
       cam.x = DC.Render.rackX(state.racks.indexOf(rack)) + DC.Render.RACK_W / 2;
     } else if (targetId === "UPS-1") {
-      cam.x = -40;
+      cam.x = DC.Render.upsX(state) + 20;
     }
     DC.UI.select(eq);
   }
@@ -252,6 +253,7 @@ DC.Game = (function () {
     DC.Power.tick(state, dt);
     DC.Storage.tick(state, dt);
     DC.Network.tick(state, dt);
+    DC.Wan.tick(state, dt);
     DC.Security.tick(state, dt);
     DC.Conditions.tick(state, dt);
     DC.Maintenance.tick(state, dt);
@@ -441,6 +443,9 @@ DC.Game = (function () {
       ["powerCapacity", "POWER CAPACITY", 50, 200],
       ["utilFail", "UTILITY FAILURE", 0, 500],
       ["netFail", "NETWORK FAILURE", 0, 500],
+      ["wanFail", "WAN OUTAGE RATE", 0, 500],
+      ["wanMaint", "WAN MAINT WINDOWS", 0, 500],
+      ["fwAttack", "FIREWALL ATTACKS", 0, 500],
       ["securityRate", "SECURITY INCIDENT RATE", 0, 500],
       ["propSpeed", "SECURITY PROPAGATION", 25, 300],
       ["leaks", "WATER LEAKS", 0, 500]

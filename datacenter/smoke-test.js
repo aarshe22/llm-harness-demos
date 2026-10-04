@@ -22,7 +22,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "security.js", "conditions.js", "helpdesk.js", "incidents.js", "maintenance.js", "requests.js", "growth.js", "save.js", "tutorial.js"];
+const files = ["rng.js", "config.js", "data.js", "audio.js", "facility.js", "cluster.js", "thermal.js", "power.js", "storage.js", "network.js", "wan.js", "security.js", "conditions.js", "helpdesk.js", "incidents.js", "maintenance.js", "requests.js", "growth.js", "save.js", "tutorial.js"];
 for (const f of files) {
   const code = fs.readFileSync(path.join(__dirname, "js", f), "utf8");
   vm.runInContext(code, sandbox, { filename: f });
@@ -222,6 +222,47 @@ if (condSrv) {
   if (condSrv.backupFailed) throw new Error("run-backup did not clear flag");
 
   console.log("conditions OK (leak/cert/skew/flap/backup lifecycles)");
+
+// WAN backbone: two redundant links, planned/unplanned outages, firewall jobs
+const wans = DC.Wan.ensure(state);
+if (wans.length !== 2) throw new Error("expected 2 WAN uplinks");
+const wa = wans[0], wb = wans[1];
+if (!wa.fw || !state.eqById[wa.fw.id]) throw new Error("firewall not registered");
+// unplanned degrade -> restores via carrier clock
+DC.Wan.degrade(state, wa, 0.05, false);
+if (wa.state !== "degraded") throw new Error("wan degrade failed");
+DC.Wan.tick(state, 0.1);
+if (wa.state !== "ok") throw new Error("wan did not restore after eta");
+// full outage + contact carrier speeds ETA
+DC.Wan.fail(state, wa, 100);
+if (DC.Wan.dark(state)) throw new Error("dark should be false while B is up");
+DC.Wan.contactCarrier(state, wa);
+if (!(wa.eta < 100)) throw new Error("contact carrier did not cut ETA");
+DC.Wan.eta = 0.05; DC.Wan.tick(state, 0.1);
+// both down -> dark, external tickets suppressed
+DC.Wan.fail(state, wb, 200);
+if (!DC.Wan.dark(state)) throw new Error("dark should be true with both failed");
+DC.Wan.tick(state, 0.1);
+if (state.wanHealth !== "down") throw new Error("wanHealth should be down");
+// restore B, attack the firewall of A, overload it, reboot clears
+DC.Wan.tick(state, 0.05); DC.Wan.tick(state, 0.05);
+wb.eta = 0.05; DC.Wan.tick(state, 0.1);
+DC.Wan.startAttack(state, wa);
+wa.fw.cpu = 120; wa.fw.attackT = 0;
+DC.Wan.tick(state, 0.1);
+if (!wa.fw.overloaded) throw new Error("fw overload not detected");
+DC.Wan.startJob(state, wa.fw, "fw-reboot", 0.05);
+DC.Wan.tick(state, 0.1);
+if (wa.fw.overloaded) throw new Error("reboot did not clear overload");
+if (wa.fw.cpu > 30) throw new Error("reboot did not reset cpu");
+// firmware + policy jobs complete and age out
+DC.Wan.startJob(state, wa.fw, "fw-update", 0.05);
+DC.Wan.tick(state, 0.1);
+if (wa.fw.fwDays !== 0) throw new Error("fw update did not reset firmware age");
+DC.Wan.startJob(state, wa.fw, "fw-policy", 0.05);
+DC.Wan.tick(state, 0.1);
+if (wa.fw.shieldT <= 0) throw new Error("policy update did not arm shield");
+console.log("wan OK (degrade/restore/fail/carrier/dark/attack/reboot/fw/policy)");
 
 // reputation responsiveness: in-SLA ticket completion builds rep meaningfully
 const repSrv = DC.Util.allEq(state, "server").find((s) => s.state === "online" && !s.busy);

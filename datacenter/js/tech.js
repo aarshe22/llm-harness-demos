@@ -34,7 +34,7 @@ DC.Tech = (function () {
   function spotFor(state, id) {
     const eq = state.eqById[id];
     if (!eq) return null;
-    if (id === "UPS-1") return { x: -14, y: baseY() };  // beside the UPS cabinet
+    if (id === "UPS-1") return { x: (DC.Render.upsX ? DC.Render.upsX(state) : -64) - 8, y: baseY() };  // beside the UPS cabinet
     if (eq.type === "crac") {
       const rs = state.racks.filter((r) => r.hall === eq.hall);
       if (!rs.length) return { x: HOME_X + 30, y: baseY() };

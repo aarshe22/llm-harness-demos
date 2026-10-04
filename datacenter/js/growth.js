@@ -44,6 +44,9 @@ DC.Growth = (function () {
       state.stats.impactTime += svc.state === "offline" ? dt : 0;
     }
     if (outageWeight > 0) m.rep = Math.max(0, m.rep - outageWeight * dt * 0.05 * cfg().repLoss);
+    // WAN backbone trouble hurts the business too
+    const wanImp = DC.Wan ? DC.Wan.impact(state) : 0;
+    if (wanImp > 0) m.rep = Math.max(0, m.rep - wanImp * dt * 0.05 * cfg().repLoss);
 
     const demandTarget = DC.Util.clamp((m.rep - 40) * 1.6, 0, 100);
     m.demand += DC.Util.clamp(demandTarget - m.demand, -1, 1) * dt * 0.1 * cfg().demandGrowth * (state.dna.growthRate || 1);
@@ -56,7 +59,7 @@ DC.Growth = (function () {
 
     const totalSec = Math.max(1, state.time);
     const downWeight = state.services.reduce((a, s) => a + (s.state === "offline" ? 1 : s.state === "partial-outage" ? 0.4 : s.state === "degraded" ? 0.1 : 0) * s.crit, 0);
-    const slaTarget = 99.99 - Math.min(9.99, (downWeight / state.services.length) * 25);
+    const slaTarget = 99.99 - Math.min(9.99, (downWeight / state.services.length) * 25) - (DC.Wan ? DC.Wan.impact(state) * 0.6 : 0);
     m.sla += DC.Util.clamp(slaTarget - m.sla, -0.05, 0.002) * dt * 0.05;
 
     m.score += dt * (m.customers / 900) * (0.4 + m.rep / 160) * (m.sla / 100);

@@ -421,6 +421,7 @@ DC.Facility = (function () {
     nameServers(state);
     for (const rack of state.racks) for (const eq of rack.equipment) state.eqById[eq.id] = eq;
     state.eqById["UPS-1"] = makeUPS(rng);
+    DC.Wan.ensure(state);
     const cracCount = Math.max(1, Math.ceil(rackCount / 5));
     for (let i = 0; i < cracCount; i++) {
       const cr = makeCRAC(rng, 0);

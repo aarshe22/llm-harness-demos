@@ -77,6 +77,8 @@ DC.FieldRequests = (function () {
 
   function spawn(state) {
     if (state.paused || state.gameOver) return;
+    // both WAN paths dark: most external tickets can't arrive
+    if (DC.Wan && DC.Wan.dark(state) && Math.random() < 0.75) return;
     const withUps = state.eqById["UPS-1"];
     const blades = state.blades || [];
     const pool = [];

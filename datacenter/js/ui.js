@@ -214,7 +214,7 @@ DC.UI = (function () {
 
   function eqSig(eq) {
     if (!eq) return "";
-    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, !!eq.memLeak, eq.certExpired || (eq.certDays !== undefined && eq.certDays < 14), eq.clockSkew > 0, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : ""];
+    const parts = [eq.id, eq.state, eq.netState, eq.sec, eq.psuA, eq.psuB, eq.fans, !!eq.runaway, !!eq.diskFull, !!eq.maint, !!eq.badPatch, !!eq.backupFailed, eq.ecc >= 3, !!eq.clRole, !!eq.memLeak, eq.certExpired || (eq.certDays !== undefined && eq.certDays < 14), eq.clockSkew > 0, eq.type === "storage" ? DC.Storage.arrayState(eq) + eq.controller + (DC.Storage.capState ? DC.Storage.capState(eq) : "") : "", eq.type === "pdu" ? eq.tripped : "", eq.type === "crac" ? (!!eq.fault) + (!!eq.maint) : "", eq.type === "wan" ? eq.state + (eq.eta > 0) + (eq.maintT > 0) + (eq.fw.overloaded || false) + Math.round((eq.fw.cpu || 0) / 5) : "", eq.type === "fw" ? Math.round((eq.cpu || 0) / 3) + !!eq.overloaded + (!!eq.busy ? eq.busy.kind : "") + Math.floor(eq.fwDays / 30) : ""];
     if (eq.type === "storage") eq.drives.forEach((d) => parts.push(d.state));
     const anyReq = state.requests && state.requests.find((r) => r.targetId === eq.id);
     parts.push("req:" + (anyReq ? anyReq.id + ":" + Math.ceil(anyReq.exp / 5) : "none"));
@@ -299,6 +299,18 @@ DC.UI = (function () {
     } else if (eq.type === "ups") {
       set("ups-charge", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g");
       set("ups-state", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a");
+    } else if (eq.type === "wan") {
+      const fw = eq.fw;
+      const link = eq.state === "failed" ? "FAILED" : eq.state === "degraded" ? (eq.planned ? "MAINT WINDOW" : "DEGRADED") : fw.overloaded ? "FW OVERLOAD" : "OK";
+      set("wan-link", link, link === "OK" ? "g" : "r");
+      set("wan-load", Math.round(eq.load) + "%", eq.load > 85 ? "a" : "g");
+      set("wan-eta", eq.eta > 0 ? Math.ceil(eq.eta) + "s" : "—", eq.eta > 0 ? "a" : "g");
+      set("wan-maint", eq.maintT > 0 ? "window in " + Math.ceil(eq.maintT) + "s" : "—", eq.maintT > 0 ? "a" : "g");
+    } else if (eq.type === "fw") {
+      set("fw-cpu", Math.round(eq.cpu) + "%", eq.cpu > 85 ? "r" : eq.cpu > 60 ? "a" : "g");
+      set("fw-fw", Math.floor(eq.fwDays) + "d old", eq.fwDays > 180 ? "a" : "g");
+      set("fw-policy", Math.floor(eq.policyDays) + "d old", eq.policyDays > 60 ? "a" : "g");
+      set("fw-state", eq.overloaded ? "OVERLOADED" : eq.busy ? eq.busy.kind.replace("fw-", "").toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "PASSING", eq.overloaded ? "r" : eq.busy ? "a" : "g");
     } else if (eq.type === "generator") {
       set("gen-state", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a");
       set("gen-fuel", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g");
@@ -452,6 +464,27 @@ DC.UI = (function () {
       html += statRow("FUEL", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g", "gen-fuel");
       html += statRow("HEALTH", Math.round(eq.health || 100) + "%", (eq.health || 100) < 50 ? "a" : "g");
       if (eq.state === "standby" || eq.state === "fault") actions.push(["START", () => { DC.Power.startGenerator(state, eq); select(null); }]);
+    } else if (eq.type === "wan") {
+      const fw = eq.fw;
+      const link = eq.state === "failed" ? "FAILED" : eq.state === "degraded" ? (eq.planned ? "MAINT WINDOW" : "DEGRADED") : fw.overloaded ? "FW OVERLOAD" : "OK";
+      html += statRow("CARRIER", eq.carrier);
+      html += statRow("LINK", link, link === "OK" ? "g" : "r", "wan-link");
+      html += statRow("LOAD", Math.round(eq.load) + "%", eq.load > 85 ? "a" : "g", "wan-load");
+      if (eq.eta > 0) html += statRow("ETA", Math.ceil(eq.eta) + "s", "a", "wan-eta");
+      if (eq.maintT > 0) html += statRow("MAINT", "window in " + Math.ceil(eq.maintT) + "s", "a", "wan-maint");
+      if (eq.eta > 0 && !eq.asked) actions.push(["CONTACT CARRIER", () => { DC.Wan.contactCarrier(state, eq); select(null); }]);
+    } else if (eq.type === "fw") {
+      const wan = (state.wans || []).find((w) => w.fw === eq) || {};
+      html += statRow("WAN UPLINK", wan.name || wan.id || "—");
+      html += statRow("CPU", Math.round(eq.cpu) + "%", eq.cpu > 85 ? "r" : eq.cpu > 60 ? "a" : "g", "fw-cpu");
+      html += statRow("FIRMWARE", Math.floor(eq.fwDays) + "d old", eq.fwDays > 180 ? "a" : "g", "fw-fw");
+      html += statRow("POLICY", Math.floor(eq.policyDays) + "d old", eq.policyDays > 60 ? "a" : "g", "fw-policy");
+      html += statRow("STATE", eq.overloaded ? "OVERLOADED" : eq.busy ? eq.busy.kind.replace("fw-", "").toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "PASSING", eq.overloaded ? "r" : eq.busy ? "a" : "g", "fw-state");
+      if (!eq.busy) {
+        actions.push(["REBOOT (10s)", () => { DC.Wan.startJob(state, eq, "fw-reboot", 10); select(null); }]);
+        actions.push(["FW UPDATE (25s)", () => { DC.Wan.startJob(state, eq, "fw-update", 25); select(null); }]);
+        actions.push(["POLICY UPDATE (12s)", () => { DC.Wan.startJob(state, eq, "fw-policy", 12); select(null); }]);
+      }
     }
     body.innerHTML = html;
     const actBtn = body.querySelector("#req-act");

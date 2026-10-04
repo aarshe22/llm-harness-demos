@@ -250,6 +250,24 @@ DC.Incidents = (function () {
         const srv = pick(servers);
         return { run: () => DC.Conditions.flapLink(state, srv), targetId: srv.id };
       }
+      case "wan-degrade": {
+        const wans = (state.wans || []).filter((w) => w.state === "ok" && w.maintT <= 0);
+        if (!wans.length) return null;
+        const w = pick(wans);
+        return { run: () => DC.Wan.degrade(state, w, 70 + Math.random() * 150, false), targetId: w.id };
+      }
+      case "wan-outage": {
+        const wans = (state.wans || []).filter((w) => w.state === "ok" || w.state === "degraded");
+        if (!wans.length) return null;
+        const w = pick(wans);
+        return { run: () => DC.Wan.fail(state, w, 110 + Math.random() * 220), targetId: w.id };
+      }
+      case "fw-attack": {
+        const wans = (state.wans || []).filter((w) => w.fw && !w.fw.overloaded && !w.fw.busy);
+        if (!wans.length) return null;
+        const w = pick(wans);
+        return { run: () => DC.Wan.startAttack(state, w), targetId: w.fw.id };
+      }
     }
     return null;
   }
@@ -278,7 +296,10 @@ DC.Incidents = (function () {
       "mem-leak": 5,
       "cert-expiring": 4,
       "ntp-skew": 3,
-      "flap-link": 4
+      "flap-link": 4,
+      "wan-degrade": 3.2 * cfg().wanFail,
+      "wan-outage": 2.2 * cfg().wanFail,
+      "fw-attack": 3.4 * cfg().fwAttack
     };
     if (dna.failurePersonality === "storage") { w["drive-fail"] *= 2; w["controller"] *= 2; }
     if (dna.failurePersonality === "thermal") w["crac"] *= 2;

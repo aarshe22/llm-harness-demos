@@ -29,6 +29,9 @@ DC.DEFAULT_SETTINGS = {
   utilFail: 100,
   netFail: 100,
   securityRate: 100,
+  wanFail: 100,
+  wanMaint: 100,
+  fwAttack: 100,
   propSpeed: 100,
   leaks: 100
 };
@@ -95,6 +98,9 @@ DC.applySettings = function (s) {
   c.utilFail = s.utilFail / 100;
   c.netFail = s.netFail / 100;
   c.securityRate = s.securityRate / 100;
+  c.wanFail = s.wanFail / 100;
+  c.wanMaint = s.wanMaint / 100;
+  c.fwAttack = s.fwAttack / 100;
   c.propSpeed = s.propSpeed / 100;
   c.leaks = s.leaks / 100;
   DC.CFG = c;
