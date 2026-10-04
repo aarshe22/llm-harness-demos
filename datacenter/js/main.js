@@ -137,6 +137,7 @@ DC.Game = (function () {
     cam.zoom = DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H, 0.3, 0.9);
     DC.Audio.startAmbient();
     updateSpeedBtn();
+    if (DC.Tech) DC.Tech.reset();
   }
 
   function jumpTo(targetId) {
@@ -288,6 +289,7 @@ DC.Game = (function () {
       saveAcc += dt;
       if (saveAcc > 15) { saveAcc = 0; DC.Save.save(state); }
       DC.Render.draw(state, ctx, cam, canvas.width, canvas.height, t / 1000);
+      if (DC.Tech) DC.Tech.frame(state, t / 1000);
     }
   }
 

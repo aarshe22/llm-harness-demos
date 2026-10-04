@@ -105,6 +105,8 @@ DC.Render = (function () {
       drawRack(ctx, state, rack, x, floorY, time);
     });
 
+    if (window.DC.Tech) DC.Tech.drawWorld(ctx, state, floorY, time);
+
     ctx.restore();
     const panelOpen = !!(state && window.DC.Game && DC.Game.selectedId);
     drawThermometer(ctx, w, h, state.metrics.growthPct || 0, time, panelOpen);

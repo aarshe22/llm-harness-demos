@@ -190,6 +190,10 @@ input[type=text] { border-radius: 0; }
 #kvm .kvm-close:hover { color: #b0ffd0; }
 
 #help-content h3 { color: var(--cyan); margin: 16px 0 6px; font-size: 14px; }
+
+#tech-strip { border-top: 2px solid var(--line-dim); padding: 6px 10px; display: flex; align-items: center; gap: 10px; background: rgba(8, 4, 15, 0.9); }
+#tech-cam { width: 72px; height: 44px; image-rendering: pixelated; border: 2px solid var(--line-dim); background: #08040f; flex: 0 0 auto; }
+#tech-status { font-family: "VT323", monospace; font-size: 13px; color: #7d74d0; line-height: 1.2; }
 #help-content p, #help-content li { line-height: 1.5; color: var(--txt); }
 #help-content ul { margin-left: 20px; }
 
