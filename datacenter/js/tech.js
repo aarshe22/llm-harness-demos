@@ -248,43 +248,28 @@ DC.Tech = (function () {
     ctx.translate(cx, cy);
     const bob = Math.floor(Math.sin(t * 4) * 2);
     ctx.translate(0, bob);
-    // cloud blob (bigger, with rolling lobes + shading)
-    r(ctx, -22, -8, 44, 12, COL.cloud);
-    r(ctx, -26, -3, 50, 7, COL.cloud);
-    r(ctx, -16, -13, 26, 5, COL.cloud);
-    r(ctx, -22, 0, 5, 4, COL.cloudShade);
-    r(ctx, 16, -1, 6, 4, COL.cloudShade);
-    r(ctx, -6, -15, 10, 2, COL.cloud);
     const phase = Math.floor(t * 3.5) % 2;
     const impact = Math.sin(t * 14) > 0.55;
-    // tools crossing: hammer phase vs wrench phase
+    // hammer vs saw, swinging
     if (phase === 0) {
-      // hammer \ with head + claw
-      r(ctx, -10, -10, 4, 4, COL.metal);
-      r(ctx, -6, -8, 3, 2, COL.metal);
-      r(ctx, -5, -6, 2, 2, COL.handle); r(ctx, -3, -4, 2, 2, COL.handle); r(ctx, -1, -2, 2, 2, COL.handle);
-      // wrench /
-      r(ctx, 9, 3, 4, 3, COL.metal);
-      r(ctx, 6, 0, 2, 2, COL.metal); r(ctx, 4, -2, 2, 2, COL.metal); r(ctx, 2, -4, 2, 2, COL.metal);
+      // hammer swing \ : head + claw on a handle
+      r(ctx, -11, -12, 5, 4, COL.metal);
+      r(ctx, -6, -9, 2, 2, COL.metal);
+      r(ctx, -5, -7, 2, 2, COL.handle); r(ctx, -3, -5, 2, 2, COL.handle); r(ctx, -1, -3, 2, 2, COL.handle);
     } else {
-      r(ctx, 7, -10, 4, 4, COL.metal);
-      r(ctx, 4, -7, 2, 2, COL.handle); r(ctx, 2, -5, 2, 2, COL.handle); r(ctx, 0, -3, 2, 2, COL.handle);
-      r(ctx, -11, 2, 4, 3, COL.metal);
-      r(ctx, -7, 0, 2, 2, COL.metal); r(ctx, -5, -2, 2, 2, COL.metal); r(ctx, -3, -4, 2, 2, COL.metal);
+      // saw \ : blade with teeth + grip
+      r(ctx, -2, -12, 12, 2, COL.metal);
+      r(ctx, 4, -10, 2, 1, COL.metal); r(ctx, 0, -10, 2, 1, COL.metal);
+      r(ctx, -3, -10, 3, 3, COL.handle);
     }
-    // orbiting bolt/nut particle
-    const oa = t * 7;
-    r(ctx, Math.round(Math.cos(oa) * 16) - 1, Math.round(Math.sin(oa) * 5) - 12, 2, 2, COL.metal);
-    // 4-point impact stars on the hit frames
+    // 4-point impact star on the hit frames
     if (impact) {
-      r(ctx, 12, -14, 3, 1, COL.spark); r(ctx, 13, -15, 1, 3, COL.spark);
-      r(ctx, -14, 0, 3, 1, "#fff6c8"); r(ctx, -13, -1, 1, 3, "#fff6c8");
+      r(ctx, 10, -15, 3, 1, COL.spark); r(ctx, 11, -16, 1, 3, COL.spark);
+      r(ctx, -15, -2, 3, 1, "#fff6c8"); r(ctx, -14, -3, 1, 3, "#fff6c8");
     }
-    // trailing sparks both phases
-    if (Math.sin(t * 12) > 0.3) { r(ctx, 12, -13, 2, 2, COL.spark); }
-    if (Math.sin(t * 9 + 1) > 0.4) { r(ctx, -15, -6, 2, 2, COL.spark); r(ctx, 3, -16, 1, 1, COL.spark); }
-    // dust puff at base on impact
-    if (impact) { r(ctx, -2, 2, 3, 1, COL.cloudShade); r(ctx, 2, 3, 2, 1, COL.cloudShade); }
+    // sparks
+    if (Math.sin(t * 12) > 0.3) { r(ctx, 11, -14, 2, 2, COL.spark); }
+    if (Math.sin(t * 9 + 1) > 0.4) { r(ctx, -14, -8, 2, 2, COL.spark); }
     ctx.restore();
   }
 
