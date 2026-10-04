@@ -619,13 +619,18 @@ DC.Render = (function () {
     else if (online && eq.temp > 60) edge = PAL.ledAmber;
     if (eq.runaway && blink) edge = PAL.ledPink;
     if (online || edge !== PAL.ledGreen) marquee(ctx, bx, y + 2, bw, h - 4, edge, time);
-    pxText(ctx, eq.name, bx + 6, y + 16, 8, PAL.text);
+    // row 1: blade id (left) + tenant color chip (right)
+    pxText(ctx, eq.name, bx + 6, y + 15, 8, PAL.text);
     ctx.fillStyle = tc;
     ctx.fillRect(bx + bw - 14, y + 6, 8, 8);
-    ctx.font = 8 + 'px "Press Start 2P", monospace';
-    ctx.fillStyle = tc;
-    if (eq.tenant) ctx.fillText((eq.tenant.name || "?").split(" ")[0].slice(0, 8), bx + 20, y + 16);
-    const lw = Math.floor((bw - 60) * (eq.load / 100) / PX) * PX;
+    // row 2: tenant name in tenant color, clear of row 1 and the LEDs
+    if (eq.tenant) {
+      ctx.font = 8 + 'px "Press Start 2P", monospace';
+      ctx.fillStyle = tc;
+      ctx.fillText((eq.tenant.name || "?").split(" ")[0].slice(0, 8), bx + 6, y + 28);
+    }
+    // load bar sits at the bottom of the 4U box
+    const lw = Math.floor((bw - 40) * (eq.load / 100) / PX) * PX;
     ctx.fillStyle = "#0a0722";
     ctx.fillRect(bx + 6, y + h - 14, bw - 40, 6);
     ctx.fillStyle = eq.load > 90 ? PAL.ledPink : eq.load > 75 ? PAL.ledAmber : PAL.ledGreen;
@@ -633,20 +638,19 @@ DC.Render = (function () {
     if (online) {
       const led2 = blink ? PAL.ledGreen : "#1b1445";
       ctx.fillStyle = led2;
-      ctx.fillRect(bx + bw - 28, y + 8, 6, 6);
+      ctx.fillRect(bx + bw - 14, y + 18, 8, 8);
       ctx.fillStyle = eq.temp > 68 ? PAL.ledRed : eq.temp > 60 ? PAL.ledAmber : PAL.cold;
-      ctx.fillRect(bx + bw - 28, y + 18, 6, 6);
-      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(bx + bw - 14, y + 30, 8, 8);
+      ctx.fillStyle = "#0a0720";
       for (let i = 0; i < 5; i++) ctx.fillRect(bx + 8 + i * 7, y + h - 5, 4, PX);
       if (eq.busy && eq.busy.t0) {
         const p = 1 - eq.busy.t / eq.busy.t0;
         ctx.fillStyle = PAL.ledCyan;
         ctx.fillRect(bx + 6, y + h - 14, Math.floor((bw - 40) * p / PX) * PX, 6);
       }
-      if (blink) pxText(ctx, "TENANT", bx + 6, y + 28, 8, tc);
     } else {
       const [txt, col] = eq.state === "booting" ? ["BOOT", PAL.ledCyan] : eq.state === "thermal-shutdown" ? ["HOT!", PAL.ledRed] : ["OFF", PAL.textDark];
-      if (blink || eq.state === "offline") pxText(ctx, txt, bx + 6, y + h - 8, 8, col);
+      if (blink || eq.state === "offline") pxText(ctx, txt, bx + bw - 40, y + h - 8, 8, col);
     }
     freshFlash(ctx, eq, bx, y, bw, h);
   }
@@ -659,11 +663,11 @@ DC.Render = (function () {
     ctx.lineWidth = PX;
     ctx.strokeRect(bx, y + 2, bw, h - 4);
     ctx.lineWidth = 1;
-    pxText(ctx, eq.name, bx + 6, y + 15, 8, PAL.text);
+    pxText(ctx, eq.name, bx + 6, y + 14, 8, PAL.text);
     const cols = 8, rows = Math.ceil(eq.drives.length / cols);
-    const dw = Math.floor((bw - 52) / cols / PX) * PX, dh = Math.floor((h - 26) / rows / PX) * PX;
+    const dw = Math.floor((bw - 52) / cols / PX) * PX, dh = Math.floor((h - 40) / Math.max(1, rows) / PX) * PX;
     eq.drives.forEach((d, i) => {
-      const cx = bx + 44 + (i % cols) * (dw + 2), cy = y + 8 + Math.floor(i / cols) * (dh + 2);
+      const cx = bx + 44 + (i % cols) * (dw + 2), cy = y + 22 + Math.floor(i / cols) * (dh + 2);
       let col = PAL.ledGreen;
       if (d.state === "warn") col = PAL.ledAmber;
       else if (d.state === "failed") col = blink ? PAL.ledRed : "#5a1020";
@@ -727,12 +731,12 @@ DC.Render = (function () {
     ctx.fillRect(bx + 6, y + h / 2 - 3, 6, 6);
     ctx.fillStyle = PAL.textDim;
     ctx.font = 8 + 'px "Press Start 2P", monospace';
-    ctx.fillText(eq.id, bx + 18, y + h / 2 + 4);
-    const lw = Math.floor((bw - 60) * (eq.loadPct / 100) / PX) * PX;
+    ctx.fillText(eq.id, bx + 6, y + h / 2 + 4);
+    const lw = Math.floor((bw - 96) * (eq.loadPct / 100) / PX) * PX;
     ctx.fillStyle = "#0a0722";
-    ctx.fillRect(bx + 52, y + h / 2 - 3, bw - 60, 6);
+    ctx.fillRect(bx + 78, y + h / 2 - 3, bw - 86, 6);
     ctx.fillStyle = eq.loadPct > 85 ? PAL.ledAmber : PAL.ledGreen;
-    ctx.fillRect(bx + 52, y + h / 2 - 3, lw, 6);
+    ctx.fillRect(bx + 78, y + h / 2 - 3, lw, 6);
   }
 
   function hitTest(state, cam, w, h, mx, my) {
