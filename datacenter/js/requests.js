@@ -132,6 +132,7 @@ DC.FieldRequests = (function () {
     if (req.busyKind === null) {
       // instant menial task (UPS check): completing requires visiting the equipment and clicking
       eq.done = req.id;
+      markDispatched(state, req);
       DC.Audio.click();
       return true;
     }
@@ -139,8 +140,16 @@ DC.FieldRequests = (function () {
     if (eq.state !== "online") return false;
     eq.busy = { kind: req.busyKind, t: req.t };
     req.started = true;
+    markDispatched(state, req);
     DC.Audio.click();
     return true;
+  }
+
+  // task queued: grey out alarms for this equipment so they read as "handled"
+  function markDispatched(state, req) {
+    for (const a of state.alarms) {
+      if (a.targetId === req.targetId && !a.cleared) a.dispatched = true;
+    }
   }
 
   function notifyBusyDone(state, eq, busyKind) {

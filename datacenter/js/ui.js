@@ -202,9 +202,14 @@ DC.UI = (function () {
           list.innerHTML = "";
           recent.slice(0, 7).forEach((a) => {
             const d = document.createElement("div");
-            d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info");
-            d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + DC.Util.fmtUptime(a.time) + "</div>";
-            d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
+            const dis = !!a.dispatched;
+            d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info") + (dis ? " dispatched" : "");
+            d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + (dis ? "✓ QUEUED" : DC.Util.fmtUptime(a.time)) + "</div>";
+            if (dis) {
+              d.title = "task queued — in progress";
+            } else {
+              d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
+            }
             list.appendChild(d);
           });
         }
