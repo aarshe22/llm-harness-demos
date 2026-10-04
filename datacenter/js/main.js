@@ -36,8 +36,8 @@ DC.Game = (function () {
   function applyLoadedSettings() {
     const s = DC.Save.loadSettings();
     DC.applySettings(s);
-    DC.Audio.setEnabled(s.audio);
-    DC.Audio.setVolume(s.volume / 100);
+    DC.Audio.setEnabled(!!s.audio);
+    DC.Audio.setVolume(s.volume);
     return s;
   }
 
@@ -61,6 +61,10 @@ DC.Game = (function () {
         <button id="m-wipe" class="danger" style="display:${hasSave ? "block" : "none"}">DELETE SAVE</button>
       </div>
       <div class="menu-note">A SOLE-OPERATOR SIMULATION · ORIGINAL PROTOTYPE</div>
+      <div class="menu-settings">
+        <button id="m-sound"></button>
+        <label class="vol-wrap"><span class="vol-lbl">VOL</span><input id="m-vol" type="range" min="0" max="100" step="1"></label>
+      </div>
     `;
     root.appendChild(menu);
     const startRun = (seed, challenge) => {
@@ -75,6 +79,24 @@ DC.Game = (function () {
       DC.UI.modal("ONLINE HELP", DC.UI.helpContent(), true);
     };
     menu.querySelector("#m-wipe").onclick = () => { DC.Save.clear(); menu.remove(); showMenu(); };
+    const soundBtn = menu.querySelector("#m-sound");
+    const volInput = menu.querySelector("#m-vol");
+    soundBtn.textContent = "SOUND: " + (s.audio ? "ON" : "OFF");
+    soundBtn.classList.toggle("off", !s.audio);
+    volInput.value = Math.round((s.volume > 1 ? s.volume / 100 : s.volume) * 100);
+    soundBtn.onclick = () => {
+      s.audio = !s.audio;
+      DC.Audio.setEnabled(s.audio);
+      if (s.audio) { DC.Audio.unlock(); DC.Audio.click(); }
+      DC.Save.saveSettings(s);
+      soundBtn.textContent = "SOUND: " + (s.audio ? "ON" : "OFF");
+      soundBtn.classList.toggle("off", !s.audio);
+    };
+    volInput.oninput = () => {
+      s.volume = parseInt(volInput.value, 10) / 100;
+      DC.Audio.setVolume(s.volume);
+      DC.Save.saveSettings(s);
+    };
   }
 
   function newGame(seed, challengeName) {

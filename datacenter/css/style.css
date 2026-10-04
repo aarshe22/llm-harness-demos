@@ -158,6 +158,11 @@ input[type=text] { border-radius: 0; }
 .menu-btns { display: flex; flex-direction: column; gap: 12px; width: 320px; }
 .menu-btns button { padding: 13px; font-size: 11px; }
 .menu-note { margin-top: 40px; color: #4d4494; font-size: 8px; }
+.menu-settings { margin-top: 14px; display: flex; align-items: center; gap: 14px; }
+.menu-settings button { font-size: 9px; padding: 8px 12px; }
+.menu-settings button.off { color: var(--text-dim); border-color: var(--line-dim); }
+.vol-wrap { display: flex; align-items: center; gap: 8px; color: #7d74d0; font-family: "Press Start 2P", monospace; font-size: 9px; }
+.vol-wrap input[type="range"] { width: 130px; accent-color: #3dff8f; cursor: pointer; }
 
 .slider-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
 .slider-row .sk { width: 230px; color: var(--dim); font-size: 12px; font-family: "VT323", monospace; }

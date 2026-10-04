@@ -193,7 +193,12 @@ DC.Audio = (function () {
   function click() { beep(1400, 0.02, "sine", 0.04); }
 
   function setEnabled(v) { enabled = v; if (v) startAmbient(); else stopAmbient(); }
-  function setVolume(v) { volume = v; if (master) master.gain.value = v; }
+  function setVolume(v) {
+    if (typeof v !== "number" || isNaN(v)) v = 0.5;
+    if (v > 1) v = v / 100;
+    volume = DC.Util ? DC.Util.clamp(v, 0, 1) : Math.max(0, Math.min(1, v));
+    if (master) master.gain.value = volume;
+  }
 
   return { startAmbient, stopAmbient, beep, alarm, ticketVoice, good, fanfare, click, setEnabled, setVolume, unlock };
 })();
