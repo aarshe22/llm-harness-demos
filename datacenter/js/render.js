@@ -99,6 +99,7 @@ DC.Render = (function () {
     drawLightCones(ctx, worldW, floorY, time);
     drawUPS(ctx, state, floorY, time);
     drawWANs(ctx, state, floorY, time);
+    drawPRN(ctx, state, time);
     drawHalls(ctx, state, floorY);
     drawCRACs(ctx, state, floorY, time);
 
@@ -282,37 +283,62 @@ DC.Render = (function () {
   }
 
   // the UPS lives on the bottom row, right of the last CRAC condenser
-  function upsX(state) {
-    const cracs = state.coolingUnits || [];
-    const last = cracs[cracs.length - 1];
-    if (last) {
-      const hallRacks = state.racks.filter((r) => r.hall === last.hall);
-      if (hallRacks.length) {
-        const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
-        return rackX(anchor) - 26 + 68 + 10; // CRAC box is 68 wide
+  // bottom aux row layout: desk under rack 0, then CRAC condensers, UPS, WAN circuits
+  // with firewalls, and the tractor-feed printer — spread evenly, never past the
+  // left edge of rack 0 or the right edge of the last rack, never below the floor art.
+  const DESK_W = 78;       // desk art at 3x (26 * 3)
+  const UPS_W = 58, UPS_H = 90;
+  const CRAC_W = 68, CRAC_H = 90;
+  const WAN_W = 38, WAN_H = 30, FW_W = 44, FW_H = 36, PIPE_MIN = 24;
+  const PRN_W = 96, PRN_H = 118;
+  const ROW_DROP = 34;     // a few pixel rows lower than the old +10
+
+  function auxRow(state) {
+    const left = rackX(0);
+    const right = rackX(state.racks.length - 1) + RACK_W;
+    const y = RACK_H + ROW_DROP;
+    const nCrac = (state.coolingUnits || []).length;
+    const nWan = (state.wans || []).length;
+    const units = [];
+    for (let i = 0; i < nCrac; i++) units.push({ w: CRAC_W, kind: "crac", i });
+    if (state.eqById["UPS-1"]) units.push({ w: UPS_W, kind: "ups" });
+    for (let i = 0; i < nWan; i++) units.push({ w: WAN_W + PIPE_MIN + FW_W, kind: "wan", i });
+    if (state.eqById["PRN-1"]) units.push({ w: PRN_W, kind: "prn" });
+    const itemsW = units.reduce((a, u) => a + u.w, 0);
+    const start = left + 6; // desk occupies [left, left+DESK_W]; art starts 6px in
+    const cursor0 = start + DESK_W + 8;
+    const avail = (right - 6) - cursor0 - itemsW;
+    const gaps = Math.max(1, units.length - 1);
+    const gap = units.length > 1 ? DC.Util.clamp(avail / gaps, 8, 72) : 0;
+    const out = { left, right, y, start, cracXs: [], wanXs: [], upsX: null, prnX: null };
+    let cursor = cursor0;
+    for (const u of units) {
+      if (u.kind === "crac") { out.cracXs[u.i] = cursor; cursor += u.w + gap; }
+      else if (u.kind === "ups") { out.upsX = cursor; cursor += u.w + gap; }
+      else if (u.kind === "wan") {
+        const pipe = PIPE_MIN + Math.max(0, gap - 8);
+        out.wanXs[u.i] = { bx: cursor, pipe, fx: cursor + WAN_W + 4 + pipe + 4 };
+        cursor += u.w + gap;
       }
+      else if (u.kind === "prn") { out.prnX = cursor; cursor += u.w; }
     }
-    return -64;
+    return out;
   }
 
-  // left edge of the leftmost drawn CRAC condenser (desk anchors here)
+  function upsX(state) { const a = auxRow(state); return a.upsX !== null ? a.upsX : -64; }
+  function printerX(state) { const a = auxRow(state); return a.prnX !== null ? a.prnX : rackX(state.racks.length - 1) + RACK_W + 40; }
+  // left edge of the leftmost drawn CRAC condenser (legacy anchor)
   function cracLeftX(state) {
-    let best = null;
-    for (const cr of state.coolingUnits || []) {
-      const hallRacks = state.racks.filter((r) => r.hall === cr.hall);
-      if (!hallRacks.length) continue;
-      const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
-      const x = rackX(anchor) - 26;
-      if (best === null || x < best) best = x;
-    }
-    return best;
+    const a = auxRow(state);
+    return a.cracXs.length ? a.cracXs[0] : null;
   }
 
   function drawUPS(ctx, state, floorY, time) {
     const ups = state.eqById["UPS-1"];
     if (!ups) return;
-    const x = upsX(state), w = 58, h = 90;
-    const y = floorY + 10;
+    const x = upsX(state), w = UPS_W, h = UPS_H;
+    const y = RACK_H + ROW_DROP;
+    if (y < floorY) return;
     ctx.fillStyle = "#0d0a26";
     ctx.fillRect(x, y, w, h);
     const stress = state.power.upsDischarge || 0;
@@ -355,18 +381,25 @@ DC.Render = (function () {
   }
 
   function wanGeom(state) {
-    const bx = upsX(state) + 58 + 22; // right of the widened UPS cabinet + gap
-    return { bx, rowH: 46, pipeLen: 84, wanW: 38, wanH: 30, fwW: 44, fwH: 36 };
+    const a = auxRow(state);
+    const first = a.wanXs[0];
+    return {
+      bx: first ? first.bx : upsX(state) + UPS_W + 22,
+      xs: a.wanXs,
+      rowY: a.y,
+      rowH: 46, pipeLen: first ? first.pipe : 84, wanW: WAN_W, wanH: WAN_H, fwW: FW_W, fwH: FW_H
+    };
   }
 
   function drawWANs(ctx, state, floorY, time) {
     if (!state.wans || !state.wans.length) return;
     const g = wanGeom(state);
     state.wans.forEach((w, i) => {
-      const y = floorY + 12 + i * g.rowH;
+      const y = g.rowY + 2 + i * g.rowH;
+      const X = g.xs && g.xs[i] ? g.xs[i] : null;
       const col = wanStateCol(w, time);
       // handoff box
-      const x0 = g.bx;
+      const x0 = X ? X.bx : g.bx;
       ctx.fillStyle = "#0d0a26";
       ctx.fillRect(x0, y, g.wanW, g.wanH);
       ctx.strokeStyle = col;
@@ -427,14 +460,12 @@ DC.Render = (function () {
   function blinkFast(time) { return (time * 5 % 1) > 0.5; }
 
   function drawCRACs(ctx, state, floorY, time) {
-    state.coolingUnits.forEach((cr) => {
-      const hallRacks = state.racks.filter((r) => r.hall === cr.hall);
-      if (!hallRacks.length) return;
-      const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
-      const x = rackX(anchor) - 26;
-      const y = floorY + 10;
+    const a = auxRow(state);
+    state.coolingUnits.forEach((cr, ci) => {
+      const x = a.cracXs[ci] !== undefined ? a.cracXs[ci] : rackX(ci * 5) - 26;
+      const y = a.y;
       const fault = !!cr.fault;
-      const CH = 90; // same height as the UPS panel
+      const CH = CRAC_H;
       ctx.fillStyle = PAL.rackIn;
       ctx.fillRect(x, y, 68, CH);
       ctx.strokeStyle = fault ? PAL.ledRed : PAL.rackEdge;
@@ -473,6 +504,129 @@ DC.Render = (function () {
         if (Math.sin(time * 6) > 0) pxText(ctx, "FAULT", x + 6, y + 80, 8, PAL.ledRed);
       }
     });
+  }
+
+  // PRN-1 — the big classic dot-matrix tractor-feed printer on metal legs
+  function drawPRN(ctx, state, time) {
+    const p = state.eqById["PRN-1"];
+    if (!p) return;
+    const x = printerX(state), y = RACK_H + ROW_DROP;
+    const W = PRN_W, H = PRN_H;
+    const printing = !!p.printing;
+    const jammed = !!p.jam;
+    const noPaper = p.paper <= 2;
+
+    // ---- metal legs (tubular steel with cross brace + adjustable feet)
+    const legT = y + 62, legB = y + H - 2;
+    ctx.fillStyle = "#3d4356";
+    ctx.fillRect(x + 6, legT, 5, legB - legT);        // left front leg
+    ctx.fillRect(x + W - 11, legT, 5, legB - legT);   // right front leg
+    ctx.fillRect(x + 14, legT + 6, 3, legB - legT - 6);  // left rear leg (offset)
+    ctx.fillRect(x + W - 17, legT + 6, 3, legB - legT - 6);
+    // cross brace
+    ctx.strokeStyle = "#3d4356";
+    ctx.beginPath();
+    ctx.moveTo(x + 8, legB - 8); ctx.lineTo(x + W - 9, legT + 10);
+    ctx.moveTo(x + W - 9, legB - 8); ctx.lineTo(x + 8, legT + 10);
+    ctx.stroke();
+    // feet
+    ctx.fillStyle = "#181528";
+    ctx.fillRect(x + 4, legB - 2, 9, 4);
+    ctx.fillRect(x + W - 13, legB - 2, 9, 4);
+
+    // ---- tractor feed sprockets (behind the body, paper runs between them)
+    const sprocketY = y + 44;
+    for (const sx of [x + 16, x + W - 16]) {
+      ctx.fillStyle = "#23203c";
+      ctx.beginPath(); ctx.arc(sx, sprocketY, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#4a4666";
+      ctx.beginPath(); ctx.arc(sx, sprocketY, 7, 0, Math.PI * 2); ctx.stroke();
+      // teeth
+      const rot = time * (printing ? 5 : 0.4);
+      for (let tI = 0; tI < 6; tI++) {
+        const ang = rot + tI * Math.PI / 3;
+        ctx.fillStyle = "#6a6688";
+        ctx.fillRect(sx + Math.cos(ang) * 7 - 1, sprocketY + Math.sin(ang) * 7 - 1, 2, 2);
+      }
+      ctx.fillStyle = "#0a0722";
+      ctx.fillRect(sx - 1, sprocketY - 1, 2, 2);
+    }
+
+    // ---- fanfold paper: rises from behind, zigzag over the top
+    if (!noPaper) {
+      const paperX = x + 22, paperW = W - 44;
+      ctx.fillStyle = "#e8e4d0";
+      // vertical rise behind the body
+      const riseH = 26 + (printing ? (Math.floor(time * 22) % 4) : 0);
+      ctx.fillRect(paperX, y - 34, paperW, riseH);
+      // printed green-bar lines scrolling while printing
+      const scroll = printing ? Math.floor(time * 26) % 6 : 2;
+      for (let ln = 0; ln < 5; ln++) {
+        const ly = y - 33 + ((ln * 5 + scroll) % 26);
+        ctx.fillStyle = ln % 2 ? "#9fd8a8" : "#2f7d46";
+        ctx.fillRect(paperX + 3, ly, paperW - 6, 1);
+        if (printing && (ln + Math.floor(time * 8)) % 3 === 0) {
+          ctx.fillStyle = "#2b2b2b";
+          ctx.fillRect(paperX + 4, ly, 6 + ((ln * 13 + Math.floor(time * 6)) % (paperW - 18)), 1);
+        }
+      }
+      // perforation edges
+      ctx.fillStyle = "#b8b49c";
+      for (let py = y - 33; py < y - 10; py += 4) { ctx.fillRect(paperX - 2, py, 2, 1); ctx.fillRect(paperX + paperW, py, 2, 1); }
+      // kinked paper on jam
+      if (jammed) {
+        ctx.fillStyle = "#d8d4c0";
+        ctx.fillRect(paperX - 6, y + 2, 8, 5);
+        ctx.fillRect(paperX - 9, y + 6, 6, 4);
+        ctx.fillRect(paperX + paperW - 2, y + 4, 8, 5);
+      }
+    }
+
+    // ---- body: putty-beige cabinet with shade band
+    const by = y + 22, bh = 42;
+    ctx.fillStyle = "#c9c3b0";
+    ctx.fillRect(x, by, W, bh);
+    ctx.fillStyle = "#b0aa96"; // lower shade
+    ctx.fillRect(x, by + bh - 10, W, 10);
+    ctx.fillStyle = "#ded9c6"; // top bevel
+    ctx.fillRect(x, by, W, 4);
+    // dark paper exit slot + tear bar
+    ctx.fillStyle = "#0a0722";
+    ctx.fillRect(x + 14, by + 4, W - 28, 3);
+    ctx.fillStyle = "#8a5528";
+    ctx.fillRect(x + 10, by + 8, W - 20, 2);
+    // panel: LEDs + buttons (left)
+    const ledY = by + 16;
+    const blink = (time * 5 % 1) > 0.5;
+    ctx.fillStyle = PAL.ledGreen;
+    ctx.fillRect(x + 6, ledY, 4, 4);                       // POWER
+    ctx.fillStyle = jammed ? (blink ? PAL.ledRed : "#5a1020") : "#2a2440";
+    ctx.fillRect(x + 14, ledY, 4, 4);                      // ERROR
+    ctx.fillStyle = noPaper ? (blink ? PAL.ledAmber : "#5a4310") : "#2a2440";
+    ctx.fillRect(x + 22, ledY, 4, 4);                      // PAPER
+    // buttons
+    ctx.fillStyle = "#3d3a55";
+    ctx.fillRect(x + 6, ledY + 10, 5, 6);
+    ctx.fillRect(x + 15, ledY + 10, 5, 6);
+    // label
+    pxText(ctx, "PRN-1", x + W - 26, by + 26, 8, "#4a4666");
+    pxText(ctx, "24-PIN TRACTOR", x + W - 44, by + 36, 8, "#7a7690");
+    // ribbon access door line
+    ctx.fillStyle = "#a59f8c";
+    ctx.fillRect(x + 30, by + 14, W - 60, 1);
+    ctx.fillRect(x + 30, by + 30, W - 60, 1);
+
+    // paper stacking tray in front
+    ctx.fillStyle = "#23203c";
+    ctx.fillRect(x + 20, by + bh + 2, W - 40, 10);
+    ctx.fillStyle = "#181528";
+    ctx.fillRect(x + 22, by + bh + 4, W - 44, 8);
+    if (p.printing && p.printing.t < p.printing.t0 - 2) {
+      // finished pages stacking up
+      ctx.fillStyle = "#e8e4d0";
+      const pages = Math.min(3, Math.floor((p.printing.t0 - p.printing.t)));
+      for (let pg = 0; pg < pages; pg++) ctx.fillRect(x + 26 + pg, by + bh + 1 - pg * 2, W - 52 - pg * 2, 2);
+    }
   }
 
   function drawRack(ctx, state, rack, x, floorY, time) {
@@ -745,16 +899,24 @@ DC.Render = (function () {
     const ups = state.eqById["UPS-1"];
     if (ups) {
       const ux = upsX(state);
-      if (p.x >= ux - 4 && p.x <= ux + 62 && p.y >= RACK_H + 6 && p.y <= RACK_H + 104) return { eq: ups, rack: null };
+      if (p.x >= ux - 4 && p.x <= ux + UPS_W + 4 && p.y >= RACK_H + ROW_DROP - 4 && p.y <= RACK_H + ROW_DROP + UPS_H + 4) return { eq: ups, rack: null };
+    }
+    // tractor-feed printer
+    const prn = state.eqById["PRN-1"];
+    if (prn) {
+      const px0 = printerX(state);
+      if (p.x >= px0 - 4 && p.x <= px0 + PRN_W + 4 && p.y >= RACK_H + ROW_DROP - 40 && p.y <= RACK_H + ROW_DROP + PRN_H + 4) return { eq: prn, rack: null };
     }
     // WAN pipes + firewalls (bottom row, right of UPS)
     if (state.wans) {
       const g = wanGeom(state);
       state.wans.forEach((w) => {
         const i = state.wans.indexOf(w);
-        const y = RACK_H + 12 + i * g.rowH;
-        const fx = g.bx + g.wanW + 4 + g.pipeLen + 4;
-        if (p.x >= g.bx - 2 && p.x <= g.bx + g.wanW + 2 && p.y >= y - 2 && p.y <= y + g.wanH + 2) { hitWan = w; }
+        const y = g.rowY + 2 + i * g.rowH;
+        const X = g.xs && g.xs[i] ? g.xs[i] : null;
+        const bx = X ? X.bx : g.bx;
+        const fx = X ? X.fx : g.bx + g.wanW + 4 + g.pipeLen + 4;
+        if (p.x >= bx - 2 && p.x <= bx + g.wanW + 2 && p.y >= y - 2 && p.y <= y + g.wanH + 2) { hitWan = w; }
         if (p.x >= fx - 2 && p.x <= fx + g.fwW + 2 && p.y >= y - 5 && p.y <= y - 5 + g.fwH + 2) { hitWan = w.fw; }
       });
       if (hitWan) return { eq: hitWan, rack: null };
@@ -792,6 +954,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, cracLeftX, zoomResetHit, setZoomRef
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, cracLeftX, printerX, auxRow, zoomResetHit, setZoomRef
   };
 })();

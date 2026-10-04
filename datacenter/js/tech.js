@@ -4,12 +4,12 @@ window.DC = window.DC || {};
 // walks to equipment when work or alarms pop, does the hammer/wrench cloud, walks back.
 DC.Tech = (function () {
   const HOME_X = -118;
-  let homeX = HOME_X;  // dynamic: desk sits left of the leftmost CRAC condenser
+  let homeX = HOME_X;  // dynamic: desk sits underneath the leftmost rack
   function updateHomeX(state) {
-    const cx = DC.Render.cracLeftX ? DC.Render.cracLeftX(state) : null;
-    if (cx !== null) homeX = cx - 60; // desk art is ~60px wide at 2x, keep a small gap
+    // desk art spans [deskX, deskX+78] at 3x; he stands mid-desk
+    homeX = DC.Render.rackX(0) + 6 + 40;
   }
-  const BASE_OFF = 26;      // feet baseline below the floor line (rack bottom)
+  const BASE_OFF = 40;      // feet baseline below the floor line (dropped a few pixel rows)
   const SIDE_OFF = 13;      // stand this far to the right of the rack
   const COL = {
     skin: "#f2c79a", hair: "#33254a", shirt: "#e8e8f4", tie: "#e0485a", pants: "#3a3a5c",
@@ -47,6 +47,7 @@ DC.Tech = (function () {
     const eq = state.eqById[id];
     if (!eq) return null;
     if (id === "UPS-1") return { x: (DC.Render.upsX ? DC.Render.upsX(state) : -64) - 8, y: baseY() };  // beside the UPS cabinet
+    if (id === "PRN-1") return { x: (DC.Render.printerX ? DC.Render.printerX(state) : 0) + 48, y: baseY() }; // at the printer
     if (eq.type === "crac") {
       const rs = state.racks.filter((r) => r.hall === eq.hall);
       if (!rs.length) return { x: homeX + 30, y: baseY() };
@@ -243,7 +244,7 @@ DC.Tech = (function () {
   function drawDeskScene(ctx, ox, fy, occupied, t, scale) {
     ctx.save();
     ctx.translate(ox, fy);
-    ctx.scale(scale || 2, scale || 2); // desk scene drawn at 2x (100% larger than original)
+    ctx.scale(scale || 3, scale || 3); // desk scene drawn at 3x for detail
     const female = operator === "diane";
     const skin = female ? "#f0c4a0" : COL.skin;
     const hair = female ? "#6e3a20" : COL.hair;
@@ -253,6 +254,8 @@ DC.Tech = (function () {
     r(ctx, 0, -9, 26, 2, COL.desk);
     r(ctx, 1, -7, 2, 7, COL.desk);
     r(ctx, 23, -7, 2, 7, COL.desk);
+    // crossbar between the legs
+    r(ctx, 3, -3, 18, 1, COL.desk);
     // monitor with scrolling code
     r(ctx, 3, -22, 11, 9, COL.monitor);
     r(ctx, 4, -21, 9, 7, COL.screen);
@@ -260,11 +263,25 @@ DC.Tech = (function () {
       const w = 2 + ((Math.floor(t * 2) * 7 + i * 5) % 6);
       r(ctx, 5, -20 + i * 2, w, 1, COL.code);
     }
+    r(ctx, 7, -13, 2, 1, COL.monitor); // monitor stand neck
+    r(ctx, 5, -12, 6, 1, COL.monitor); // stand foot
+    // keyboard + mouse
+    r(ctx, 9, -11, 9, 2, "#b8b4c8");
+    for (let k = 0; k < 4; k++) r(ctx, 10 + k * 2, -11, 1, 1, "#6a6688");
+    r(ctx, 19, -11, 2, 2, "#b8b4c8");
+    // papers + binder stack on the desk
+    r(ctx, 1, -12, 4, 2, "#e8e4d0");
+    r(ctx, 1, -13, 3, 1, "#d8d4c0");
+    r(ctx, 15, -13, 4, 1, "#c94f3d"); // red spine binder
     // mug with steam
     const sip = occupied && Math.sin(t * 0.9) > 0.86;
     r(ctx, 19, -16, 4, 4, COL.mug);
     r(ctx, 19, -15, 4, 1, sip ? COL.mug : COL.coffee);
+    r(ctx, 23, -15, 1, 2, COL.mug); // handle
     if (occupied && !sip && Math.sin(t * 3) > 0.4) { r(ctx, 20, -18, 1, 1, "#cfd6ff"); r(ctx, 22, -19, 1, 1, "#cfd6ff"); }
+    // desk phone
+    r(ctx, 1, -17, 5, 3, "#23203c");
+    r(ctx, 2, -18, 1, 1, "#4a4666");
     // chair
     r(ctx, 27, -18, 3, 16, COL.chair);
     // guy: feet up on the desk, leaning back
@@ -323,8 +340,8 @@ DC.Tech = (function () {
   }
 
   function drawWorld(ctx, state, floorY, time) {
-    // his desk always exists in the world, left of rack 0
-    drawDeskScene(ctx, homeX - 12, floorY + BASE_OFF, guy.state === "idle", time);
+    // his desk always exists in the world, underneath the leftmost rack
+    drawDeskScene(ctx, DC.Render.rackX(0) + 6, floorY + BASE_OFF, guy.state === "idle", time, 3);
     // guy in the world when on a job
     if (guy.state === "idle") return;
     const frame = Math.floor(time * 8) % 2;

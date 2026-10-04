@@ -224,6 +224,7 @@ DC.Game = (function () {
     ["patches", "badPatches", "batteriesReplaced", "migrations", "requestsDone"].forEach((k) => { if (state.stats[k] === undefined) state.stats[k] = 0; });
     if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
     if (DC.Wan) DC.Wan.ensure(state);
+    if (DC.Printer) DC.Printer.ensure(state);
     if (!state.speed) state.speed = 1;
     // tenant satisfaction (new field)
     for (const b of state.blades || []) {
@@ -366,6 +367,7 @@ DC.Game = (function () {
     DC.Storage.tick(state, dt);
     DC.Network.tick(state, dt);
     DC.Wan.tick(state, dt);
+    if (DC.Printer) DC.Printer.tick(state, dt);
     DC.Security.tick(state, dt);
     DC.Conditions.tick(state, dt);
     DC.Maintenance.tick(state, dt);
@@ -565,6 +567,8 @@ DC.Game = (function () {
       ["wanFail", "WAN OUTAGE RATE", 0, 500],
       ["wanMaint", "WAN MAINT WINDOWS", 0, 500],
       ["fwAttack", "FIREWALL ATTACKS", 0, 500],
+      ["printerRate", "PRINTER PAPER USE", 0, 500],
+      ["printerFail", "PRINTER FAILURES", 0, 500],
       ["securityRate", "SECURITY INCIDENT RATE", 0, 500],
       ["propSpeed", "SECURITY PROPAGATION", 25, 300],
       ["leaks", "WATER LEAKS", 0, 500]

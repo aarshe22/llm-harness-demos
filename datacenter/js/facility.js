@@ -100,6 +100,17 @@ DC.Facility = (function () {
     return { id: "UPS-1", type: "ups", rack: -1, uh: 4, name: "UPS MAIN", charge: 100, state: "standby", capacity: 1, busy: null };
   }
 
+  function makePrinter(rng) {
+    return {
+      id: "PRN-1", type: "printer", name: "PRN-1",
+      paper: 60 + Math.floor(rng.f(0, 40)),       // 0..100
+      jam: null,                                   // { severity: 1|2, since: time } or null
+      printing: null,                              // { t, t0, report } while a fetch is running
+      state: "idle",
+      busy: null
+    };
+  }
+
   function makeCRAC(rng, hall) {
     const n = nextId("CRAC");
     return {
@@ -421,6 +432,7 @@ DC.Facility = (function () {
     nameServers(state);
     for (const rack of state.racks) for (const eq of rack.equipment) state.eqById[eq.id] = eq;
     state.eqById["UPS-1"] = makeUPS(rng);
+    state.eqById["PRN-1"] = makePrinter(rng);
     DC.Wan.ensure(state);
     const cracCount = Math.max(1, Math.ceil(rackCount / 5));
     for (let i = 0; i < cracCount; i++) {

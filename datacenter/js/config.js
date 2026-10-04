@@ -32,6 +32,8 @@ DC.DEFAULT_SETTINGS = {
   wanFail: 100,
   wanMaint: 100,
   fwAttack: 100,
+  printerRate: 100,
+  printerFail: 100,
   propSpeed: 100,
   leaks: 100
 };
@@ -101,6 +103,8 @@ DC.applySettings = function (s) {
   c.wanFail = s.wanFail / 100;
   c.wanMaint = s.wanMaint / 100;
   c.fwAttack = s.fwAttack / 100;
+  c.printerRate = s.printerRate / 100;
+  c.printerFail = s.printerFail / 100;
   c.propSpeed = s.propSpeed / 100;
   c.leaks = s.leaks / 100;
   DC.CFG = c;

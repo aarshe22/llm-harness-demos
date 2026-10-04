@@ -51,7 +51,16 @@ DC.FieldRequests = (function () {
       eligible: (s) => s.state === "online" },
     { id: "backup-run", name: "RUN BACKUP", action: "RUN BACKUP", busy: "run-backup", t: 10, exp: 85, crit: true,
       msg: "last backup on {eq} failed — kick one off now",
-      eligible: (s) => s.state === "online" }
+      eligible: (s) => s.state === "online" },
+    { id: "fetch-report", name: "FETCH REPORT", action: "FETCH REPORT", busy: "print", t: 6, exp: 80, crit: false,
+      msg: "accounting needs a report printed from PRN-1 for pickup",
+      eligible: null },
+    { id: "clear-jam", name: "CLEAR JAM", action: "CLEAR JAM", busy: null, t: 0, exp: 75, crit: false,
+      msg: "PRN-1 has a paper jam — clear the platen",
+      eligible: null },
+    { id: "refill-paper", name: "REFILL PAPER", action: "REFILL PAPER", busy: null, t: 0, exp: 70, crit: false,
+      msg: "PRN-1 is out of paper — load the tractor feed",
+      eligible: null }
   ];
 
   const BLADE_KINDS = [
@@ -91,6 +100,13 @@ DC.FieldRequests = (function () {
       const cand = blades.filter((b) => k.eligible(b));
       if (cand.length) pool.push({ k, w: 1.6, target: cand[Math.floor(Math.random() * cand.length)].id });
     }
+    // printer tickets
+    const prn = state.eqById["PRN-1"];
+    if (prn && DC.Printer && !(state.requests || []).some((r) => r.targetId === "PRN-1")) {
+      if (prn.jam) pool.push({ k: KINDS.find((k) => k.id === "clear-jam"), w: 3, target: "PRN-1" });
+      else if (prn.paper < 15) pool.push({ k: KINDS.find((k) => k.id === "refill-paper"), w: 3, target: "PRN-1" });
+      else if (!prn.printing && prn.paper > 5) pool.push({ k: KINDS.find((k) => k.id === "fetch-report"), w: 0.8, target: "PRN-1" });
+    }
     if (!pool.length) return;
     let total = 0; for (const p of pool) total += p.w;
     let r = Math.random() * total, pick = pool[0];
@@ -125,10 +141,51 @@ DC.FieldRequests = (function () {
     return (state.requests || []).find((r) => r.targetId === eq.id) || null;
   }
 
+  // push a ticket for a specific fault kind (printer jams, out of paper, ...)
+  function spawnFault(state, kindId, targetId) {
+    const kind = KINDS.find((k) => k.id === kindId);
+    if (!kind) return false;
+    if ((state.requests || []).some((r) => r.targetId === targetId && r.kind === kindId)) return false;
+    state.requests.push({
+      id: "FR" + (++seq),
+      kind: kind.id,
+      name: kind.name,
+      action: kind.action,
+      busyKind: kind.busy,
+      t: kind.t,
+      exp: kind.exp,
+      crit: kind.crit,
+      targetId,
+      born: state.time,
+      started: false
+    });
+    DC.Events.alarm(state, "crit", "[TICKET] " + kind.name + " — " + kind.msg.replace("{eq}", targetId), targetId);
+    DC.Audio.ticketVoice();
+    return true;
+  }
+
   function start(state, req) {
     if (!req || !state.requests.includes(req)) return false;
     const eq = state.eqById[req.targetId];
     if (!eq) return false;
+    // printer tickets run through the Printer module, not the rack-busy loop
+    if (req.targetId === "PRN-1" && DC.Printer) {
+      const p = eq;
+      if (req.kind === "fetch-report") {
+        if (p.printing || p.jam || p.paper <= 2) return false;
+        DC.Printer.startPrint(state, p, DC.Printer.REPORTS[Math.floor(Math.random() * DC.Printer.REPORTS.length)]);
+      } else if (req.kind === "clear-jam") {
+        if (!p.jam) return false;
+        DC.Printer.clearJam(state, p);
+      } else if (req.kind === "refill-paper") {
+        if (p.paper >= 95) return false;
+        DC.Printer.loadPaper(state, p);
+      }
+      req.started = true;
+      markDispatched(state, req);
+      DC.Audio.click();
+      return true;
+    }
     if (req.busyKind === null) {
       // instant menial task (UPS check): completing requires visiting the equipment and clicking
       eq.done = req.id;
@@ -224,5 +281,5 @@ DC.FieldRequests = (function () {
     }
   }
 
-  return { tick, reqFor, start, notifyBusyDone, complete, fail, spawn };
+  return { tick, reqFor, start, notifyBusyDone, complete, fail, spawn, spawnFault };
 })();

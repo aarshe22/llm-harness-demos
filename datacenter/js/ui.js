@@ -353,6 +353,11 @@ DC.UI = (function () {
     } else if (eq.type === "ups") {
       set("ups-charge", Math.round(100 - state.power.upsDischarge) + "%", state.power.upsDischarge > 60 ? "r" : state.power.upsDischarge > 25 ? "a" : "g");
       set("ups-state", state.power.utility === "ok" ? "ONLINE" : "ON BATTERY", state.power.utility === "ok" ? "g" : "a");
+    } else if (eq.type === "printer") {
+      const st = eq.jam ? (eq.jam.severity === 2 ? "JAM (SEVERE)" : "PAPER JAM") : eq.printing ? "PRINTING" : eq.paper <= 2 ? "OUT OF PAPER" : "IDLE";
+      set("prn-paper", Math.round(eq.paper) + "%", eq.paper < 15 ? "r" : eq.paper < 40 ? "a" : "g");
+      set("prn-state", st, eq.jam ? "r" : eq.printing ? "a" : eq.paper <= 2 ? "r" : "g");
+      if (eq.printing) set("prn-job", eq.printing.report, "a");
     } else if (eq.type === "wan") {
       const fw = eq.fw;
       const link = eq.state === "failed" ? "FAILED" : eq.state === "degraded" ? (eq.planned ? "MAINT WINDOW" : "DEGRADED") : fw.overloaded ? "FW OVERLOAD" : "OK";
@@ -513,6 +518,15 @@ DC.UI = (function () {
         });
         html += "</div>";
       }
+    } else if (eq.type === "printer") {
+      const st = eq.jam ? (eq.jam.severity === 2 ? "JAM (SEVERE)" : "PAPER JAM") : eq.printing ? "PRINTING" : eq.paper <= 2 ? "OUT OF PAPER" : "IDLE";
+      html += statRow("PAPER", Math.round(eq.paper) + "%", eq.paper < 15 ? "r" : eq.paper < 40 ? "a" : "g", "prn-paper");
+      html += statRow("STATE", st, eq.jam ? "r" : eq.printing ? "a" : eq.paper <= 2 ? "r" : "g", "prn-state");
+      const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      if (req) html += ticketHtml(req, eq);
+      if (eq.printing) html += statRow("JOB", eq.printing.report, "a", "prn-job");
+      if (eq.jam) actions.push(["CLEAR JAM", () => { DC.Printer.clearJam(state, eq); select(eq); }]);
+      if (eq.paper < 95) actions.push(["REFILL PAPER", () => { DC.Printer.loadPaper(state, eq); select(eq); }]);
     } else if (eq.type === "generator") {
       html += statRow("STATE", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a", "gen-state");
       html += statRow("FUEL", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g", "gen-fuel");
