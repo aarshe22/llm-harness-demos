@@ -20,6 +20,12 @@ DC.Tech = (function () {
   let guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
   let scanAcc = 1, sipT = 0;
   let camEl = null, camCtx = null;
+  let moodEl = null, moodCtx = null;
+  let lastState = null;
+  let operator = "dave"; // "dave" | "diane" — same job, equally sized, equally paid
+
+  function setOperator(op) { if (op === "diane" || op === "dave") operator = op; }
+  function opName() { return operator === "diane" ? "DIANE" : "DAVE"; }
 
   function reset() {
     tasks = []; seenAlarm = new Set(); didSet = new Set();
@@ -172,27 +178,57 @@ DC.Tech = (function () {
   function r(ctx, x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
 
   // standing / walking guy, feet at (x, fy), facing dir — drawn 1.5x scale
-  function drawGuy(ctx, x, fy, dir, frame) {
+  function drawGuy(ctx, x, fy, dir, frame, pose) {
+    const female = operator === "diane";
     const f = dir * 1.9; // 1.9x size, mirrored by dir
     ctx.save();
     ctx.translate(x, fy);
     ctx.scale(f, 1.9);
-    // shoes (walk frames)
-    if (frame === 0) { r(ctx, -4, -2, 4, 2, COL.shoes); r(ctx, 1, -2, 4, 2, COL.shoes); }
+    const working = pose === "work";
+    const skin = female ? "#f0c4a0" : COL.skin;
+    const hair = female ? "#6e3a20" : COL.hair;
+    const shirt = female ? "#3a7a5c" : COL.shirt;
+    // shoes (walk frames / planted when working)
+    if (working) { r(ctx, -5, -2, 4, 2, COL.shoes); r(ctx, 1, -2, 4, 2, COL.shoes); }
+    else if (frame === 0) { r(ctx, -4, -2, 4, 2, COL.shoes); r(ctx, 1, -2, 4, 2, COL.shoes); }
     else { r(ctx, -6, -2, 4, 2, COL.shoes); r(ctx, 3, -2, 4, 2, COL.shoes); }
-    // pants
-    r(ctx, -3, -8, 6, 6, COL.pants);
-    // shirt + tie + pocket protector
-    r(ctx, -4, -15, 8, 7, COL.shirt);
-    r(ctx, -1, -15, 1, 4, COL.tie);
+    // pants (wider stance when working) / Diane: slacks
+    if (female) r(ctx, -3, -8, 6, 6, female ? "#2c4a3c" : COL.pants);
+    if (working) { r(ctx, -4, -8, 3, 6, female ? "#2c4a3c" : COL.pants); r(ctx, 2, -8, 3, 6, female ? "#2c4a3c" : COL.pants); }
+    else if (!female) r(ctx, -3, -8, 6, 6, COL.pants);
+    // shirt + collar (blazer lapels for Diane)
+    r(ctx, -4, -15, 8, 7, shirt);
+    if (female) { r(ctx, -4, -15, 1, 5, "#2c5f48"); r(ctx, 3, -15, 1, 5, "#2c5f48"); r(ctx, -2, -15, 4, 1, "#f0f0ff"); }
+    else {
+      r(ctx, -1, -15, 2, 1, "#d0d0e8");
+      r(ctx, -1, -14, 1, 4, COL.tie);
+    }
     r(ctx, -4, -13, 2, 2, COL.pocket);
+    // lanyard + badge
+    r(ctx, -3, -15, 1, 3, "#3de1ff");
+    r(ctx, 2, -15, 1, 3, "#3de1ff");
+    r(ctx, -1, -11, 2, 3, "#e8e8f4");
+    r(ctx, -1, -10, 2, 1, "#3de1ff");
+    // arms: swing while walking, reach while working
+    if (working) { r(ctx, 3, -13, 3, 2, skin); r(ctx, 4, -11, 2, 2, skin); }
+    else if (frame === 0) { r(ctx, -6, -13, 2, 3, skin); r(ctx, 4, -13, 2, 3, skin); }
+    else { r(ctx, -6, -12, 2, 3, skin); r(ctx, 4, -14, 2, 3, skin); }
+    // tool belt (both operators)
+    r(ctx, -4, -9, 8, 1, "#5a4028");
+    if (working) { r(ctx, -5, -8, 2, 3, COL.handle); r(ctx, 3, -8, 2, 2, COL.metal); }
     // head + hair
-    r(ctx, -3, -21, 7, 6, COL.skin);
-    r(ctx, -3, -22, 7, 2, COL.hair);
+    r(ctx, -3, -21, 7, 6, skin);
+    r(ctx, -3, -22, 7, 2, hair);
+    r(ctx, 3, -22, 1, 4, hair); // sideburn
+    if (female) { r(ctx, -4, -22, 1, 5, hair); r(ctx, 4, -22, 1, 5, hair); r(ctx, -4, -18, 1, 3, hair); r(ctx, 4, -18, 1, 3, hair); } // longer locks
     // nerdy glasses
     r(ctx, -1, -19, 2, 1, COL.glasses);
     r(ctx, 2, -19, 2, 1, COL.glasses);
     r(ctx, 0, -19, 2, 1, "#1d1d3a");
+    r(ctx, -1, -20, 1, 1, "#9fe8ff"); // lens glint
+    if (female) r(ctx, 3, -17, 1, 1, "#ffd23d"); // earring
+    // working: ear protection
+    if (working) { r(ctx, -4, -19, 1, 2, "#ff7d29"); r(ctx, 4, -19, 1, 2, "#ff7d29"); r(ctx, -3, -20, 7, 1, "#ff7d29"); }
     ctx.restore();
   }
 
@@ -201,6 +237,10 @@ DC.Tech = (function () {
     ctx.save();
     ctx.translate(ox, fy);
     ctx.scale(scale || 2, scale || 2); // desk scene drawn at 2x (100% larger than original)
+    const female = operator === "diane";
+    const skin = female ? "#f0c4a0" : COL.skin;
+    const hair = female ? "#6e3a20" : COL.hair;
+    const shirt = female ? "#3a7a5c" : COL.shirt;
     // desk
     r(ctx, 0, -12, 26, 3, COL.deskHi);
     r(ctx, 0, -9, 26, 2, COL.desk);
@@ -228,12 +268,14 @@ DC.Tech = (function () {
       // legs stretched from chair over to the desk
       r(ctx, 14, -12, 8, 2, COL.pants);
       // body leaning back in chair
-      r(ctx, 21, -20, 7, 8, COL.shirt);
-      r(ctx, 23, -20, 1, 4, COL.tie);
+      r(ctx, 21, -20, 7, 8, shirt);
+      if (female) { r(ctx, 21, -20, 1, 5, "#2c5f48"); r(ctx, 25, -20, 1, 5, "#2c5f48"); }
+      else { r(ctx, 23, -20, 1, 4, COL.tie); }
       r(ctx, 21, -18, 2, 2, COL.pocket);
       // head tilted back
-      r(ctx, 22, -26, 7, 6, COL.skin);
-      r(ctx, 22, -27, 7, 2, COL.hair);
+      r(ctx, 22, -26, 7, 6, skin);
+      r(ctx, 22, -27, 7, 2, hair);
+      if (female) { r(ctx, 21, -27, 1, 6, hair); r(ctx, 28, -27, 1, 6, hair); r(ctx, 20, -24, 1, 4, hair); r(ctx, 29, -24, 1, 4, hair); }
       r(ctx, 24, -24, 2, 1, COL.glasses);
       r(ctx, 27, -24, 2, 1, COL.glasses);
       // sip: mug lifted
@@ -282,7 +324,7 @@ DC.Tech = (function () {
     if (guy.state === "work" && guy.cur) {
       const eq = state.eqById[guy.cur.id];
       const facingRack = eq && state.racks[eq.rack];
-      drawGuy(ctx, guy.x, guy.y, facingRack ? -1 : 1, 0);
+      drawGuy(ctx, guy.x, guy.y, facingRack ? -1 : 1, 0, "work");
       let cy = floorY - 40;
       if (eq && state.racks[eq.rack]) {
         let yu = 0;
@@ -299,11 +341,177 @@ DC.Tech = (function () {
         const spot = spotFor(state, guy.cur.id);
         if (spot) dir = spot.x >= guy.x ? 1 : -1;
       }
-      drawGuy(ctx, guy.x, guy.y, dir, frame);
+      drawGuy(ctx, guy.x, guy.y, dir, frame, "walk");
     }
   }
 
   // ---------- operator cam (sidepanel) ----------
+  // ---- mood model: desk = happy/dozing, queue depth drives stress up 5 states
+  const MOODS = ["chill", "ok", "busy", "stressed", "onfire"];
+  function moodOf(state) {
+    if (guy.state === "idle") return "chill";
+    const n = tasks.length + (guy.state === "walk" || guy.state === "work" ? 1 : 0);
+    if (n <= 2) return "ok";
+    if (n <= 4) return "busy";
+    if (n <= 7) return "stressed";
+    return "onfire";
+  }
+  const MOOD_FACE = {
+    chill: { brow: 0, eyeY: 0, mouth: "zzz", blush: true, flame: 0, sweat: 0, wob: 1.4 },
+    ok: { brow: 0, eyeY: 0, mouth: "flat", blush: false, flame: 0, sweat: 0, wob: 0 },
+    busy: { brow: 1, eyeY: 0, mouth: "grit", blush: false, flame: 0, sweat: 1, wob: 0 },
+    stressed: { brow: 2, eyeY: -1, mouth: "wob", blush: false, flame: 0, sweat: 2, wob: 1 },
+    onfire: { brow: 3, eyeY: -1, mouth: "open", blush: false, flame: 3, sweat: 0, wob: 2 }
+  };
+
+  function drawMoodFaceInner(c, mood, t) {
+    const f = MOOD_FACE[mood];
+    const female = operator === "diane";
+    const skin = female ? "#f0c4a0" : COL.skin;
+    const hair = female ? "#6e3a20" : COL.hair;
+    c.save();
+    const scale = 3.4;
+    // head 12x10 px art centered, wobble shakes it when stressed
+    const wob = f.wob ? Math.round(Math.sin(t * (mood === "onfire" ? 18 : 8)) * f.wob) : 0;
+    c.translate(48 + wob, 54);
+    c.scale(scale, scale);
+    const r2 = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+    // hair (catches fire at onfire; charred edges)
+    r2(-7, -12, 14, 3, mood === "onfire" ? "#1a1220" : hair);
+    // face
+    r2(-6, -9, 12, 10, skin);
+    // chin shade
+    r2(-4, 0, 8, 1, "#d9a87c");
+    // ears
+    r2(-7, -5, 1, 3, skin); r2(6, -5, 1, 3, skin);
+    // hair fringe
+    r2(-6, -9, 12, 2, mood === "onfire" ? "#1a1220" : hair);
+    // nose
+    r2(0, -4, 1, 2, "#d9a87c");
+    // fire on the hair
+    if (f.flame > 0) {
+      for (let i = 0; i < f.flame + 1; i++) {
+        const fx = -5 + i * 4;
+        const fh = 3 + Math.round(Math.abs(Math.sin(t * 9 + i * 2)) * 3);
+        r2(fx, -12 - fh, 2, fh, i % 2 ? "#ff7d29" : "#ffd23d");
+        r2(fx, -12 - fh - 2, 1, 2, "#ff3d1e");
+        if (mood === "onfire") r2(fx, -10, 2, 1, "#0a0710"); // scorched bit
+      }
+    }
+    // brows: raise with stress
+    if (f.brow >= 1) r2(-4, -7 - (f.brow >= 2 ? 1 : 0), 3, 1, hair);
+    if (f.brow >= 1) r2(1, -7 - (f.brow >= 2 ? 1 : 0), 3, 1, hair);
+    if (f.brow >= 3) { r2(-4, -8, 3, 1, hair); r2(1, -8, 3, 1, hair); }
+    // glasses + eyes
+    r2(-4, -5, 3, 2, COL.glasses); r2(1, -5, 3, 2, COL.glasses); r2(-1, -5, 1, 2, "#1d1d3a");
+    r2(-4, -5, 1, 1, "#9fe8ff"); r2(1, -5, 1, 1, "#9fe8ff"); // lens glints
+    if (mood === "chill") { // sleepy closed eyes
+      r2(-3, -4, 2, 1, "#1d1d3a"); r2(1, -4, 2, 1, "#1d1d3a");
+    } else {
+      r2(-3, -5, 1, 1, "#1d1d3a"); r2(2, -5, 1, 1, "#1d1d3a");
+    }
+    // mouth per mood
+    if (f.mouth === "zzz") {
+      r2(-2, -1, 4, 1, "#b5766a");
+      if (Math.floor(t) % 3 === 0) { r2(9, -14, 3, 1, "#cfd6ff"); r2(11, -17, 2, 2, "#cfd6ff"); }
+    } else if (f.mouth === "flat") r2(-2, -1, 4, 1, "#b5766a");
+    else if (f.mouth === "grit") { r2(-2, -1, 4, 1, "#b5766a"); r2(-1, -2, 1, 1, "#b5766a"); r2(0, 0, 1, 1, "#b5766a"); }
+    else if (f.mouth === "wob") { r2(-2, 0, 1, 1, "#b5766a"); r2(0, -1, 1, 2, "#b5766a"); r2(1, 0, 1, 1, "#b5766a"); }
+    else if (f.mouth === "open") { r2(-2, -1, 4, 3, "#7a2a2a"); r2(-1, 0, 2, 1, "#e8e8f4"); }
+    // blush for chill
+    if (f.blush) { r2(-6, -2, 1, 1, "#e8a0a0"); r2(5, -2, 1, 1, "#e8a0a0"); }
+    // sweat drops
+    if (f.sweat > 0) {
+      const ph = Math.sin(t * 3) > 0 ? 0 : 1;
+      if (f.sweat >= 1) r2(7, -7 - ph, 1, 2, "#8fd4ff");
+      if (f.sweat >= 2) r2(-8, -6 + ph, 1, 2, "#8fd4ff");
+    }
+    c.restore();
+  }
+
+  // pixel-art CRT monitor shell drawn around Dave's close-up
+  function drawMoodCRT(c, mood, t) {
+    const W = 96, H = 96;
+    c.imageSmoothingEnabled = false;
+    // desk background
+    c.fillStyle = "#08040f";
+    c.fillRect(0, 0, W, H);
+    // plastic shell (beige-ish retro, with bottom-right shadow)
+    c.fillStyle = "#1a1430";
+    c.fillRect(2, 3, W - 4, H - 7);
+    c.fillStyle = "#2c2352";
+    c.fillRect(0, 0, W - 2, H - 6);
+    // shell highlight/shadow edges
+    c.fillStyle = "#3d3270";
+    c.fillRect(1, 1, W - 4, 2);
+    c.fillStyle = "#120d26";
+    c.fillRect(1, H - 7, W - 4, 2);
+    // screen recess
+    const sx = 8, sy = 7, sw = W - 16, sh = H - 22;
+    c.fillStyle = "#04030c";
+    c.fillRect(sx, sy, sw, sh);
+    // phosphor base glow (dark green tube tint)
+    c.fillStyle = "#0c2418";
+    c.fillRect(sx + 2, sy + 2, sw - 4, sh - 4);
+    // the face, on the tube
+    c.save();
+    c.beginPath();
+    c.rect(sx + 2, sy + 2, sw - 4, sh - 4);
+    c.clip();
+    c.translate(sx + 2, sy - 6);
+    drawMoodFaceInner(c, mood, t);
+    c.restore();
+    // phosphor flicker (subtle whole-tube brightness wobble)
+    if (Math.sin(t * 7.3) > 0.93) {
+      c.fillStyle = "rgba(120, 255, 190, 0.05)";
+      c.fillRect(sx + 2, sy + 2, sw - 4, sh - 4);
+    }
+    // scanlines
+    c.fillStyle = "rgba(4, 2, 12, 0.35)";
+    for (let y = sy + 2; y < sy + sh - 2; y += 2) c.fillRect(sx + 2, y, sw - 4, 1);
+    // slow roll band (CRT sync wobble)
+    const band = (t * 22) % (sh + 30) - 15;
+    c.fillStyle = "rgba(255,255,255,0.045)";
+    c.fillRect(sx + 2, sy + 2 + band, sw - 4, 5);
+    // glass reflection streak (top-left curvature)
+    c.fillStyle = "rgba(255,255,255,0.07)";
+    c.fillRect(sx + 5, sy + 4, 14, 1);
+    c.fillRect(sx + 4, sy + 5, 7, 1);
+    // corner vignette (screen curvature)
+    c.fillStyle = "rgba(2, 2, 8, 0.55)";
+    c.fillRect(sx + 2, sy + 2, 3, 1); c.fillRect(sx + 2, sy + 2, 1, 3);
+    c.fillRect(sx + sw - 5, sy + 2, 3, 1); c.fillRect(sx + sw - 3, sy + 2, 1, 3);
+    c.fillRect(sx + 2, sy + sh - 3, 3, 1); c.fillRect(sx + 2, sy + sh - 3, 1, 3);
+    c.fillRect(sx + sw - 5, sy + sh - 3, 3, 1); c.fillRect(sx + sw - 3, sy + sh - 3, 1, 3);
+    // control panel strip below screen
+    c.fillStyle = "#241c44";
+    c.fillRect(4, H - 17, W - 8, 10);
+    c.fillStyle = "#1a1430";
+    c.fillRect(4, H - 9, W - 8, 2);
+    // brand plate
+    c.fillStyle = "#8d84c9";
+    c.fillRect(9, H - 13, 34, 3);
+    // knobs: brightness + v-hold
+    const knob = (kx, hot) => {
+      c.fillStyle = "#0c0920";
+      c.fillRect(kx, H - 14, 6, 6);
+      c.fillStyle = hot ? "#ffd23d" : "#5a5494";
+      c.fillRect(kx + 1, H - 13, 4, 4);
+      c.fillStyle = "#0c0920";
+      c.fillRect(kx + 2, H - 14, 1, 2);
+    };
+    knob(50, mood === "onfire");       // brightness pegs hot when he's on fire
+    knob(60, false);
+    // ventilation slots on the shell top
+    c.fillStyle = "#120d26";
+    for (let vx = 14; vx < W - 14; vx += 6) c.fillRect(vx, 2, 3, 1);
+    // power LED
+    c.fillStyle = "#3dff8f";
+    c.fillRect(W - 14, H - 15, 4, 4);
+    c.fillStyle = "#0c2418";
+    c.fillRect(W - 22, H - 14, 6, 2);
+  }
+
   function drawPanel(t) {
     const el = document.getElementById("tech-cam");
     if (!el) return;
@@ -319,9 +527,15 @@ DC.Tech = (function () {
     c.fillRect(0, 22, 60, 2);
     drawDeskScene(c, 10, 24, guy.state === "idle", t, 1);
     c.restore();
+    // mood close-up inside a pixel-art CRT
+    const mEl = document.getElementById("mood-cam");
+    if (mEl) {
+      if (mEl !== moodEl) { moodEl = mEl; moodCtx = mEl.getContext("2d"); }
+      drawMoodCRT(moodCtx, moodOf(lastState || state), t);
+    }
     const st = document.getElementById("tech-status");
     if (st) {
-      if (guy.state === "idle") st.textContent = "OPERATOR CAM — DAVE [FEET UP]";
+      if (guy.state === "idle") st.textContent = "OPERATOR CAM — " + opName() + " [FEET UP]";
       else {
         const eq = guy.cur ? guy.cur.id : "";
         st.textContent = (guy.state === "work" ? "WORKING: " : guy.state === "homewalk" ? "HEADING BACK" : "EN ROUTE: ") + eq;
@@ -340,11 +554,12 @@ DC.Tech = (function () {
 
   function frame(state, t) {
     if (!state) return;
+    lastState = state;
     const dt = Math.min(0.09, Math.max(0.001, t - lastT || 1 / 60));
     lastT = t;
     step(state, dt);
     drawPanel(t);
   }
 
-  return { reset, frame, drawWorld, step, status: () => guy.state, pos: () => ({ x: guy.x, y: guy.y, state: guy.state, cur: guy.cur ? guy.cur.id : null }) };
+  return { reset, frame, drawWorld, step, setOperator, opName, status: () => guy.state, pos: () => ({ x: guy.x, y: guy.y, state: guy.state, cur: guy.cur ? guy.cur.id : null }) };
 })();

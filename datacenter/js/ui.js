@@ -42,7 +42,7 @@ DC.UI = (function () {
       <div id="sidepanel">
         <div class="hdr"><span class="title" id="sp-title"></span><span class="close" id="sp-close">✕</span></div>
         <div class="body" id="sp-body"></div>
-        <div id="tech-strip"><canvas id="tech-cam" width="144" height="88"></canvas><div id="tech-status">OPERATOR CAM</div></div>
+        <div id="tech-strip"><canvas id="tech-cam" width="144" height="88"></canvas><div id="tech-status">OPERATOR CAM</div><canvas id="mood-cam" width="96" height="96" title="Dave's current emotional state"></canvas></div>
       </div>
       <div class="toast-wrap" id="toasts"></div>
       <div id="tutorial-banner" style="display:none"></div>

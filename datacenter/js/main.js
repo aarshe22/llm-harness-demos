@@ -42,6 +42,98 @@ DC.Game = (function () {
     return s;
   }
 
+  // equal-opportunity operator pick: Dave or Diane, same job, same pay
+  function showOperatorPick(onPick, onBack) {
+    const root = document.getElementById("ui-root");
+    root.innerHTML = "";
+    const menu = document.createElement("div");
+    menu.className = "menu-screen";
+    menu.innerHTML = `
+      <div class="menu-title" style="font-size:26px">CHOOSE YOUR OPERATOR</div>
+      <div class="menu-sub">EQUAL OPPORTUNITY EMPLOYER · SAME DESK · SAME PAY</div>
+      <div class="menu-btns">
+        <button id="op-dave">DAVE</button>
+        <button id="op-diane">DIANE</button>
+        <button id="op-back">BACK</button>
+      </div>
+      <div class="menu-note">DAVE: TIES + TOOLBELT · DIANE: POWER SUIT + TOOLBELT</div>
+      <canvas id="op-dave-cam" width="120" height="120" class="op-cam"></canvas>
+      <canvas id="op-diane-cam" width="120" height="120" class="op-cam"></canvas>
+    `;
+    root.appendChild(menu);
+    const dave = menu.querySelector("#op-dave-cam").getContext("2d");
+    const diane = menu.querySelector("#op-diane-cam").getContext("2d");
+    let raf = 0;
+    const frame = (tms) => {
+      const t = tms / 1000;
+      drawAvatarPortrait(dave, "dave", t);
+      drawAvatarPortrait(diane, "diane", t);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    const stop = () => cancelAnimationFrame(raf);
+    menu.querySelector("#op-dave").onclick = () => { stop(); menu.remove(); onPick("dave"); };
+    menu.querySelector("#op-diane").onclick = () => { stop(); menu.remove(); onPick("diane"); };
+    menu.querySelector("#op-back").onclick = () => { stop(); menu.remove(); onBack && onBack(); };
+  }
+
+  // big idle-animated head portrait for the operator select screen
+  function drawAvatarPortrait(c, op, t) {
+    const female = op === "diane";
+    const skin = female ? "#f0c4a0" : "#f2c79a";
+    const hair = female ? "#6e3a20" : "#33254a";
+    const shirt = female ? "#3a7a5c" : "#e8e8f4";
+    const tie = female ? null : "#e0485a";
+    // blink cycle: closed for ~0.12s every ~3.2s
+    const blink = (t % 3.2) > 3.05;
+    // brow micro-movement
+    const browLift = Math.sin(t * 0.7) > 0.85 ? 1 : 0;
+    // wry smile: corner rises on a slow cycle
+    const wry = Math.sin(t * 0.35) > 0.2;
+    c.imageSmoothingEnabled = false;
+    c.fillStyle = "#120d26";
+    c.fillRect(0, 0, 120, 120);
+    c.save();
+    c.translate(60, 64);
+    c.scale(5, 5);
+    const r2 = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+    // shoulders / power suit
+    r2(-11, 8, 22, 6, shirt);
+    r2(-11, 8, 4, 6, female ? "#2c5f48" : "#c8c8e0");
+    r2(7, 8, 4, 6, female ? "#2c5f48" : "#c8c8e0");
+    if (tie) { r2(-1, 8, 2, 5, tie); }
+    else { r2(-3, 8, 6, 1, "#f0f0ff"); r2(-2, 9, 4, 2, "#e8f4ff"); }
+    // toolbelt peeking at collar
+    r2(-6, 7, 2, 2, "#5a4028"); r2(4, 7, 2, 2, "#5a4028");
+    // neck
+    r2(-2, 5, 4, 3, skin);
+    // head: 16x14
+    r2(-8, -9, 16, 14, skin);
+    // ears
+    r2(-9, -2, 1, 4, skin); r2(8, -2, 1, 4, skin);
+    // hair
+    r2(-9, -11, 18, 4, hair);
+    r2(-9, -8, 2, 8, hair); // side hair
+    r2(7, -8, 2, 8, hair);
+    if (female) { r2(-11, -6, 2, 10, hair); r2(9, -6, 2, 10, hair); } // long locks
+    // brows (lift on the micro-movement)
+    r2(-6, -5 - browLift, 4, 1, hair);
+    r2(2, -5 - browLift, 4, 1, hair);
+    // eyes: open or blink
+    if (blink) { r2(-5, -2, 3, 1, "#1d1d3a"); r2(2, -2, 3, 1, "#1d1d3a"); }
+    else { r2(-5, -3, 3, 2, "#fff"); r2(2, -3, 3, 2, "#fff"); r2(-4, -3, 2, 2, "#2a4a7a"); r2(3, -3, 2, 2, "#2a4a7a"); }
+    // nose
+    r2(0, -1, 1, 2, "#d9a87c");
+    // wry mouth: one corner up
+    if (wry) { r2(-2, 2, 3, 1, "#b5766a"); r2(1, 1, 2, 1, "#b5766a"); }
+    else { r2(-2, 2, 4, 1, "#b5766a"); }
+    // Dave's glasses
+    if (!female) { r2(-6, -3, 5, 1, "#3de1ff"); r2(1, -3, 5, 1, "#3de1ff"); r2(-1, -3, 1, 1, "#1d1d3a"); }
+    // Diane: earrings
+    else { r2(-9, 2, 1, 2, "#ffd23d"); r2(8, 2, 1, 2, "#ffd23d"); }
+    c.restore();
+  }
+
   function showMenu() {
     inMenu = true;
     const s = DC.Save.loadSettings();
@@ -68,12 +160,19 @@ DC.Game = (function () {
       </div>
     `;
     root.appendChild(menu);
-    const startRun = (seed, challenge) => {
+    const beginRun = (seed, challenge, op) => {
+      DC.Save.saveSettings(Object.assign(DC.Save.loadSettings(), { operator: op || "dave" }));
+      if (DC.Tech) DC.Tech.setOperator(op || "dave");
       menu.remove();
       newGame(seed, challenge);
     };
+    const pickThen = (seed, challenge) => showOperatorPick(
+      (op) => beginRun(seed, challenge, op),
+      () => { menu.remove(); showMenu(); }
+    );
+    const startRun = (seed, challenge) => pickThen(seed, challenge);
     if (hasSave) menu.querySelector("#m-continue").onclick = () => { menu.remove(); continueGame(); };
-    menu.querySelector("#m-play").onclick = () => startRun(String(Date.now()), null);
+    menu.querySelector("#m-play").onclick = () => pickThen(String(Date.now()), null);
     menu.querySelector("#m-challenges").onclick = () => showChallenges(menu, startRun);
     menu.querySelector("#m-custom").onclick = () => showCustomGame(menu, startRun);
     menu.querySelector("#m-help").onclick = () => {
@@ -478,8 +577,7 @@ DC.Game = (function () {
       applyLoadedSettings();
       const seed = ov.querySelector("#seed-input").value.trim() || String(Date.now());
       ov.remove();
-      menu.remove();
-      newGame(seed, null);
+      pickThen(seed, null);
     };
   }
 
