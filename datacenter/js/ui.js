@@ -230,6 +230,12 @@ DC.UI = (function () {
     sp.classList.add("open");
     DC.Game.setSelected(eq);
     renderPanel();
+    // if this unit has an active ticket, expose its action button at the panel bottom
+    const hasReq = state && state.requests && state.requests.some((r) => r.targetId === eq.id);
+    if (hasReq) {
+      const body = el("sp-body");
+      requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    }
   }
 
   function statRow(k, v, cls, pk) {
@@ -537,6 +543,8 @@ DC.UI = (function () {
         const req = state.requests && state.requests.find((r) => r.targetId === eq.id);
         if (req && DC.FieldRequests.start(state, req)) select(eq);
       };
+      // keep the action button in view while working on the ticket
+      if (actBtn.scrollIntoView) actBtn.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
     body.querySelectorAll(".drive").forEach((dEl) => {
       dEl.onclick = (e) => {

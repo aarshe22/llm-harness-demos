@@ -205,6 +205,9 @@ input[type=text] { border-radius: 0; }
 #tech-cam { width: 72px; height: 44px; image-rendering: pixelated; border: 2px solid var(--line-dim); background: #08040f; flex: 0 0 auto; }
 #tech-status { font-family: "VT323", monospace; font-size: 13px; color: #7d74d0; line-height: 1.2; }
 #mood-cam { position: absolute; left: 10px; top: 56px; width: 196px; height: 196px; image-rendering: pixelated; border: 3px solid var(--line-dim); background: #08040f; flex: 0 0 auto; box-shadow: 4px 4px 0 #04030c, 0 0 30px rgba(122, 92, 255, 0.2); z-index: 16; }
+@media (max-width: 900px) {
+  #mood-cam { display: none; }
+}
 .op-cam { width: 120px; height: 120px; image-rendering: pixelated; border: 3px solid var(--line-dim); background: #120d26; box-shadow: 4px 4px 0 #04030c; }
 #op-dave-cam { position: absolute; left: calc(50% - 260px); top: 120px; }
 #op-diane-cam { position: absolute; left: calc(50% + 140px); top: 120px; }
