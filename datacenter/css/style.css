@@ -127,7 +127,7 @@ input[type=text] { border-radius: 0; }
 .drive.missing { background: #0d0a26; }
 
 .modal-overlay {
-  position: absolute; inset: 0; background: rgba(4, 2, 14, 0.82); z-index: 50;
+  position: absolute; inset: 0; background: rgba(4, 2, 14, 0.82); z-index: 150;
   display: flex; align-items: center; justify-content: center;
 }
 .modal {

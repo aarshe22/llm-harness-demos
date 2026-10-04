@@ -29,7 +29,7 @@ DC.UI = (function () {
         <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
         <div id="tb-right">
           <button id="btn-theme" title="dark/light mode">☀</button>
-          <button id="btn-speed" title="simulation speed (1/2/3 keys)">SPD ×1</button>
+          <button id="btn-speed" title="simulation speed (1=easy 2=normal 3=boost 4=max)">SPD ×1 NORMAL</button>
           <button id="btn-help">HELP [F1]</button>
           <button id="btn-pause">PAUSE [SPC]</button>
         </div>
@@ -834,6 +834,6 @@ DC.UI = (function () {
 
   return {
     init, update, select, toast, showExpansion, showUpgrade, showHelpdesk, showCooling, showPower, showMaintenance, showTenants,
-    showHelp, showStats, showAchievements, closeModal, modalOpen, helpContent, setSelected: select
+    showHelp, showStats, showAchievements, closeModal, modalOpen, modal, helpContent, setSelected: select
   };
 })();

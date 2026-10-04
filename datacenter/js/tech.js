@@ -5,7 +5,7 @@ window.DC = window.DC || {};
 DC.Tech = (function () {
   const HOME_X = -118;
   const BASE_OFF = 26;      // feet baseline below the floor line (rack bottom)
-  const SIDE_OFF = 10;      // stand this far to the right of the rack
+  const SIDE_OFF = 13;      // stand this far to the right of the rack
   const COL = {
     skin: "#f2c79a", hair: "#33254a", shirt: "#e8e8f4", tie: "#e0485a", pants: "#3a3a5c",
     shoes: "#f5f5ff", glasses: "#3de1ff", pocket: "#ffd23d",
@@ -93,6 +93,12 @@ DC.Tech = (function () {
     return path;
   }
 
+  function beginWork() {
+    guy.state = "work";
+    guy.workT = 0;
+    guy.lastPhase = -1; // force first impact sound immediately
+  }
+
   function tick(state, dt, now) {
     if (guy.state === "idle") {
       sipT += dt;
@@ -101,7 +107,7 @@ DC.Tech = (function () {
         const spot = spotFor(state, guy.cur.id);
         if (!spot) { nextTask(state); return; }
         guy.path = planPath({ x: guy.x, y: guy.y }, spot);
-        if (!guy.path.length) { guy.state = "work"; guy.workT = 0; }
+        if (!guy.path.length) { beginWork(); }
         else guy.state = "walk";
       }
       return;
@@ -110,7 +116,7 @@ DC.Tech = (function () {
     if (guy.state === "walk" || guy.state === "homewalk") {
       if (!guy.path.length) {
         if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.path = []; }
-        else { guy.state = "work"; guy.workT = 0; }
+        else { beginWork(); }
         return;
       }
       const wp = guy.path[0];
@@ -121,7 +127,7 @@ DC.Tech = (function () {
         guy.path.shift();
         if (!guy.path.length) {
           if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.x = HOME_X; guy.y = baseY(); }
-          else { guy.state = "work"; guy.workT = 0; }
+          else { beginWork(); }
         }
       } else {
         guy.x += (dx / dist) * speed * dt;
@@ -130,11 +136,11 @@ DC.Tech = (function () {
     } else if (guy.state === "work") {
       guy.workT += dt;
       // hammer/saw sounds while the cloud is animating
-      const phase = Math.floor(guy.workT * 5) % 2;
+      const phase = Math.floor(guy.workT * 3.5) % 2;
       if (phase !== guy.lastPhase) {
         guy.lastPhase = phase;
-        if (phase === 0) DC.Audio.beep(180, 0.07, "square", 0.05);       // hammer thud
-        else DC.Audio.beep(1400, 0.09, "sawtooth", 0.03);                // saw rasp
+        if (phase === 0) DC.Audio.workHit();                             // hammer thud
+        else DC.Audio.workSaw();                                         // saw rasp
       }
       const dur = guy.cur.kind === "work" ? 1.8 + (guy.cur.id.length % 3) * 0.5 : 2.2;
       if (guy.workT > dur) nextTask(state);
@@ -142,7 +148,7 @@ DC.Tech = (function () {
   }
 
   function nextTask(state) {
-    if (guy.cur && guy.cur.kind === "work") didSet.add(guy.cur.id);
+    if (guy.cur && guy.cur.kind === "work") { didSet.add(guy.cur.id); DC.Audio.workDone(); }
     tasks.shift();
     guy.cur = null;
     const here = { x: guy.x, y: guy.y };
@@ -152,7 +158,7 @@ DC.Tech = (function () {
       if (!spot) { tasks.shift(); guy.cur = null; }
       else guy.path = planPath(here, spot);
       if (guy.path && guy.path.length) guy.state = "walk";
-      else if (guy.cur) { guy.state = "work"; guy.workT = 0; }
+      else if (guy.cur) { beginWork(); }
       else guy.path = planPath(here, { x: HOME_X, y: baseY() }), guy.state = "homewalk";
     } else if (Math.abs(guy.x - HOME_X) < 2 && Math.abs(guy.y - baseY()) < 2) {
       guy.x = HOME_X; guy.y = baseY(); guy.state = "idle";
@@ -167,10 +173,10 @@ DC.Tech = (function () {
 
   // standing / walking guy, feet at (x, fy), facing dir — drawn 1.5x scale
   function drawGuy(ctx, x, fy, dir, frame) {
-    const f = dir * 1.5; // 1.5x size, mirrored by dir
+    const f = dir * 1.9; // 1.9x size, mirrored by dir
     ctx.save();
     ctx.translate(x, fy);
-    ctx.scale(f, 1.5);
+    ctx.scale(f, 1.9);
     // shoes (walk frames)
     if (frame === 0) { r(ctx, -4, -2, 4, 2, COL.shoes); r(ctx, 1, -2, 4, 2, COL.shoes); }
     else { r(ctx, -6, -2, 4, 2, COL.shoes); r(ctx, 3, -2, 4, 2, COL.shoes); }
@@ -241,29 +247,43 @@ DC.Tech = (function () {
     ctx.translate(cx, cy);
     const bob = Math.floor(Math.sin(t * 4) * 2);
     ctx.translate(0, bob);
-    // cloud blob
-    r(ctx, -16, -6, 32, 10, COL.cloud);
-    r(ctx, -20, -2, 38, 6, COL.cloud);
-    r(ctx, -12, -10, 20, 4, COL.cloud);
-    r(ctx, -18, -4, 4, 4, COL.cloudShade);
-    r(ctx, 14, -2, 4, 4, COL.cloudShade);
-    // tools crossing: two phases
-    const phase = Math.floor(t * 5) % 2;
+    // cloud blob (bigger, with rolling lobes + shading)
+    r(ctx, -22, -8, 44, 12, COL.cloud);
+    r(ctx, -26, -3, 50, 7, COL.cloud);
+    r(ctx, -16, -13, 26, 5, COL.cloud);
+    r(ctx, -22, 0, 5, 4, COL.cloudShade);
+    r(ctx, 16, -1, 6, 4, COL.cloudShade);
+    r(ctx, -6, -15, 10, 2, COL.cloud);
+    const phase = Math.floor(t * 3.5) % 2;
+    const impact = Math.sin(t * 14) > 0.55;
+    // tools crossing: hammer phase vs wrench phase
     if (phase === 0) {
-      // hammer \
-      r(ctx, -8, -8, 3, 3, COL.metal);
-      r(ctx, -6, -6, 2, 2, COL.handle); r(ctx, -4, -4, 2, 2, COL.handle); r(ctx, -2, -2, 2, 2, COL.handle);
+      // hammer \ with head + claw
+      r(ctx, -10, -10, 4, 4, COL.metal);
+      r(ctx, -6, -8, 3, 2, COL.metal);
+      r(ctx, -5, -6, 2, 2, COL.handle); r(ctx, -3, -4, 2, 2, COL.handle); r(ctx, -1, -2, 2, 2, COL.handle);
       // wrench /
-      r(ctx, 8, 2, 3, 3, COL.metal);
-      r(ctx, 5, 0, 2, 2, COL.metal); r(ctx, 3, -2, 2, 2, COL.metal);
+      r(ctx, 9, 3, 4, 3, COL.metal);
+      r(ctx, 6, 0, 2, 2, COL.metal); r(ctx, 4, -2, 2, 2, COL.metal); r(ctx, 2, -4, 2, 2, COL.metal);
     } else {
-      r(ctx, 6, -8, 3, 3, COL.metal);
-      r(ctx, 4, -6, 2, 2, COL.handle); r(ctx, 2, -4, 2, 2, COL.handle); r(ctx, 0, -2, 2, 2, COL.handle);
-      r(ctx, -9, 1, 3, 3, COL.metal);
-      r(ctx, -6, -1, 2, 2, COL.metal); r(ctx, -4, -3, 2, 2, COL.metal);
+      r(ctx, 7, -10, 4, 4, COL.metal);
+      r(ctx, 4, -7, 2, 2, COL.handle); r(ctx, 2, -5, 2, 2, COL.handle); r(ctx, 0, -3, 2, 2, COL.handle);
+      r(ctx, -11, 2, 4, 3, COL.metal);
+      r(ctx, -7, 0, 2, 2, COL.metal); r(ctx, -5, -2, 2, 2, COL.metal); r(ctx, -3, -4, 2, 2, COL.metal);
     }
-    // sparks
-    if (phase === 0 && Math.sin(t * 12) > 0.5) { r(ctx, 10, -12, 2, 2, COL.spark); r(ctx, -12, 2, 2, 2, COL.spark); }
+    // orbiting bolt/nut particle
+    const oa = t * 7;
+    r(ctx, Math.round(Math.cos(oa) * 16) - 1, Math.round(Math.sin(oa) * 5) - 12, 2, 2, COL.metal);
+    // 4-point impact stars on the hit frames
+    if (impact) {
+      r(ctx, 12, -14, 3, 1, COL.spark); r(ctx, 13, -15, 1, 3, COL.spark);
+      r(ctx, -14, 0, 3, 1, "#fff6c8"); r(ctx, -13, -1, 1, 3, "#fff6c8");
+    }
+    // trailing sparks both phases
+    if (Math.sin(t * 12) > 0.3) { r(ctx, 12, -13, 2, 2, COL.spark); }
+    if (Math.sin(t * 9 + 1) > 0.4) { r(ctx, -15, -6, 2, 2, COL.spark); r(ctx, 3, -16, 1, 1, COL.spark); }
+    // dust puff at base on impact
+    if (impact) { r(ctx, -2, 2, 3, 1, COL.cloudShade); r(ctx, 2, 3, 2, 1, COL.cloudShade); }
     ctx.restore();
   }
 

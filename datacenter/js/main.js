@@ -158,8 +158,9 @@ DC.Game = (function () {
     DC.UI.select(eq);
   }
 
-  const SPEEDS = [1, 2, 4];
-  const SPEED_NAMES = { 1: "NORMAL", 2: "BOOST", 4: "MAX" };
+  const SPEEDS = [0.5, 1, 2, 4];
+  const SPEED_NAMES = { 0.5: "EASY", 1: "NORMAL", 2: "BOOST", 4: "MAX" };
+  const SPEED_KEYS = { 1: 0.5, 2: 1, 3: 2, 4: 4 };
 
   function speedBtn() { return document.getElementById("btn-speed"); }
 
@@ -347,7 +348,7 @@ DC.Game = (function () {
     window.addEventListener("keydown", (e) => {
       keys[e.key] = true;
       if (["a", "d", "w", "s", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1) markMoved();
-      if (running() && (e.key === "1" || e.key === "2" || e.key === "3")) setSpeed(SPEEDS[parseInt(e.key, 10) - 1]);
+      if (running() && e.key >= "1" && e.key <= "4" && SPEED_KEYS[e.key]) setSpeed(SPEED_KEYS[e.key]);
     });
     window.addEventListener("keyup", (e) => { keys[e.key] = false; });
     const clearInput = () => {

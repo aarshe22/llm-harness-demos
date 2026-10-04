@@ -200,5 +200,24 @@ DC.Audio = (function () {
     if (master) master.gain.value = volume;
   }
 
-  return { startAmbient, stopAmbient, beep, alarm, ticketVoice, good, fanfare, click, setEnabled, setVolume, unlock };
+  // Dave's hammer thud: low square punch + body knock
+  function workHit() {
+    beep(110, 0.09, "square", 0.32);
+    beep(68, 0.16, "triangle", 0.24, 0.012);
+  }
+
+  // saw rasp: descending toothy bursts
+  function workSaw() {
+    for (let i = 0; i < 3; i++) beep(820 - i * 110, 0.06, "sawtooth", 0.18, i * 0.055);
+  }
+
+  // task finished: rising ratchet + zip
+  function workDone() {
+    beep(520, 0.06, "square", 0.2);
+    beep(760, 0.06, "square", 0.2, 0.08);
+    beep(1040, 0.1, "square", 0.22, 0.16);
+    for (let i = 0; i < 4; i++) beep(1500 + i * 140, 0.03, "sawtooth", 0.12, 0.3 + i * 0.035);
+  }
+
+  return { startAmbient, stopAmbient, beep, alarm, ticketVoice, good, fanfare, click, workHit, workSaw, workDone, setEnabled, setVolume, unlock };
 })();
