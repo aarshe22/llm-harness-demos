@@ -4,6 +4,11 @@ window.DC = window.DC || {};
 // walks to equipment when work or alarms pop, does the hammer/wrench cloud, walks back.
 DC.Tech = (function () {
   const HOME_X = -118;
+  let homeX = HOME_X;  // dynamic: desk sits left of the leftmost CRAC condenser
+  function updateHomeX(state) {
+    const cx = DC.Render.cracLeftX ? DC.Render.cracLeftX(state) : null;
+    if (cx !== null) homeX = cx - 60; // desk art is ~60px wide at 2x, keep a small gap
+  }
   const BASE_OFF = 26;      // feet baseline below the floor line (rack bottom)
   const SIDE_OFF = 13;      // stand this far to the right of the rack
   const COL = {
@@ -17,7 +22,7 @@ DC.Tech = (function () {
   let tasks = [];          // [{id, kind:'work'|'look'}]
   let seenAlarm = new Set();
   let didSet = new Set();  // jobs he already visited — cleared when the job truly ends
-  let guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
+  let guy = { x: homeX, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
   let scanAcc = 1, sipT = 0;
   let camEl = null, camCtx = null;
   let moodEl = null, moodCtx = null;
@@ -28,8 +33,9 @@ DC.Tech = (function () {
   function opName() { return operator === "diane" ? "DIANE" : "DAVE"; }
 
   function reset() {
+    homeX = HOME_X;
     tasks = []; seenAlarm = new Set(); didSet = new Set();
-    guy = { x: HOME_X, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
+    guy = { x: homeX, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
     camEl = null; camCtx = null;
   }
 
@@ -43,13 +49,13 @@ DC.Tech = (function () {
     if (id === "UPS-1") return { x: (DC.Render.upsX ? DC.Render.upsX(state) : -64) - 8, y: baseY() };  // beside the UPS cabinet
     if (eq.type === "crac") {
       const rs = state.racks.filter((r) => r.hall === eq.hall);
-      if (!rs.length) return { x: HOME_X + 30, y: baseY() };
+      if (!rs.length) return { x: homeX + 30, y: baseY() };
       const a = DC.Render.rackX(state.racks.indexOf(rs[0]));
       const b = DC.Render.rackX(state.racks.indexOf(rs[rs.length - 1])) + DC.Render.RACK_W;
       return { x: (a + b) / 2, y: baseY() };
     }
     const rack = state.racks[eq.rack];
-    if (!rack) return { x: HOME_X + 40, y: baseY() };
+    if (!rack) return { x: homeX + 40, y: baseY() };
     const rx = DC.Render.rackX(eq.rack);
     // vertical: feet at the unit's bottom edge (rack top = y 0)
     let yu = 0;
@@ -60,6 +66,7 @@ DC.Tech = (function () {
   }
 
   function scan(state, now) {
+    updateHomeX(state);
     // jobs he finished may re-arm once truly resolved
     for (const id of [...didSet]) {
       const eq = state.eqById[id];
@@ -132,7 +139,7 @@ DC.Tech = (function () {
         guy.x = wp.x; guy.y = wp.y;
         guy.path.shift();
         if (!guy.path.length) {
-          if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.x = HOME_X; guy.y = baseY(); }
+          if (guy.state === "homewalk") { guy.state = "idle"; guy.cur = null; guy.x = homeX; guy.y = baseY(); }
           else { beginWork(); }
         }
       } else {
@@ -165,11 +172,11 @@ DC.Tech = (function () {
       else guy.path = planPath(here, spot);
       if (guy.path && guy.path.length) guy.state = "walk";
       else if (guy.cur) { beginWork(); }
-      else guy.path = planPath(here, { x: HOME_X, y: baseY() }), guy.state = "homewalk";
-    } else if (Math.abs(guy.x - HOME_X) < 2 && Math.abs(guy.y - baseY()) < 2) {
-      guy.x = HOME_X; guy.y = baseY(); guy.state = "idle";
+      else guy.path = planPath(here, { x: homeX, y: baseY() }), guy.state = "homewalk";
+    } else if (Math.abs(guy.x - homeX) < 2 && Math.abs(guy.y - baseY()) < 2) {
+      guy.x = homeX; guy.y = baseY(); guy.state = "idle";
     } else {
-      guy.path = planPath(here, { x: HOME_X, y: baseY() });
+      guy.path = planPath(here, { x: homeX, y: baseY() });
       guy.state = "homewalk";
     }
   }
@@ -317,7 +324,7 @@ DC.Tech = (function () {
 
   function drawWorld(ctx, state, floorY, time) {
     // his desk always exists in the world, left of rack 0
-    drawDeskScene(ctx, HOME_X - 12, floorY + BASE_OFF, guy.state === "idle", time);
+    drawDeskScene(ctx, homeX - 12, floorY + BASE_OFF, guy.state === "idle", time);
     // guy in the world when on a job
     if (guy.state === "idle") return;
     const frame = Math.floor(time * 8) % 2;

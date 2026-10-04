@@ -36,7 +36,7 @@ DC.UI = (function () {
       </div>
       <div id="alarmbar" style="display:none">
         <div class="resize-handle" id="alarm-resize" title="drag to resize"></div>
-        <div class="hdr"><span>ALARMS</span><span id="alarm-count"></span></div>
+        <div class="hdr" id="alarm-hdr" title="click to collapse/expand"><span>ALARMS</span><span id="alarm-count"></span><span id="alarm-toggle" style="cursor:pointer;margin-left:8px">▾</span></div>
         <div class="list" id="alarm-list"></div>
       </div>
       <div id="sidepanel">
@@ -59,16 +59,56 @@ DC.UI = (function () {
     el(chipId("maint")).onclick = () => showMaintenance();
     el(chipId("tenants")).onclick = () => showTenants();
     bindAlarmResize();
+    bindAlarmCollapse();
     applyAlarmHeight();
     built = true;
   }
 
   let alarmH = 240;
+  let alarmCollapsed = false;
   function applyAlarmHeight() {
     const s = DC.Save.loadSettings();
     alarmH = DC.Util.clamp(s.alarmH || 240, 110, Math.max(110, window.innerHeight * 0.7));
+    alarmCollapsed = !!s.alarmCollapsed;
     const ab = el("alarmbar");
-    if (ab) ab.style.height = alarmH + "px";
+    if (ab) applyAlarmCollapse(ab);
+  }
+
+  function applyAlarmCollapse(ab) {
+    const list = el("alarm-list");
+    const tog = el("alarm-toggle");
+    if (!ab) return;
+    if (alarmCollapsed) {
+      ab.style.height = "auto";
+      ab.style.maxHeight = "none";
+      if (list) list.style.display = "none";
+      if (tog) tog.textContent = "▸";
+      ab.classList.add("collapsed");
+    } else {
+      ab.style.height = alarmH + "px";
+      if (list) list.style.display = "";
+      if (tog) tog.textContent = "▾";
+      ab.classList.remove("collapsed");
+    }
+  }
+
+  function toggleAlarmCollapse() {
+    alarmCollapsed = !alarmCollapsed;
+    const s = DC.Save.loadSettings();
+    s.alarmCollapsed = alarmCollapsed;
+    DC.Save.saveSettings(s);
+    DC.Audio.click();
+    applyAlarmCollapse(el("alarmbar"));
+  }
+
+  function bindAlarmCollapse() {
+    const hdr = el("alarm-hdr");
+    if (!hdr) return;
+    hdr.onclick = (e) => {
+      if (e.target === el("alarm-resize")) return;
+      toggleAlarmCollapse();
+    };
+    hdr.style.cursor = "pointer";
   }
 
   function bindAlarmResize() {
@@ -153,19 +193,21 @@ DC.UI = (function () {
     const recent = state.alarms.filter((a) => !a.cleared);
     if (recent.length) {
       ab.style.display = "flex";
-      el("alarm-count").textContent = recent.length;
-      const sig = recent.slice(0, 10).map((a) => a.id + a.sev).join("|");
-      const list = el("alarm-list");
-      if (sig !== alarmListSig) {
-        alarmListSig = sig;
-        list.innerHTML = "";
-        recent.slice(0, 7).forEach((a) => {
-          const d = document.createElement("div");
-          d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info");
-          d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + DC.Util.fmtUptime(a.time) + "</div>";
-          d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
-          list.appendChild(d);
-        });
+      el("alarm-count").textContent = alarmCollapsed ? recent.length + " ▸" : recent.length;
+      if (!alarmCollapsed) {
+        const sig = recent.slice(0, 10).map((a) => a.id + a.sev).join("|");
+        const list = el("alarm-list");
+        if (sig !== alarmListSig) {
+          alarmListSig = sig;
+          list.innerHTML = "";
+          recent.slice(0, 7).forEach((a) => {
+            const d = document.createElement("div");
+            d.className = "alarm sev-" + (a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info");
+            d.innerHTML = '<div class="dot"></div><div class="msg">' + a.msg + '</div><div class="tm">' + DC.Util.fmtUptime(a.time) + "</div>";
+            d.onclick = () => { state.tutorialJumped = true; DC.Game.jumpTo(a.targetId); a.cleared = a.cleared || a.sev !== "crit"; };
+            list.appendChild(d);
+          });
+        }
       }
     } else {
       ab.style.display = "none";

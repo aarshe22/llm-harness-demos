@@ -294,6 +294,19 @@ DC.Render = (function () {
     return -64;
   }
 
+  // left edge of the leftmost drawn CRAC condenser (desk anchors here)
+  function cracLeftX(state) {
+    let best = null;
+    for (const cr of state.coolingUnits || []) {
+      const hallRacks = state.racks.filter((r) => r.hall === cr.hall);
+      if (!hallRacks.length) continue;
+      const anchor = state.racks.indexOf(hallRacks[Math.min(hallRacks.length - 1, 2)]);
+      const x = rackX(anchor) - 26;
+      if (best === null || x < best) best = x;
+    }
+    return best;
+  }
+
   function drawUPS(ctx, state, floorY, time) {
     const ups = state.eqById["UPS-1"];
     if (!ups) return;
@@ -774,6 +787,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, zoomResetHit, setZoomRef
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, cracLeftX, zoomResetHit, setZoomRef
   };
 })();
