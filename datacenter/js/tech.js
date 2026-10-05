@@ -9,7 +9,7 @@ DC.Tech = (function () {
     // desk art spans [deskX, deskX+78] at 3x; he stands mid-desk
     homeX = DC.Render.rackX(0) + 6 + 40;
   }
-  const BASE_OFF = 40;      // feet baseline below the floor line (dropped a few pixel rows)
+  const BASE_OFF = 30;      // feet baseline below the floor line (kept inside the trimmed footer)
   const SIDE_OFF = 13;      // stand this far to the right of the rack
   const COL = {
     skin: "#f2c79a", hair: "#33254a", shirt: "#e8e8f4", tie: "#e0485a", pants: "#3a3a5c",

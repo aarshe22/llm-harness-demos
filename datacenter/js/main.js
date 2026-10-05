@@ -273,7 +273,10 @@ DC.Game = (function () {
   }
 
   function defaultZoom() {
-    return 0.88; // fixed default (was height-derived)
+    // fit from the ceiling lights to the footer objects, under the two-row topbar
+    const z = DC.Render.fitZoom(window.innerHeight);
+    DC.Render.setDefaultZoom(z);
+    return z;
   }
 
   function resetZoomView() {

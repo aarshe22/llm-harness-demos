@@ -4,9 +4,13 @@ DC.Render = (function () {
   const PX = 2;
   const RACK_W = 160, GAP = 56, U = 18, RACK_U = 42;
   const RACK_H = RACK_U * U;
-  const FLOOR_H = 240;
+  const FLOOR_H = 144; // trimmed two 48px tile rows: footer objects now define the floor depth
   const CEIL_H = 130;
-  const CAM_Y = RACK_H / 2;
+  // vertical span of playable content: ceiling light cones down to the printer feet
+  const ROW_DROP = 24;
+  const CONTENT_TOP = -CEIL_H + 26;
+  const CONTENT_BOTTOM = RACK_H + ROW_DROP + 118 + 4; // printer legs + feet
+  const CAM_Y = (CONTENT_TOP + CONTENT_BOTTOM) / 2;
 
   const PAL = {
     bgTop: "#1a1245", bgBot: "#080418",
@@ -24,7 +28,13 @@ DC.Render = (function () {
   function rackX(idx) { return 60 + idx * (RACK_W + GAP); }
   function totalWidth(state) { return state.racks.length * (RACK_W + GAP) + 180; }
 
-  function screenCenter(w, h) { return { x: w / 2, y: 44 + (h - 44) / 2 + 14 }; }
+  function screenCenter(w, h) { return { x: w / 2, y: 92 + (h - 92) / 2 }; } // center of the area under the two-row topbar
+
+  // zoom that fits content from the ceiling lights to the footer objects
+  const TOPBAR_H = 92;
+  function fitZoom(h) {
+    return DC.Util.clamp((h - TOPBAR_H) / (CONTENT_BOTTOM - CONTENT_TOP), 0.3, 1.3);
+  }
 
   function worldFromScreen(mx, my, w, h, cam) {
     const c = screenCenter(w, h);
@@ -116,9 +126,6 @@ DC.Render = (function () {
     drawCRT(ctx, w, h, time);
   }
 
-  const CAM_ZOOM_DEFAULT = 0.88; // matched by main.js defaultZoom
-  let camZoomDefault = CAM_ZOOM_DEFAULT;
-
   // growth now lives in the topbar (horizontal gradient bar); only the zoom-reset
   // touchpoint remains on the canvas, parked below the two-row topbar
   function drawZoomReset(ctx, w) {
@@ -143,6 +150,8 @@ DC.Render = (function () {
 
   let lastZoomRect = null;
   let lastZoom = 0.75;
+  let camZoomDefault = 0.75; // updated by main via setDefaultZoom
+  function setDefaultZoom(z) { camZoomDefault = z; }
   function setZoomRef(z) { lastZoom = z; }
   // lastZoomRect is in screen px (thermometer is drawn post-restore in screen space)
   function zoomResetHit(w, h, cam, mx, my) {
@@ -260,7 +269,7 @@ DC.Render = (function () {
   const CRAC_W = 68, CRAC_H = 90;
   const WAN_W = 38, WAN_H = 30, FW_W = 44, FW_H = 36, PIPE_MIN = 24;
   const PRN_W = 96, PRN_H = 118;
-  const ROW_DROP = 34;     // a few pixel rows lower than the old +10
+  // ROW_DROP lives with the content-span constants at the top of the module
 
   function auxRow(state) {
     const left = rackX(0);
@@ -920,6 +929,6 @@ DC.Render = (function () {
   }
 
   return {
-    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, cracLeftX, printerX, auxRow, zoomResetHit, setZoomRef
+    draw, hitTest, rackX, RACK_W, GAP, U, RACK_H, CAM_Y, CEIL_H, FLOOR_H, totalWidth, worldFromScreen, upsX, cracLeftX, printerX, auxRow, zoomResetHit, setZoomRef, setDefaultZoom, fitZoom, CONTENT_TOP, CONTENT_BOTTOM
   };
 })();
