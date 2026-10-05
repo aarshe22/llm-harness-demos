@@ -229,13 +229,6 @@ DC.Render = (function () {
     ctx.globalAlpha = 0.5;
     ctx.fillRect(-140, floorY, worldW + 280, PX);
     ctx.globalAlpha = 1;
-    PAL.cable.forEach((col, i) => {
-      const cy = floorY + 34 + i * 14;
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.55;
-      for (let x = -140; x < worldW + 100; x += 26) ctx.fillRect(x + ((i * 7) % 13), cy, 14, PX);
-      ctx.globalAlpha = 1;
-    });
   }
 
   function drawLightCones(ctx, worldW, floorY, time) {
