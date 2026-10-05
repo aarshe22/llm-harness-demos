@@ -116,7 +116,7 @@ DC.Render = (function () {
     drawCRT(ctx, w, h, time);
   }
 
-  const CAM_ZOOM_DEFAULT = 0.73; // matched by main.js defaultZoom (3% out from 0.75)
+  const CAM_ZOOM_DEFAULT = 0.88; // matched by main.js defaultZoom
   let camZoomDefault = CAM_ZOOM_DEFAULT;
 
   // growth now lives in the topbar (horizontal gradient bar); only the zoom-reset

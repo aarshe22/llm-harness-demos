@@ -2,7 +2,7 @@
 
 DC.Game = (function () {
   let state = null, canvas = null, ctx = null;
-  let cam = { x: 0, y: 0, zoom: 0.73 };
+  let cam = { x: 0, y: 0, zoom: 0.88 };
   let ptr = { id: null, down: false, dist: 0, x: 0, y: 0 };
   let dragMoved = false;
   let keys = {};
@@ -273,8 +273,7 @@ DC.Game = (function () {
   }
 
   function defaultZoom() {
-    // 3% further out than the height-derived fit
-    return DC.Util.clamp((window.innerHeight - 150) / DC.Render.RACK_H * 0.97, 0.3, 0.9);
+    return 0.88; // fixed default (was height-derived)
   }
 
   function resetZoomView() {
