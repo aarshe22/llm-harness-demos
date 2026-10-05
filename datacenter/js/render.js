@@ -269,7 +269,7 @@ DC.Render = (function () {
     const units = [];
     for (let i = 0; i < nCrac; i++) units.push({ w: CRAC_W, kind: "crac", i });
     if (state.eqById["UPS-1"]) units.push({ w: UPS_W, kind: "ups" });
-    for (let i = 0; i < nWan; i++) units.push({ w: WAN_W + PIPE_MIN + FW_W, kind: "wan", i });
+    if (nWan) units.push({ w: WAN_W + PIPE_MIN + FW_W, kind: "wan" }); // single slot; WANs stack vertically inside it
     if (state.eqById["PRN-1"]) units.push({ w: PRN_W, kind: "prn" });
     const itemsW = units.reduce((a, u) => a + u.w, 0);
     const start = left + 6; // desk occupies [left, left+DESK_W]; art starts 6px in
@@ -277,14 +277,14 @@ DC.Render = (function () {
     const avail = (right - 6) - cursor0 - itemsW;
     const gaps = Math.max(1, units.length - 1);
     const gap = units.length > 1 ? DC.Util.clamp(avail / gaps, 8, 72) : 0;
-    const out = { left, right, y, start, cracXs: [], wanXs: [], upsX: null, prnX: null };
+    const out = { left, right, y, start, cracXs: [], wanSlot: null, upsX: null, prnX: null };
     let cursor = cursor0;
     for (const u of units) {
       if (u.kind === "crac") { out.cracXs[u.i] = cursor; cursor += u.w + gap; }
       else if (u.kind === "ups") { out.upsX = cursor; cursor += u.w + gap; }
       else if (u.kind === "wan") {
         const pipe = PIPE_MIN + Math.max(0, gap - 8);
-        out.wanXs[u.i] = { bx: cursor, pipe, fx: cursor + WAN_W + 4 + pipe + 4 };
+        out.wanSlot = { bx: cursor, pipe, fx: cursor + WAN_W + 4 + pipe + 4 };
         cursor += u.w + gap;
       }
       else if (u.kind === "prn") { out.prnX = cursor; cursor += u.w; }
@@ -349,12 +349,11 @@ DC.Render = (function () {
 
   function wanGeom(state) {
     const a = auxRow(state);
-    const first = a.wanXs[0];
     return {
-      bx: first ? first.bx : upsX(state) + UPS_W + 22,
-      xs: a.wanXs,
+      bx: a.wanSlot ? a.wanSlot.bx : upsX(state) + UPS_W + 22,
+      slot: a.wanSlot,
       rowY: a.y,
-      rowH: 46, pipeLen: first ? first.pipe : 84, wanW: WAN_W, wanH: WAN_H, fwW: FW_W, fwH: FW_H
+      rowH: 46, pipeLen: a.wanSlot ? a.wanSlot.pipe : 84, wanW: WAN_W, wanH: WAN_H, fwW: FW_W, fwH: FW_H
     };
   }
 
@@ -362,11 +361,10 @@ DC.Render = (function () {
     if (!state.wans || !state.wans.length) return;
     const g = wanGeom(state);
     state.wans.forEach((w, i) => {
+      // stacked vertically: secondary directly below primary
       const y = g.rowY + 2 + i * g.rowH;
-      const X = g.xs && g.xs[i] ? g.xs[i] : null;
+      const x0 = g.slot ? g.slot.bx : g.bx;
       const col = wanStateCol(w, time);
-      // handoff box
-      const x0 = X ? X.bx : g.bx;
       ctx.fillStyle = "#0d0a26";
       ctx.fillRect(x0, y, g.wanW, g.wanH);
       ctx.strokeStyle = col;
@@ -420,7 +418,7 @@ DC.Render = (function () {
       ctx.fillRect(fx + 5, fy + 16, Math.floor(cw * cpu / 100 / PX) * PX, 5);
       pxText(ctx, "CPU " + Math.round(cpu) + "%", fx + 5, fy + 30, 8, PAL.textDim);
       if (fw.overloaded && (time * 3 % 1) > 0.5) { ctx.fillStyle = PAL.ledRed; ctx.fillRect(fx + g.fwW - 10, fy + 3, 5, 5); }
-      pxText(ctx, "MAINT", x0, y + g.wanH + 10, 8, w.maintT > 0 ? PAL.ledAmber : "#3a3570");
+      pxText(ctx, "MAINT", x0, y - 6, 8, w.maintT > 0 ? PAL.ledAmber : "#3a3570"); // above the row: rows are stacked now
     });
   }
 
@@ -874,15 +872,14 @@ DC.Render = (function () {
       const px0 = printerX(state);
       if (p.x >= px0 - 4 && p.x <= px0 + PRN_W + 4 && p.y >= RACK_H + ROW_DROP - 40 && p.y <= RACK_H + ROW_DROP + PRN_H + 4) return { eq: prn, rack: null };
     }
-    // WAN pipes + firewalls (bottom row, right of UPS)
+    // WAN pipes + firewalls (stacked rows, right of UPS)
     if (state.wans) {
       const g = wanGeom(state);
       state.wans.forEach((w) => {
         const i = state.wans.indexOf(w);
         const y = g.rowY + 2 + i * g.rowH;
-        const X = g.xs && g.xs[i] ? g.xs[i] : null;
-        const bx = X ? X.bx : g.bx;
-        const fx = X ? X.fx : g.bx + g.wanW + 4 + g.pipeLen + 4;
+        const bx = g.slot ? g.slot.bx : g.bx;
+        const fx = g.slot ? g.slot.fx : g.bx + g.wanW + 4 + g.pipeLen + 4;
         if (p.x >= bx - 2 && p.x <= bx + g.wanW + 2 && p.y >= y - 2 && p.y <= y + g.wanH + 2) { hitWan = w; }
         if (p.x >= fx - 2 && p.x <= fx + g.fwW + 2 && p.y >= y - 5 && p.y <= y - 5 + g.fwH + 2) { hitWan = w.fw; }
       });
