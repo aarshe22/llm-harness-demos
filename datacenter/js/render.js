@@ -134,6 +134,8 @@ DC.Render = (function () {
     // [*] — the square reads as "zoom frame"; asterisk = "fit/reset"
     pxText(ctx, "[*]", x - 12, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
     lastZoomRect = { x: x - 15, y: zy - 4, w: 30, h: 20 };
+    // DEBUG: current zoom readout, left of the reset button (temporary)
+    pxText(ctx, "Z " + lastZoom.toFixed(3), x - 86, zy + 9, 8, PAL.ledCyan);
   }
 
   let phaseT = 0;
