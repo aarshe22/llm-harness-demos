@@ -94,6 +94,8 @@ DC.Growth = (function () {
   function updateThermometer(state, dt, clean, outageWeight) {
     const m = state.metrics;
     let rate = (0.3 + m.rep * 0.006) * cfg().demandGrowth;
+    // expansionRate accelerates how fast the growth meter (and thus expansions) arrive
+    rate *= 0.4 + 0.6 * cfg().expansionRate;
     if (!clean) rate *= 0.2;
     rate -= outageWeight * 0.35;
     if (state.tickets.open > 30) rate -= 0.3;

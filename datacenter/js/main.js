@@ -541,12 +541,24 @@ DC.Game = (function () {
     let html = "";
     names.forEach((n) => { html += '<button style="text-align:left;letter-spacing:1px" data-c="' + n + '">' + n.replace(/_/g, " ") + "</button>"; });
     html += '<button data-c="">BACK</button>';
-    menu.innerHTML = '<div class="menu-title" style="font-size:26px">CHALLENGES</div><div class="menu-btns">' + html + "</div>";
+    const info = (n) => (DC.CHALLENGE_INFO && DC.CHALLENGE_INFO[n]) || "";
+    const first = names[0];
+    menu.innerHTML =
+      '<div class="menu-title" style="font-size:26px">CHALLENGES</div>' +
+      '<div class="challenges-wrap"><div class="menu-btns">' + html + "</div>" +
+      '<div class="challenge-info"><div class="ci-name" id="ci-name">' + first.replace(/_/g, " ") + '</div><div class="ci-desc" id="ci-desc">' + info(first) + "</div></div></div>";
+    const nameEl = menu.querySelector("#ci-name"), descEl = menu.querySelector("#ci-desc");
     menu.querySelectorAll("button[data-c]").forEach((b) => {
       b.onclick = () => {
         const c = b.getAttribute("data-c");
         if (!c) showMenu();
         else startRun(String(Date.now()), c);
+      };
+      b.onmouseenter = () => {
+        const c = b.getAttribute("data-c");
+        if (!c || !nameEl) return;
+        nameEl.textContent = c.replace(/_/g, " ");
+        descEl.textContent = info(c);
       };
     });
   }

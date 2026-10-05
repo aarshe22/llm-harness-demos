@@ -39,17 +39,30 @@ DC.DEFAULT_SETTINGS = {
 };
 
 DC.CHALLENGES = {
-  STANDARD: {},
-  RELAXED: { difficulty: 60, failureFreq: 50, ticketGen: 60, repLoss: 60 },
-  REALISTIC: { difficulty: 140, failureFreq: 130, ticketGen: 130, coolCapacity: 85 },
-  RAPID_GROWTH: { expansionRate: 250, demandGrowth: 220, customerGrowth: 200, expansionThreshold: 70 },
-  MEGA_DATACENTER: { maxRacks: 60, expansionRate: 220, demandGrowth: 200, expansionThreshold: 60 },
-  CHAOS: { difficulty: 200, failureFreq: 300, escalation: 250, ticketGen: 220 },
-  STORAGE_NIGHTMARE: { driveFail: 350, rebuildSpeed: 60, warnRate: 200, difficulty: 130 },
-  THERMAL_NIGHTMARE: { coolCapacity: 55, heatGen: 160, tempRise: 180, difficulty: 130 },
-  CYBER_NIGHTMARE: { securityRate: 400, propSpeed: 200, difficulty: 130 },
-  POWER_CRISIS: { utilFail: 400, powerCapacity: 70, difficulty: 130 },
-  HELPDESK_HELL: { ticketGen: 400, ticketEscalation: 300, customerGrowth: 180 }
+  RELAXED: { difficulty: 60, failureFreq: 45, ticketGen: 55, repLoss: 50 },
+  REALISTIC: { difficulty: 150, failureFreq: 150, ticketGen: 150, coolCapacity: 85, powerCapacity: 90, driveFail: 120 },
+  RAPID_GROWTH: { expansionRate: 300, demandGrowth: 250, customerGrowth: 220, expansionThreshold: 65, startCustomerLoad: 150 },
+  MEGA_DATACENTER: { startingRacks: 10, maxRacks: 60, expansionRate: 240, demandGrowth: 210, expansionThreshold: 55, startCustomerLoad: 220, ticketGen: 160 },
+  CHAOS: { difficulty: 200, failureFreq: 300, escalation: 260, ticketGen: 230, ticketClear: 70, coolCapacity: 85, powerCapacity: 80, securityRate: 220, driveFail: 220, utilFail: 220 },
+  STORAGE_NIGHTMARE: { driveFail: 380, rebuildSpeed: 55, warnRate: 220, difficulty: 140, failureFreq: 140 },
+  THERMAL_NIGHTMARE: { coolCapacity: 50, heatGen: 170, tempRise: 190, difficulty: 140, failureFreq: 130 },
+  CYBER_NIGHTMARE: { securityRate: 420, propSpeed: 220, difficulty: 140, failureFreq: 130 },
+  POWER_CRISIS: { utilFail: 420, powerCapacity: 65, difficulty: 140, failureFreq: 130, coolCapacity: 90 },
+  HELPDESK_HELL: { ticketGen: 420, ticketEscalation: 320, ticketClear: 60, customerGrowth: 190, difficulty: 130 }
+};
+
+// shown to the right of the challenge list so players know what to expect
+DC.CHALLENGE_INFO = {
+  RELAXED: "A quiet shift. Fewer failures, gentler tickets, forgiving reputation. For learning the ropes or unwinding.",
+  REALISTIC: "Everything a little harder than default: more failures, more tickets, tighter cooling and power. No single gimmick — just a demanding floor.",
+  RAPID_GROWTH: "Customers flood in fast. Expansion prompts come constantly — keep up or drown in demand you can't serve.",
+  MEGA_DATACENTER: "You start with 10 racks and a huge customer base. Scale to 60 racks while ticket load grows with you.",
+  CHAOS: "Everything breaks at once: hardware, power, cooling, security — while tickets pile up faster than you can clear them. Good luck.",
+  STORAGE_NIGHTMARE: "Drives fail constantly and rebuilds crawl. Keep spare capacity or lose customer data.",
+  THERMAL_NIGHTMARE: "Weak cooling, hot hardware, fast-rising temps. One CRAC fault and you're into thermal shutdowns.",
+  CYBER_NIGHTMARE: "Malware everywhere and spreading fast. Isolate, clean, reimage — and hope your racks don't infect each other.",
+  POWER_CRISIS: "The grid fails constantly and your capacity is thin. UPS, generators and load management are life support.",
+  HELPDESK_HELL: "A ticket avalanche that escalates fast and clears slow. Customers walk if you can't keep up."
 };
 
 DC.CFG = {};
