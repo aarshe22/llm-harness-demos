@@ -238,6 +238,7 @@ DC.Game = (function () {
     if (state.eqById["UPS-1"]) state.eqById["UPS-1"].id = "UPS-1";
     if (DC.Wan) DC.Wan.ensure(state);
     if (DC.Printer) DC.Printer.ensure(state);
+    if (DC.Tape) DC.Tape.ensure(state);
     if (!state.speed) state.speed = 1;
     // tenant satisfaction (new field)
     for (const b of state.blades || []) {
@@ -383,6 +384,7 @@ DC.Game = (function () {
     DC.Network.tick(state, dt);
     DC.Wan.tick(state, dt);
     if (DC.Printer) DC.Printer.tick(state, dt);
+    if (DC.Tape) DC.Tape.tick(state, dt);
     DC.Security.tick(state, dt);
     DC.Conditions.tick(state, dt);
     DC.Maintenance.tick(state, dt);

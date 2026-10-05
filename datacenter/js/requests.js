@@ -60,6 +60,15 @@ DC.FieldRequests = (function () {
       eligible: null },
     { id: "refill-paper", name: "REFILL PAPER", action: "REFILL PAPER", busy: null, t: 0, exp: 70, crit: false,
       msg: "PRN-1 is out of paper — load the tractor feed",
+      eligible: null },
+    { id: "tape-mount", name: "MOUNT TAPE", action: "MOUNT TAPE", busy: null, t: 0, exp: 80, crit: false,
+      msg: "backup queue stalled — load a fresh tape into TAPE-1",
+      eligible: null },
+    { id: "tape-export", name: "EXPORT TAPES", action: "RUN EXPORT", busy: null, t: 0, exp: 90, crit: false,
+      msg: "offsite rotation due — pull the export tapes from TAPE-1",
+      eligible: null },
+    { id: "tape-unjam", name: "UNJAM TAPE", action: "UNJAM TAPE", busy: null, t: 0, exp: 75, crit: false,
+      msg: "TAPE-1 has a tape jammed in a drive — clear the mechanism",
       eligible: null }
   ];
 
@@ -106,6 +115,13 @@ DC.FieldRequests = (function () {
       if (prn.jam) pool.push({ k: KINDS.find((k) => k.id === "clear-jam"), w: 3, target: "PRN-1" });
       else if (prn.paper < 15) pool.push({ k: KINDS.find((k) => k.id === "refill-paper"), w: 3, target: "PRN-1" });
       else if (!prn.printing && prn.paper > 5) pool.push({ k: KINDS.find((k) => k.id === "fetch-report"), w: 0.8, target: "PRN-1" });
+    }
+    // tape library tickets
+    const tape = state.eqById["TAPE-1"];
+    if (tape && DC.Tape && !(state.requests || []).some((r) => r.targetId === "TAPE-1")) {
+      if (tape.jam) pool.push({ k: KINDS.find((k) => k.id === "tape-unjam"), w: 3, target: "TAPE-1" });
+      else if (tape.exportsPending > 2) pool.push({ k: KINDS.find((k) => k.id === "tape-export"), w: 2.2, target: "TAPE-1" });
+      else if (!tape.robot && DC.Tape.fullSlots(tape) > 0 && tape.drives.some((d) => !d.tape)) pool.push({ k: KINDS.find((k) => k.id === "tape-mount"), w: 0.9, target: "TAPE-1" });
     }
     if (!pool.length) return;
     let total = 0; for (const p of pool) total += p.w;
@@ -182,6 +198,28 @@ DC.FieldRequests = (function () {
         DC.Printer.loadPaper(state, p);
       }
       req.started = true;
+      eq.done = req.id;
+      markDispatched(state, req);
+      DC.Audio.click();
+      return true;
+    }
+    // tape library tickets run through the Tape module
+    if (req.targetId === "TAPE-1" && DC.Tape) {
+      const t = eq;
+      if (req.kind === "tape-mount") {
+        if (DC.Tape.fullSlots(t) <= 0 || t.robot) return false;
+        const slot = t.slots.find((s) => s.state === "full");
+        const di = t.drives.findIndex((d) => !d.tape);
+        t.robot = { kind: "mount", t: DC.Tape.JOB_T.mount, t0: DC.Tape.JOB_T.mount, slot: slot.label, driveIdx: di < 0 ? 0 : di };
+      } else if (req.kind === "tape-export") {
+        if (t.exportsPending <= 0) return false;
+        DC.Tape.startExport(state, t); // queues if the arm is busy
+      } else if (req.kind === "tape-unjam") {
+        if (!t.jam) return false;
+        DC.Tape.startUnjam(state, t);
+      }
+      req.started = true;
+      eq.done = req.id;
       markDispatched(state, req);
       DC.Audio.click();
       return true;

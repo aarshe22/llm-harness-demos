@@ -111,6 +111,24 @@ DC.Facility = (function () {
     };
   }
 
+  function makeTapeLib(rng) {
+    const slots = [];
+    for (let i = 0; i < 100; i++) slots.push({ label: "L" + String(i + 1).padStart(3, "0"), state: "full", barcoded: rng.chance(0.85) });
+    return {
+      id: "TAPE-1", type: "tape", name: "TAPE LIBRARY",
+      drives: [
+        { id: "LTO-A", state: "ok", tape: null, progress: 0 },
+        { id: "LTO-B", state: "ok", tape: null, progress: 0 }
+      ],
+      slots,                    // 100 tape slots: full | empty | foreign (needs mount/export)
+      robot: null,              // { kind: 'mount'|'unjam'|'export', t, t0, slot, driveIdx } while the robot arm works
+      jam: null,                // { since, severity } tape jam in a drive
+      exportsPending: 0,        // tapes waiting to be pulled for offsite
+      state: "idle",
+      busy: null
+    };
+  }
+
   function makeCRAC(rng, hall) {
     const n = nextId("CRAC");
     return {
@@ -433,6 +451,7 @@ DC.Facility = (function () {
     for (const rack of state.racks) for (const eq of rack.equipment) state.eqById[eq.id] = eq;
     state.eqById["UPS-1"] = makeUPS(rng);
     state.eqById["PRN-1"] = makePrinter(rng);
+    state.eqById["TAPE-1"] = makeTapeLib(rng);
     DC.Wan.ensure(state);
     const cracCount = Math.max(1, Math.ceil(rackCount / 5));
     for (let i = 0; i < cracCount; i++) {

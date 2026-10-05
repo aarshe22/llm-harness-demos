@@ -48,6 +48,11 @@ DC.Tech = (function () {
     if (!eq) return null;
     if (id === "UPS-1") return { x: (DC.Render.upsX ? DC.Render.upsX(state) : -64) - 8, y: baseY() };  // beside the UPS cabinet
     if (id === "PRN-1") return { x: (DC.Render.printerX ? DC.Render.printerX(state) : 0) + 48, y: baseY() }; // at the printer
+    if (id === "TAPE-1") {
+      const a = DC.Render.auxRow ? DC.Render.auxRow(state) : null;
+      const tx = a && a.tapeX !== null ? a.tapeX : 0;
+      return { x: tx + 40, y: baseY() }; // at the tape library
+    }
     if (eq.type === "crac") {
       const rs = state.racks.filter((r) => r.hall === eq.hall);
       if (!rs.length) return { x: homeX + 30, y: baseY() };

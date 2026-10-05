@@ -395,6 +395,13 @@ DC.UI = (function () {
       set("fw-fw", Math.floor(eq.fwDays) + "d old", eq.fwDays > 180 ? "a" : "g");
       set("fw-policy", Math.floor(eq.policyDays) + "d old", eq.policyDays > 60 ? "a" : "g");
       set("fw-state", eq.overloaded ? "OVERLOADED" : eq.busy ? eq.busy.kind.replace("fw-", "").toUpperCase() + " " + Math.ceil(eq.busy.t) + "s" : "PASSING", eq.overloaded ? "r" : eq.busy ? "a" : "g");
+    } else if (eq.type === "tape") {
+      const st = eq.jam ? "JAMMED" : eq.robot ? (eq.robot.kind === "unjam" ? "CLEARING JAM" : eq.robot.kind === "export" ? "EXPORTING" : "MOUNTING " + eq.robot.slot) : "IDLE";
+      const fillPct = Math.round(100 * (100 - DC.Tape.freeSlots(eq)) / 100);
+      set("tape-fill", fillPct + "%", fillPct > 90 ? "r" : fillPct > 70 ? "a" : "g");
+      set("tape-state", st, eq.jam ? "r" : eq.robot ? "a" : "g");
+      set("tape-exports", String(eq.exportsPending), eq.exportsPending > 3 ? "a" : "g");
+      eq.drives.forEach((d, i) => set("tape-drive" + i, d.tape ? d.tape : "empty", d.tape ? "a" : "g"));
     } else if (eq.type === "generator") {
       set("gen-state", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a");
       set("gen-fuel", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g");
@@ -552,6 +559,17 @@ DC.UI = (function () {
       if (eq.printing) html += statRow("JOB", eq.printing.report, "a", "prn-job");
       if (eq.jam) actions.push(["CLEAR JAM", () => { DC.Printer.clearJam(state, eq); select(eq); }]);
       if (eq.paper < 95) actions.push(["REFILL PAPER", () => { DC.Printer.loadPaper(state, eq); select(eq); }]);
+    } else if (eq.type === "tape") {
+      const fillPct = Math.round(100 * (100 - DC.Tape.freeSlots(eq)) / 100);
+      html += statRow("SLOTS FULL", fillPct + "% (" + DC.Tape.fullSlots(eq) + "/100)", fillPct > 90 ? "r" : fillPct > 70 ? "a" : "g", "tape-fill");
+      const st = eq.jam ? "JAMMED" : eq.robot ? (eq.robot.kind === "unjam" ? "CLEARING JAM" : eq.robot.kind === "export" ? "EXPORTING" : "MOUNTING " + eq.robot.slot) : "IDLE";
+      html += statRow("STATE", st, eq.jam ? "r" : eq.robot ? "a" : "g", "tape-state");
+      html += statRow("EXPORTS DUE", String(eq.exportsPending), eq.exportsPending > 3 ? "a" : "g", "tape-exports");
+      eq.drives.forEach((d, i) => { html += statRow(d.id, d.tape ? "TAPE " + d.tape : "EMPTY", d.tape ? "a" : "g", "tape-drive" + i); });
+      const treq = state.requests && state.requests.find((r) => r.targetId === eq.id);
+      if (treq) html += ticketHtml(treq, eq);
+      if (eq.jam) actions.push(["UNJAM (" + DC.Tape.JOB_T.unjam + "s)", () => { DC.Tape.startUnjam(state, eq); select(eq); }]);
+      if (eq.exportsPending > 0) actions.push(["RUN EXPORT (" + DC.Tape.JOB_T.export + "s)", () => { if (DC.Tape.startExport(state, eq)) select(eq); }]);
     } else if (eq.type === "generator") {
       html += statRow("STATE", eq.state.toUpperCase(), eq.state === "running" ? "g" : eq.state === "fault" ? "r" : "a", "gen-state");
       html += statRow("FUEL", Math.round(eq.fuel) + "%", eq.fuel < 20 ? "r" : "g", "gen-fuel");

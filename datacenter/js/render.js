@@ -111,6 +111,7 @@ DC.Render = (function () {
     drawUPS(ctx, state, floorY, time);
     drawWANs(ctx, state, floorY, time);
     drawPRN(ctx, state, time);
+    drawTape(ctx, state, time);
     drawHalls(ctx, state, floorY);
     drawCRACs(ctx, state, floorY, time);
 
@@ -269,6 +270,8 @@ DC.Render = (function () {
   const CRAC_W = 68, CRAC_H = 90;
   const WAN_W = 38, WAN_H = 30, FW_W = 44, FW_H = 36, PIPE_MIN = 24;
   const PRN_W = 96, PRN_H = 118;
+  const TAPE_W = 92, TAPE_H = 112;
+  const TILE_GAP = 48;     // one floor tile of space between footer units
   // ROW_DROP lives with the content-span constants at the top of the module
 
   function auxRow(state) {
@@ -282,13 +285,14 @@ DC.Render = (function () {
     if (state.eqById["UPS-1"]) units.push({ w: UPS_W, kind: "ups" });
     if (nWan) units.push({ w: WAN_W + PIPE_MIN + FW_W, kind: "wan" }); // single slot; WANs stack vertically inside it
     if (state.eqById["PRN-1"]) units.push({ w: PRN_W, kind: "prn" });
+    if (state.eqById["TAPE-1"]) units.push({ w: TAPE_W, kind: "tape" });
     const itemsW = units.reduce((a, u) => a + u.w, 0);
     const start = left + 6; // desk occupies [left, left+DESK_W]; art starts 6px in
     const cursor0 = start + DESK_W + 8;
     const avail = (right - 6) - cursor0 - itemsW;
     const gaps = Math.max(1, units.length - 1);
-    const gap = units.length > 1 ? DC.Util.clamp(avail / gaps, 8, 72) : 0;
-    const out = { left, right, y, start, cracXs: [], wanSlot: null, upsX: null, prnX: null };
+    const gap = units.length > 1 ? DC.Util.clamp(avail / gaps, TILE_GAP, 72) : TILE_GAP; // never tighter than one tile
+    const out = { left, right, y, start, cracXs: [], wanSlot: null, upsX: null, prnX: null, tapeX: null };
     let cursor = cursor0;
     for (const u of units) {
       if (u.kind === "crac") { out.cracXs[u.i] = cursor; cursor += u.w + gap; }
@@ -298,7 +302,8 @@ DC.Render = (function () {
         out.wanSlot = { bx: cursor, pipe, fx: cursor + WAN_W + 4 + pipe + 4 };
         cursor += u.w + gap;
       }
-      else if (u.kind === "prn") { out.prnX = cursor; cursor += u.w; }
+      else if (u.kind === "prn") { out.prnX = cursor; cursor += u.w + TILE_GAP; }
+      else if (u.kind === "tape") { out.tapeX = cursor; cursor += u.w; }
     }
     return out;
   }
@@ -605,6 +610,81 @@ DC.Render = (function () {
     }
   }
 
+  // TAPE-1 — dual LTO drive tape library with 100 slots and a robot arm
+  function drawTape(ctx, state, time) {
+    const t = state.eqById["TAPE-1"];
+    if (!t) return;
+    const x = auxRow(state).tapeX, y = RACK_H + ROW_DROP - 6;
+    const W = TAPE_W, H = TAPE_H;
+    const jammed = !!t.jam;
+    const robot = t.robot;
+    const blink = (time * 5 % 1) > 0.5;
+
+    // frame: dark rack-mount cabinet
+    ctx.fillStyle = "#0d0a26";
+    ctx.fillRect(x, y, W, H);
+    ctx.strokeStyle = jammed ? PAL.ledRed : PAL.rackEdge;
+    ctx.lineWidth = PX;
+    ctx.strokeRect(x, y, W, H);
+    ctx.lineWidth = 1;
+
+    // two LTO drive bays (top)
+    t.drives.forEach((d, di) => {
+      const dx = x + 6, dy = y + 5, dw = (W - 18) / 2, dh = 26;
+      const busy = !!d.tape;
+      const jammedDrive = jammed && t.jam.drive === di;
+      ctx.fillStyle = "#181528";
+      ctx.fillRect(dx + di * (dw + 6), dy, dw, dh);
+      ctx.strokeStyle = jammedDrive ? (blink ? PAL.ledRed : "#5a1020") : busy ? PAL.ledAmber : "#2a2440";
+      ctx.strokeRect(dx + di * (dw + 6), dy, dw, dh);
+      // drive label
+      pxText(ctx, d.id, dx + di * (dw + 6) + 3, dy + 9, 8, PAL.text);
+      // activity LED
+      ctx.fillStyle = jammedDrive ? (blink ? PAL.ledRed : "#5a1020") : busy ? PAL.ledAmber : PAL.ledGreen;
+      ctx.fillRect(dx + di * (dw + 6) + 3, dy + dh - 7, 4, 4);
+      // tape-in indicator: small cartridge silhouette
+      if (busy) {
+        ctx.fillStyle = "#4a4666";
+        ctx.fillRect(dx + di * (dw + 6) + dw - 12, dy + dh - 9, 8, 5);
+        ctx.fillStyle = "#181528";
+        ctx.fillRect(dx + di * (dw + 6) + dw - 10, dy + dh - 8, 4, 3);
+      }
+    });
+
+    // 100-slot tape grid (10x10), left block
+    const gx = x + 6, gy = y + 36, gw = W - 34, cell = (gw - 9) / 10;
+    for (let i = 0; i < 100; i++) {
+      const s = t.slots[i];
+      const cx = gx + (i % 10) * (cell + 1), cy = gy + Math.floor(i / 10) * 5;
+      ctx.fillStyle = s.state === "full" ? "#3d3a70" : s.state === "empty" ? "#181528" : "#6b5210";
+      ctx.fillRect(cx, cy, cell, 3);
+    }
+
+    // robot arm rail (right side) + gantry head
+    const railX = x + W - 12;
+    ctx.fillStyle = "#1b1445";
+    ctx.fillRect(railX, y + 5, 6, H - 30);
+    const ry = robot ? y + 8 + ((time * 30) % (H - 60)) : y + 20;
+    ctx.fillStyle = robot ? PAL.ledCyan : "#4a4666";
+    ctx.fillRect(railX - 1, ry, 8, 7);
+    // gripper
+    ctx.fillStyle = robot ? "#8d84c9" : "#2a2440";
+    ctx.fillRect(railX - 3, ry + 7, 3, 3);
+    ctx.fillRect(railX + 5, ry + 7, 3, 3);
+
+    // status panel (bottom)
+    pxText(ctx, "TAPE-1", x + 5, y + H - 16, 8, PAL.text);
+    const fill = Math.round(100 * (100 - DC.Tape.freeSlots(t)) / 100);
+    ctx.fillStyle = "#0a0722";
+    ctx.fillRect(x + 34, y + H - 22, 34, 6);
+    ctx.fillStyle = fill > 90 ? PAL.ledRed : fill > 70 ? PAL.ledAmber : PAL.ledGreen;
+    ctx.fillRect(x + 34, y + H - 22, Math.floor(34 * fill / 100 / PX) * PX, 6);
+    // exports waiting LED
+    if (t.exportsPending > 0 && blink) { ctx.fillStyle = PAL.ledCyan; ctx.fillRect(x + W - 10, y + H - 22, 5, 5); }
+    if (jammed && blink) pxText(ctx, "JAM", x + 5, y + H - 26, 8, PAL.ledRed);
+    if (robot && robot.kind === "export") pxText(ctx, "EXPORT", x + 30, y + H - 30, 8, PAL.ledCyan);
+  }
+
   function drawRack(ctx, state, rack, x, floorY, time) {
     const h = RACK_H;
     const critInRack = rack.equipment.some((eq) => eqAlarm(state, eq) === "crit");
@@ -882,6 +962,14 @@ DC.Render = (function () {
     if (prn) {
       const px0 = printerX(state);
       if (p.x >= px0 - 4 && p.x <= px0 + PRN_W + 4 && p.y >= RACK_H + ROW_DROP - 40 && p.y <= RACK_H + ROW_DROP + PRN_H + 4) return { eq: prn, rack: null };
+    }
+    // tape library
+    const tape = state.eqById["TAPE-1"];
+    if (tape) {
+      const a2 = auxRow(state);
+      if (a2.tapeX !== null) {
+        if (p.x >= a2.tapeX - 4 && p.x <= a2.tapeX + TAPE_W + 4 && p.y >= RACK_H + ROW_DROP - 10 && p.y <= RACK_H + ROW_DROP + TAPE_H + 4) return { eq: tape, rack: null };
+      }
     }
     // WAN pipes + firewalls (stacked rows, right of UPS)
     if (state.wans) {
