@@ -294,7 +294,7 @@ DC.Incidents = (function () {
       "cluster-storage-fail": state.clusters && state.clusters.length ? 4 * cfg().driveFail : 0,
       "battery-stress": 2.5,
       "mem-leak": 5,
-      "cert-expiring": 1.5,
+      "cert-expiring": 0.75,
       "ntp-skew": 3,
       "flap-link": 4,
       "wan-degrade": 3.2 * cfg().wanFail,

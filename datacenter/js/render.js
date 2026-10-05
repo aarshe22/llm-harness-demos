@@ -123,7 +123,7 @@ DC.Render = (function () {
   // touchpoint remains on the canvas, parked below the two-row topbar
   function drawZoomReset(ctx, w) {
     const x = w - 32;
-    const zy = 96; // below the two-row topbar
+    const zy = 104; // below the two-row topbar
     const active = Math.abs(camZoomDefault - lastZoom) > 0.01;
     ctx.fillStyle = "#0b0820";
     ctx.fillRect(x - 9, zy, 18, 12);
