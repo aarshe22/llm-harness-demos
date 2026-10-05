@@ -22,7 +22,7 @@ DC.Tech = (function () {
   let tasks = [];          // [{id, kind:'work'|'look'}]
   let seenAlarm = new Set();
   let didSet = new Set();  // jobs he already visited — cleared when the job truly ends
-  let guy = { x: homeX, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
+  let guy = { x: homeX, y: null, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
   let scanAcc = 1, sipT = 0;
   let camEl = null, camCtx = null;
   let moodEl = null, moodCtx = null;
@@ -35,7 +35,7 @@ DC.Tech = (function () {
   function reset() {
     homeX = HOME_X;
     tasks = []; seenAlarm = new Set(); didSet = new Set();
-    guy = { x: homeX, y: 0, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
+    guy = { x: homeX, y: null, state: "idle", workT: 0, cur: null, path: [], lastPhase: 0 };
     camEl = null; camCtx = null;
   }
 
@@ -114,6 +114,7 @@ DC.Tech = (function () {
   }
 
   function tick(state, dt, now) {
+    if (guy.y === null) guy.y = baseY(); // lazy init once the real baseline is known (desk position)
     if (guy.state === "idle") {
       sipT += dt;
       if (tasks.length) {
