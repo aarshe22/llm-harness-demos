@@ -10,28 +10,35 @@ DC.UI = (function () {
     const root = el("ui-root");
     root.innerHTML = `
       <div id="topbar">
-        <div class="tb-logo">DATACENTER</div>
-        <div class="chip" id="${chipId("uptime")}"><div class="lbl">UPTIME</div><div class="val">00:00:00</div></div>
-        <div class="chip" id="${chipId("score")}"><div class="lbl">SCORE</div><div class="val">0</div></div>
-        <div class="chip clickable" id="${chipId("tickets")}"><div class="lbl">TICKETS</div><div class="val">0</div></div>
-        <div class="chip" id="${chipId("sla")}"><div class="lbl">SLA</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("rep")}"><div class="lbl">REP</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("growth")}"><div class="lbl">GROWTH</div><div class="val">0%</div></div>
-        <div class="chip" id="${chipId("customers")}"><div class="lbl">CUSTOMERS</div><div class="val">0</div></div>
-        <div class="chip" id="${chipId("temp")}"><div class="lbl">TEMP</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("power")}"><div class="lbl">POWER</div><div class="val">—</div></div>
-        <div class="chip clickable" id="${chipId("cooling")}"><div class="lbl">COOLING</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("net")}"><div class="lbl">NET</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("data")}"><div class="lbl">DATA</div><div class="val">—</div></div>
-        <div class="chip" id="${chipId("sec")}"><div class="lbl">SEC</div><div class="val">NORMAL</div></div>
-        <div class="chip clickable" id="${chipId("maint")}"><div class="lbl">MAINT</div><div class="val">0</div></div>
-        <div class="chip clickable" id="${chipId("tenants")}"><div class="lbl">TENANTS</div><div class="val" id="chip-tenants-val">—</div></div>
-        <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
-        <div id="tb-right">
-          <button id="btn-theme" title="dark/light mode">☀</button>
-          <button id="btn-speed" title="simulation speed (1=easy 2=normal 3=boost 4=max)">SPD ×1 NORMAL</button>
-          <button id="btn-help">HELP [F1]</button>
-          <button id="btn-pause">PAUSE [SPC]</button>
+        <div class="tb-row">
+          <div class="tb-logo">DATACENTER</div>
+          <div class="chip" id="${chipId("uptime")}"><div class="lbl">UPTIME</div><div class="val">00:00:00</div></div>
+          <div class="chip" id="${chipId("score")}"><div class="lbl">SCORE</div><div class="val">0</div></div>
+          <div class="chip clickable" id="${chipId("tickets")}"><div class="lbl">TICKETS</div><div class="val">0</div></div>
+          <div class="chip" id="${chipId("sla")}"><div class="lbl">SLA</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("rep")}"><div class="lbl">REP</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("customers")}"><div class="lbl">CUSTOMERS</div><div class="val">0</div></div>
+          <div class="chip" id="${chipId("temp")}"><div class="lbl">TEMP</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("power")}"><div class="lbl">POWER</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("net")}"><div class="lbl">NET</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("data")}"><div class="lbl">DATA</div><div class="val">—</div></div>
+          <div class="chip" id="${chipId("sec")}"><div class="lbl">SEC</div><div class="val">NORMAL</div></div>
+          <div class="chip" id="${chipId("inc")}"><div class="lbl">INCIDENTS</div><div class="val">0</div></div>
+          <div id="tb-right">
+            <button id="btn-theme" title="dark/light mode">☀</button>
+            <button id="btn-speed" title="simulation speed (1=easy 2=normal 3=boost 4=max)">SPD ×1 NORMAL</button>
+            <button id="btn-help">HELP [F1]</button>
+            <button id="btn-pause">PAUSE [SPC]</button>
+          </div>
+        </div>
+        <div class="tb-row">
+          <div class="chip clickable" id="${chipId("cooling")}"><div class="lbl">COOLING</div><div class="val">—</div></div>
+          <div class="chip clickable" id="${chipId("maint")}"><div class="lbl">MAINT</div><div class="val">0</div></div>
+          <div class="chip clickable" id="${chipId("tenants")}"><div class="lbl">TENANTS</div><div class="val" id="chip-tenants-val">—</div></div>
+          <div class="growth-wrap" id="chip-growth" title="expansion pressure — fills as customers grow">
+            <div class="lbl">GROWTH <span id="growth-pct" class="val-inline">0%</span></div>
+            <div class="growth-track"><div class="growth-cover" id="growth-cover"></div></div>
+          </div>
         </div>
       </div>
       <div id="alarmbar" style="display:none">
@@ -162,7 +169,8 @@ DC.UI = (function () {
       const c = el(chipId(id));
       if (!c) return;
       c.querySelector(".val").innerHTML = html;
-      c.className = "chip" + (cls ? " " + cls : "") + (pulse ? " pulse" : "");
+      const click = c.classList.contains("clickable") ? " clickable" : "";
+      c.className = "chip" + (cls ? " " + cls : "") + (pulse ? " pulse" : "") + click;
     };
     set("uptime", DC.Util.fmtUptime(m.uptime));
     set("score", Math.floor(m.score).toLocaleString());
@@ -171,7 +179,12 @@ DC.UI = (function () {
     set("sla", m.sla.toFixed(2) + "%", m.sla > 99.5 ? "g" : m.sla > 97 ? "a" : "r");
     set("rep", Math.round(m.rep) + "%", m.rep > 60 ? "g" : m.rep > 30 ? "a" : "r");
     const gp = m.growthPct || 0;
-    set("growth", Math.round(gp) + "%", gp > 85 ? "a" : "g", gp > 85);
+    const gc = el("growth-cover"), gpct = el("growth-pct");
+    if (gc) gc.style.width = DC.Util.clamp(100 - gp, 0, 100) + "%";
+    if (gpct) {
+      gpct.textContent = Math.round(gp) + "%";
+      gpct.className = "val-inline " + (gp > 85 ? "r" : gp > 60 ? "a" : "g");
+    }
     set("customers", m.customers.toLocaleString());
     set("temp", m.temp.toFixed(1) + "C", m.temp > 32 ? "r" : m.temp > 27 ? "a" : "g");
     set("power", m.powerPct + "%", m.powerPct > 95 ? "r" : m.powerPct > 80 ? "a" : "g");

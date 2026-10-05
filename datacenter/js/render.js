@@ -85,6 +85,7 @@ DC.Render = (function () {
 
     ctx.imageSmoothingEnabled = false;
     ctx.save();
+    phaseT = time; // drives the zoom-reset blink
     const c = screenCenter(w, h);
     ctx.translate(snap(c.x), snap(c.y));
     ctx.scale(cam.zoom, cam.zoom);
@@ -111,52 +112,22 @@ DC.Render = (function () {
     if (window.DC.Tech) DC.Tech.drawWorld(ctx, state, floorY, time);
 
     ctx.restore();
-    const panelOpen = !!(state && window.DC.Game && DC.Game.selectedId);
-    drawThermometer(ctx, w, h, state.metrics.growthPct || 0, time, panelOpen);
+    drawZoomReset(ctx, w);
     drawCRT(ctx, w, h, time);
   }
 
   const CAM_ZOOM_DEFAULT = 0.73; // matched by main.js defaultZoom (3% out from 0.75)
   let camZoomDefault = CAM_ZOOM_DEFAULT;
 
-  function drawThermometer(ctx, w, h, pct, time, panelOpen) {
-    const x = w - 40 - (panelOpen ? 324 : 0);
-    const top = 116; // pushed down: zoom-reset button lives above
-    const barW = 16; // same width as the bulb at the bottom
-    const tubeH = DC.Util.clamp(h - top - 150, 90, 260);
-    const bot = top + tubeH;
-    // simple vertical bar, bulb-width
-    ctx.fillStyle = "#0b0820";
-    ctx.fillRect(x - barW / 2, top, barW, tubeH);
-    ctx.strokeStyle = PAL.rackEdge;
-    ctx.lineWidth = PX;
-    ctx.strokeRect(x - barW / 2, top, barW, tubeH);
-    ctx.lineWidth = 1;
-    // fill: rises with % towards growth
-    const col = pct > 85 ? PAL.ledAmber : pct > 60 ? PAL.ledGreen : PAL.ledCyan;
-    const fillH = Math.max(PX, Math.round((tubeH - 4) * DC.Util.clamp(pct, 0, 100) / 100));
-    ctx.fillStyle = col;
-    ctx.fillRect(x - barW / 2 + 2, bot - 2 - fillH, barW - 4, fillH);
-    // glow pulse when nearly full
-    if (pct > 85 && Math.sin(time * 6) > 0) {
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(x - barW, top, barW * 2, tubeH);
-      ctx.globalAlpha = 1;
-    }
-    // tick marks on the right edge
-    ctx.fillStyle = PAL.rivet;
-    for (let i = 0; i <= 10; i++) {
-      const ty = Math.round(bot - (tubeH * i) / 10);
-      ctx.fillRect(x + barW / 2 + 1, ty, i % 5 === 0 ? 8 : 4, PX);
-    }
-    pxText(ctx, Math.round(pct) + "%", x - 12, top - 12, 8, col);
-    pxText(ctx, "GROWTH", x - 24, bot + 18, 8, PAL.textDim);
-    // zoom-reset touchpoint sits above the % label
-    const zy = top - 56;
+  // growth now lives in the topbar (horizontal gradient bar); only the zoom-reset
+  // touchpoint remains on the canvas, parked below the two-row topbar
+  function drawZoomReset(ctx, w) {
+    const x = w - 32;
+    const zy = 96; // below the two-row topbar
     const active = Math.abs(camZoomDefault - lastZoom) > 0.01;
     ctx.fillStyle = "#0b0820";
     ctx.fillRect(x - 9, zy, 18, 12);
-    ctx.strokeStyle = active ? (time * 3 % 1 > 0.5 ? PAL.ledGreen : PAL.rackEdge) : PAL.rackEdge;
+    ctx.strokeStyle = active ? (performanceNowPhase() ? PAL.ledGreen : PAL.rackEdge) : PAL.rackEdge;
     ctx.lineWidth = PX;
     ctx.strokeRect(x - 9, zy, 18, 12);
     ctx.lineWidth = 1;
@@ -164,6 +135,9 @@ DC.Render = (function () {
     pxText(ctx, "[*]", x - 12, zy + 9, 8, active ? PAL.ledGreen : PAL.textDim);
     lastZoomRect = { x: x - 15, y: zy - 4, w: 30, h: 20 };
   }
+
+  let phaseT = 0;
+  function performanceNowPhase() { return (phaseT * 3 % 1) > 0.5; }
 
   let lastZoomRect = null;
   let lastZoom = 0.75;
